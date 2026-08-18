@@ -302,7 +302,9 @@ export class AlbumRepository {
     await this.db
       .deleteFrom('album_asset')
       .where('album_asset.assetId', 'in', assetIds)
-      .where('album_asset.albumId', 'in', (eb) => eb.selectFrom('album').select('album.id').where('isLocked', '=', true))
+      .where('album_asset.albumId', 'in', (eb) =>
+        eb.selectFrom('album').select('album.id').where('isLocked', '=', true),
+      )
       .execute();
   }
 
