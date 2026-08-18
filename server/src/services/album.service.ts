@@ -81,10 +81,15 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
     await this.albumRepository.updateThumbnails();
     const album = await this.findOrFail(id, auth.user.id, { withAssets: false });
-    // requireAccess(AlbumRead) above already denies access to a locked album unless the
-    // requester is elevated, so it's safe to include this album's Locked assets in its own
-    // count/date-range metadata here.
-    const [albumMetadataForIds] = await this.albumRepository.getMetadataForIds([album.id], true);
+    // Pass the session's real elevation rather than a hardcoded true. requireAccess(AlbumRead) above
+    // does deny a locked album to a non-elevated session, but relying on that alone means trusting
+    // that a locked asset can never sit in an ordinary album, and getMapMarkers a few lines below
+    // deliberately refuses to trust exactly that. Without this, assetCount, startDate, endDate and
+    // lastModifiedAssetTimestamp described an album's locked members to a session with no PIN.
+    const [albumMetadataForIds] = await this.albumRepository.getMetadataForIds(
+      [album.id],
+      !!auth.session?.hasElevatedPermission,
+    );
 
     const hasSharedUsers = album.albumUsers && album.albumUsers.length > 1;
     const hasSharedLink = album.sharedLinks && album.sharedLinks.length > 0;
