@@ -12,6 +12,7 @@ import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.dart';
 import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/map.repository.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:stream_transform/stream_transform.dart';
 
@@ -181,14 +182,9 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
         .get();
   }
 
-  /// Album views must not surface assets the server would withhold. The server applies its default
-  /// visibility set (timeline + archive) to album buckets, and that filter is the only thing keeping
-  /// locked-folder assets out of an album view. Mobile has no `isLocked` column on albums, so a locked
-  /// album syncs down looking ordinary; without this predicate its assets would render with no PIN.
-  /// Excluding `hidden` as well matches the server and keeps motion-photo video parts out.
-  Expression<bool> _albumAssetVisibility() =>
-      _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) |
-      _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.archive);
+  /// Album views must not surface assets the server would withhold. The rule itself, and why album
+  /// views need it at all, lives in [VisibilityPolicy.albumAssets].
+  Expression<bool> _albumAssetVisibility() => VisibilityPolicy.albumAssets(_db.remoteAssetEntity);
 
   TimelineQuery remoteAlbum(String albumId, GroupAssetsBy groupBy) => (
     bucketSource: () => _watchRemoteAlbumBucket(albumId, groupBy: groupBy),
@@ -285,17 +281,18 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
         ..limit(1),
     );
 
-    final query = _db.remoteAssetEntity.select().addColumns([localId]).join([
-      innerJoin(
-        _db.remoteAlbumAssetEntity,
-        _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
-        useColumns: false,
-      ),
-    ])..where(
-      _db.remoteAssetEntity.deletedAt.isNull() &
-          _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
-          _albumAssetVisibility(),
-    );
+    final query =
+        _db.remoteAssetEntity.select().addColumns([localId]).join([
+          innerJoin(
+            _db.remoteAlbumAssetEntity,
+            _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
+            useColumns: false,
+          ),
+        ])..where(
+          _db.remoteAssetEntity.deletedAt.isNull() &
+              _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
+              _albumAssetVisibility(),
+        );
 
     if (isAscending) {
       query.orderBy([OrderingTerm.asc(_db.remoteAssetEntity.createdAt)]);

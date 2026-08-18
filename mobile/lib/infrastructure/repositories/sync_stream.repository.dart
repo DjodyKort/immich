@@ -498,6 +498,7 @@ class SyncStreamRepository extends DriftDatabaseRepository {
             name: Value(album.name),
             description: Value(album.description),
             isActivityEnabled: Value(album.isActivityEnabled),
+            isLocked: Value(album.isLocked),
             order: Value(album.order.toAlbumAssetOrder()),
             thumbnailAssetId: Value(album.thumbnailAssetId),
             createdAt: Value(album.createdAt),

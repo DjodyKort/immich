@@ -14,6 +14,7 @@ import 'package:immich_mobile/providers/album/pending_album_uploads.provider.dar
 import 'package:immich_mobile/providers/backup/asset_upload_progress.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
+import 'package:immich_mobile/services/auth.service.dart';
 import 'package:immich_mobile/services/foreground_upload.service.dart';
 import 'package:logging/logging.dart';
 
@@ -42,7 +43,11 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
 
   Future<List<RemoteAlbum>> _getAll() async {
     try {
-      final albums = await _remoteAlbumService.getAll();
+      // Locked albums stay out of the list until the session has cleared the PIN/biometric flow. Asked
+      // per refresh rather than cached so the list follows the server's elevation window, and answered
+      // `false` on any failure so an offline refresh under-exposes instead of leaking.
+      final isElevated = await ref.read(authServiceProvider).isSessionElevated();
+      final albums = await _remoteAlbumService.getAll(isElevated: isElevated);
       state = state.copyWith(albums: albums);
       return albums;
     } catch (error, stack) {

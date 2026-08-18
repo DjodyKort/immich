@@ -207,4 +207,8 @@ class AuthService {
   Future<void> setupPinCode(String pinCode) {
     return _authApiRepository.setupPinCode(pinCode);
   }
+
+  Future<bool> isSessionElevated() {
+    return _authApiRepository.isSessionElevated();
+  }
 }

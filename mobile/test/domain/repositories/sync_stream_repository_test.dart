@@ -88,6 +88,20 @@ SyncAssetExifV1 _createExif({
   );
 }
 
+SyncAlbumV2 _createAlbumV2({required String id, bool isLocked = false}) {
+  return SyncAlbumV2(
+    id: id,
+    name: 'album_$id',
+    description: '',
+    isActivityEnabled: true,
+    isLocked: isLocked,
+    order: AssetOrder.desc,
+    thumbnailAssetId: null,
+    createdAt: DateTime(2024, 1, 1),
+    updatedAt: DateTime(2024, 1, 1),
+  );
+}
+
 void main() {
   late Drift db;
   late SyncStreamRepository sut;
@@ -186,6 +200,30 @@ void main() {
 
       expect(result.width, equals(existingWidth), reason: 'Width should remain as originally set');
       expect(result.height, equals(existingHeight), reason: 'Height should remain as originally set');
+    });
+  });
+
+  group('SyncStreamRepository - updateAlbumsV2()', () {
+    // The server sends `album.isLocked` and leaves enforcement to each client. Dropping it on ingest is
+    // what made a locked album arrive looking ordinary, so pin that it lands in the column.
+    test('persists isLocked', () async {
+      await sut.updateAlbumsV2([_createAlbumV2(id: 'album-open'), _createAlbumV2(id: 'album-locked', isLocked: true)]);
+
+      final rows = await db.remoteAlbumEntity.select().get();
+
+      expect({for (final row in rows) row.id: row.isLocked}, {'album-open': false, 'album-locked': true});
+    });
+
+    test('carries isLocked changes through on conflict, in both directions', () async {
+      Future<bool> isLocked() async =>
+          (await (db.remoteAlbumEntity.select()..where((tbl) => tbl.id.equals('album-1'))).getSingle()).isLocked;
+
+      await sut.updateAlbumsV2([_createAlbumV2(id: 'album-1')]);
+      await sut.updateAlbumsV2([_createAlbumV2(id: 'album-1', isLocked: true)]);
+      expect(await isLocked(), isTrue, reason: 'locking an existing album must reach the column');
+
+      await sut.updateAlbumsV2([_createAlbumV2(id: 'album-1')]);
+      expect(await isLocked(), isFalse, reason: 'unlocking must not leave a stale true behind');
     });
   });
 

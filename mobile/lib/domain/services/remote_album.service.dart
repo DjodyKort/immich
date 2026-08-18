@@ -55,8 +55,9 @@ class RemoteAlbumService {
     return _repository.watchAlbum(albumId);
   }
 
-  Future<List<RemoteAlbum>> getAll() {
-    return _repository.getAll();
+  /// See [DriftRemoteAlbumRepository.getAll] for what [isElevated] gates.
+  Future<List<RemoteAlbum>> getAll({bool isElevated = false}) {
+    return _repository.getAll(isElevated: isElevated);
   }
 
   Future<RemoteAlbum?> get(String albumId) {
