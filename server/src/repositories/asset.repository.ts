@@ -40,7 +40,6 @@ import {
   removeUndefinedKeys,
   truncatedDate,
   unnest,
-  withDefaultVisibility,
   withEdits,
   withExif,
   withFaces,
@@ -94,18 +93,17 @@ interface AssetBuilderOptions {
   visibility?: AssetVisibility;
   withCoordinates?: boolean;
   bbox?: BoundingBox;
-  /**
-   * When true (and `albumId` is set), Locked-visibility assets are included alongside the
-   * normal default visibility set. Callers must only set this after already verifying the
-   * requester has elevated access to that specific locked album -- this flag does not perform
-   * any access check itself, it only changes which visibility values are included in results.
-   */
-  includeLockedAlbumAssets?: boolean;
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
   order?: AssetOrder;
   orderBy?: AssetOrderBy;
+  /**
+   * Who is asking. The surface rule decides which visibilities a bucket admits, so the caller no
+   * longer computes that itself: pass `forViewer(auth)` and let {@link Surface.AlbumTimeline} widen
+   * the album-scoped case.
+   */
+  ctx: PolicyContext;
 }
 
 export interface TimeBucketItem {
@@ -786,7 +784,7 @@ export class AssetRepository {
     );
   }
 
-  @GenerateSql({ params: [{}] })
+  @GenerateSql({ params: [{ ctx: { elevated: false } }] })
   async getTimeBuckets(options: TimeBucketOptions): Promise<TimeBucketItem[]> {
     return this.db
       .with('asset', (qb) =>
@@ -810,16 +808,11 @@ export class AssetRepository {
             return withBoundingBox(withBoundingCircle, bbox);
           })
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
-          .$if(
-            options.visibility === undefined && !(options.includeLockedAlbumAssets && options.albumId),
-            withDefaultVisibility,
-          )
-          .$if(options.visibility === undefined && !!options.includeLockedAlbumAssets && !!options.albumId, (qb) =>
-            qb.where('asset.visibility', 'in', [
-              sql.lit(AssetVisibility.Archive),
-              sql.lit(AssetVisibility.Timeline),
-              sql.lit(AssetVisibility.Locked),
-            ]),
+          // An album-scoped bucket widens to the locked folder once the session is elevated, because a
+          // locked album is by construction made only of locked assets; the plain timeline never does.
+          // An explicitly requested visibility above still wins over the surface default.
+          .$if(options.visibility === undefined, (qb) =>
+            withSurface(qb, options.albumId ? Surface.AlbumTimeline : Surface.Timeline, options.ctx),
           )
           .$if(!!options.albumId, (qb) =>
             qb
@@ -851,7 +844,11 @@ export class AssetRepository {
   }
 
   @GenerateSql({
-    params: [DummyValue.TIME_BUCKET, { withStacked: true }, { user: { id: DummyValue.UUID } }],
+    params: [
+      DummyValue.TIME_BUCKET,
+      { withStacked: true, ctx: { elevated: false } },
+      { user: { id: DummyValue.UUID } },
+    ],
   })
   getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
     const order = options.order ?? 'desc';
@@ -895,16 +892,11 @@ export class AssetRepository {
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
-          .$if(
-            options.visibility === undefined && !(options.includeLockedAlbumAssets && options.albumId),
-            withDefaultVisibility,
-          )
-          .$if(options.visibility === undefined && !!options.includeLockedAlbumAssets && !!options.albumId, (qb) =>
-            qb.where('asset.visibility', 'in', [
-              sql.lit(AssetVisibility.Archive),
-              sql.lit(AssetVisibility.Timeline),
-              sql.lit(AssetVisibility.Locked),
-            ]),
+          // An album-scoped bucket widens to the locked folder once the session is elevated, because a
+          // locked album is by construction made only of locked assets; the plain timeline never does.
+          // An explicitly requested visibility above still wins over the surface default.
+          .$if(options.visibility === undefined, (qb) =>
+            withSurface(qb, options.albumId ? Surface.AlbumTimeline : Surface.Timeline, options.ctx),
           )
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;

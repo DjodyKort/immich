@@ -1,7 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { mapAsset } from 'src/dtos/asset-response.dto';
 import { SearchSuggestionType } from 'src/dtos/search.dto';
-import { AssetVisibility } from 'src/enum';
 import { SearchService } from 'src/services/search.service';
 import { AssetFactory } from 'test/factories/asset.factory';
 import { AuthFactory } from 'test/factories/auth.factory';
@@ -255,7 +254,7 @@ describe(SearchService.name, () => {
           query: 'test',
           embedding: '[1, 2, 3]',
           userIds: [authStub.user1.user.id],
-          visibility: [AssetVisibility.Timeline, AssetVisibility.Archive],
+          ctx: { elevated: false },
         },
       );
     });

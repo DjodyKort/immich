@@ -57,7 +57,7 @@ describe(AssetRepository.name, () => {
 
       const descendingBucket = await sut.getTimeBucket(
         '2026-03-01',
-        { order: AssetOrder.Desc, userIds: [user.id], visibility: AssetVisibility.Timeline },
+        { order: AssetOrder.Desc, userIds: [user.id], visibility: AssetVisibility.Timeline, ctx: { elevated: false } },
         auth,
       );
       expect(JSON.parse(descendingBucket.assets)).toEqual(
@@ -68,7 +68,7 @@ describe(AssetRepository.name, () => {
 
       const ascendingBucket = await sut.getTimeBucket(
         '2026-03-01',
-        { order: AssetOrder.Asc, userIds: [user.id], visibility: AssetVisibility.Timeline },
+        { order: AssetOrder.Asc, userIds: [user.id], visibility: AssetVisibility.Timeline, ctx: { elevated: false } },
         auth,
       );
       expect(JSON.parse(ascendingBucket.assets)).toEqual(

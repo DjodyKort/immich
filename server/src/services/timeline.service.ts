@@ -6,6 +6,7 @@ import { TimeBucketOptions } from 'src/repositories/asset.repository';
 import { BaseService } from 'src/services/base.service';
 import { requireElevatedPermission } from 'src/utils/access';
 import { getMyPartnerIds } from 'src/utils/asset.util';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -41,14 +42,7 @@ export class TimelineService extends BaseService {
       }
     }
 
-    // Include Locked-visibility assets only when scoped to an album AND the session is verifiably
-    // elevated. requireAccess(AlbumRead) in timeBucketChecks() already refuses a locked album to a
-    // non-elevated session, so for legitimate flows the elevation term is redundant - but relying on
-    // that alone means trusting the invariant that a Locked asset can never sit in an ordinary
-    // album. Checking elevation here too keeps this fail-closed if that invariant is ever broken.
-    const includeLockedAlbumAssets = !!dto.albumId && !!auth.session?.hasElevatedPermission;
-
-    return { ...options, userIds, includeLockedAlbumAssets };
+    return { ...options, userIds, ctx: forViewer(auth) };
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
