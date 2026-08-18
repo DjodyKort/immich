@@ -99,7 +99,7 @@ where
   and "user"."id" = $2
   and "album"."deletedAt" is null
   and "album"."isLocked" = $3
-  and "asset"."visibility" != $4
+  and "asset"."visibility" != 'locked'
 
 -- AccessRepository.asset.checkOwnerAccess
 select
@@ -109,7 +109,7 @@ from
 where
   "asset"."id" in ($1)
   and "asset"."ownerId" = $2
-  and "asset"."visibility" != $3
+  and "asset"."visibility" != 'locked'
 
 -- AccessRepository.asset.checkPartnerAccess
 select

@@ -146,11 +146,9 @@ describe(SharedLinkService.name, () => {
 
       await sut.create(authStub.admin, { type: SharedLinkType.Album, albumId: album.id });
 
-      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(
-        authStub.admin.user.id,
-        new Set([album.id]),
-        undefined,
-      );
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([album.id]), {
+        elevated: false,
+      });
       expect(mocks.sharedLink.create).toHaveBeenCalledWith({
         type: SharedLinkType.Album,
         userId: authStub.admin.user.id,
@@ -181,11 +179,9 @@ describe(SharedLinkService.name, () => {
         allowUpload: true,
       });
 
-      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
-        authStub.admin.user.id,
-        new Set([asset.id]),
-        false,
-      );
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]), {
+        elevated: false,
+      });
       expect(mocks.sharedLink.create).toHaveBeenCalledWith({
         type: SharedLinkType.Individual,
         userId: authStub.admin.user.id,
@@ -217,11 +213,9 @@ describe(SharedLinkService.name, () => {
         allowUpload: true,
       });
 
-      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
-        authStub.admin.user.id,
-        new Set([asset.id]),
-        false,
-      );
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]), {
+        elevated: false,
+      });
       expect(mocks.sharedLink.create).toHaveBeenCalledWith({
         type: SharedLinkType.Individual,
         userId: authStub.admin.user.id,

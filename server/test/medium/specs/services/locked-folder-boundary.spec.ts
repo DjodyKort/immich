@@ -30,7 +30,7 @@ import { getKyselyDB } from 'test/utils';
  *
  * `asset.visibility = 'locked'` is only ever supposed to be reachable through the PIN-gated
  * locked folder. Today that invariant is upheld by two service-layer guards
- * (`Permission.AssetShare` hardcoding `hasElevatedPermission: false`, and
+ * (`Permission.AssetShare` checking access as `forSharing()`, which is never elevated, and
  * `AssetService.updateAll` evicting an asset from every album when it becomes Locked) rather
  * than by a visibility filter at every read path that can reach an asset through an album.
  *

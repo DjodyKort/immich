@@ -9,6 +9,7 @@ import { ImmichReadStream } from 'src/repositories/storage.repository';
 import { BaseService } from 'src/services/base.service';
 import { HumanReadableSize } from 'src/utils/bytes';
 import { getPreferences } from 'src/utils/preferences';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class DownloadService extends BaseService {
@@ -26,7 +27,7 @@ export class DownloadService extends BaseService {
     } else if (dto.userId) {
       const userId = dto.userId;
       await this.requireAccess({ auth, permission: Permission.TimelineDownload, ids: [userId] });
-      assets = this.downloadRepository.downloadUserId(userId, !!auth.session?.hasElevatedPermission);
+      assets = this.downloadRepository.downloadUserId(userId, forViewer(auth));
     } else {
       throw new BadRequestException('assetIds, albumId, or userId is required');
     }

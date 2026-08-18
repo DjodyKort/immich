@@ -47,6 +47,7 @@ import { updateLockedColumns } from 'src/utils/database';
 import { extractTimeZone } from 'src/utils/date';
 import { batched, findOrFail } from 'src/utils/misc';
 import { transformOcrBoundingBox } from 'src/utils/transform';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class AssetService extends BaseService {
@@ -55,10 +56,7 @@ export class AssetService extends BaseService {
       requireElevatedPermission(auth);
     }
 
-    const stats = await this.assetRepository.getStatistics(auth.user.id, {
-      ...dto,
-      hasElevatedPermission: !!auth.session?.hasElevatedPermission,
-    });
+    const stats = await this.assetRepository.getStatistics(auth.user.id, dto, forViewer(auth));
     return mapStats(stats);
   }
 

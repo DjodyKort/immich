@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetVisibility } from 'src/enum';
 import { DB } from 'src/schema';
 import { anyUuid } from 'src/utils/database';
+import { PolicyContext, Surface, withSurface } from 'src/utils/visibility-policy';
 
 const builder = (db: Kysely<DB>) =>
   db
@@ -31,16 +31,15 @@ export class DownloadRepository {
       .stream();
   }
 
-  downloadUserId(userId: string, hasElevatedPermission?: boolean) {
+  downloadUserId(userId: string, ctx: PolicyContext) {
     return (
       builder(this.db)
         .where('asset.ownerId', '=', userId)
-        .where('asset.visibility', '!=', AssetVisibility.Hidden)
         // Permission.TimelineDownload only checks that the requested id is the caller's own, so without
         // this a non-elevated session received the ids and byte sizes of every locked asset. The ids
         // then failed Permission.AssetDownload on the follow-up archive call, taking the whole request
         // down with them.
-        .$if(!hasElevatedPermission, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Locked))
+        .$call((qb) => withSurface(qb, Surface.TimelineDownload, ctx))
         .stream()
     );
   }

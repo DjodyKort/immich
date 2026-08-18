@@ -3,6 +3,7 @@ import { AuthDto } from 'src/dtos/auth.dto';
 import { MapMarkerDto, MapMarkerResponseDto, MapReverseGeocodeDto } from 'src/dtos/map.dto';
 import { BaseService } from 'src/services/base.service';
 import { getMyPartnerIds } from 'src/utils/asset.util';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class MapService extends BaseService {
@@ -15,7 +16,7 @@ export class MapService extends BaseService {
 
     const albumIds = options.withSharedAlbums ? await this.albumRepository.getAllIds(auth.user.id) : [];
 
-    return this.mapRepository.getMapMarkers(auth.user.id, userIds, albumIds, options);
+    return this.mapRepository.getMapMarkers(auth.user.id, userIds, albumIds, forViewer(auth), options);
   }
 
   async reverseGeocode(dto: MapReverseGeocodeDto) {

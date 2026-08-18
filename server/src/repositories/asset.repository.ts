@@ -54,6 +54,7 @@ import {
   withTags,
 } from 'src/utils/database';
 import { globToSqlPattern } from 'src/utils/misc';
+import { PolicyContext, Surface, withSurface } from 'src/utils/visibility-policy';
 
 export type AssetStats = Record<AssetType, number>;
 
@@ -68,7 +69,6 @@ interface AssetStatsOptions {
   isFavorite?: boolean;
   isTrashed?: boolean;
   visibility?: AssetVisibility;
-  hasElevatedPermission?: boolean;
 }
 
 interface LivePhotoSearchOptions {
@@ -729,7 +729,8 @@ export class AssetRepository {
 
   getStatistics(
     ownerId: string,
-    { visibility, isFavorite, isTrashed, hasElevatedPermission }: AssetStatsOptions,
+    { visibility, isFavorite, isTrashed }: AssetStatsOptions,
+    ctx: PolicyContext,
   ): Promise<AssetStats> {
     return (
       this.db
@@ -741,14 +742,7 @@ export class AssetRepository {
         .where('ownerId', '=', asUuid(ownerId))
         // An elevated session sees its locked assets counted, matching SearchService.searchStatistics,
         // which answers the same question and previously disagreed with this one.
-        .$if(visibility === undefined && !hasElevatedPermission, withDefaultVisibility)
-        .$if(visibility === undefined && !!hasElevatedPermission, (qb) =>
-          qb.where('asset.visibility', 'in', [
-            sql.lit(AssetVisibility.Archive),
-            sql.lit(AssetVisibility.Timeline),
-            sql.lit(AssetVisibility.Locked),
-          ]),
-        )
+        .$if(visibility === undefined, (qb) => withSurface(qb, Surface.Statistics, ctx))
         .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
         .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
         .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
@@ -758,12 +752,13 @@ export class AssetRepository {
   }
 
   @GenerateSql({
-    params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload }],
+    params: [
+      DummyValue.UUID,
+      { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload },
+      { elevated: false },
+    ],
   })
-  getCalendarHeatmap(
-    ownerId: string,
-    dto: { from: Date; to: Date; type: CalendarHeatmapType; hasElevatedPermission?: boolean },
-  ) {
+  getCalendarHeatmap(ownerId: string, dto: { from: Date; to: Date; type: CalendarHeatmapType }, ctx: PolicyContext) {
     const dateColumns: Record<CalendarHeatmapType, { order: AssetOrderBy; column: 'createdAt' | 'localDateTime' }> = {
       [CalendarHeatmapType.Upload]: { order: AssetOrderBy.CreatedAt, column: 'createdAt' },
       [CalendarHeatmapType.Taken]: { order: AssetOrderBy.TakenAt, column: 'localDateTime' },
@@ -784,16 +779,7 @@ export class AssetRepository {
         .where('deletedAt', 'is', null)
         // This query previously applied no visibility predicate at all, so the counts described the
         // owner's locked folder to any session, and motion-photo parts inflated every total.
-        .$if(!dto.hasElevatedPermission, (qb) =>
-          qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]),
-        )
-        .$if(!!dto.hasElevatedPermission, (qb) =>
-          qb.where('asset.visibility', 'in', [
-            sql.lit(AssetVisibility.Archive),
-            sql.lit(AssetVisibility.Timeline),
-            sql.lit(AssetVisibility.Locked),
-          ]),
-        )
+        .$call((qb) => withSurface(qb, Surface.CalendarHeatmap, ctx))
         .groupBy(date)
         .orderBy('date', 'asc')
         .execute()
