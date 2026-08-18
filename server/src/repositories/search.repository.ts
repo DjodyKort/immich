@@ -129,7 +129,7 @@ type BaseAssetSearchOptions = SearchDateOptions &
   SearchOcrOptions;
 
 export type AssetSearchOptions = Omit<BaseAssetSearchOptions, 'visibility'> &
-  SearchRelationOptions & { visibility?: AssetVisibility | 'not-locked' };
+  SearchRelationOptions & { visibility?: AssetVisibility | AssetVisibility[] };
 
 export type AssetSearchBuilderOptions = Omit<AssetSearchOptions, 'orderDirection'>;
 
@@ -156,7 +156,7 @@ export type SmartSearchOptions = SearchDateOptions &
   SearchUserIdOptions &
   SearchPeopleOptions &
   SearchTagOptions &
-  SearchOcrOptions & { visibility?: AssetVisibility | 'not-locked' };
+  SearchOcrOptions & { visibility?: AssetVisibility | AssetVisibility[] };
 
 export type LargeAssetSearchOptions = AssetSearchOptions & { minFileSize?: number };
 
@@ -215,6 +215,7 @@ export class SearchRepository {
         withStacked: true,
         isFavorite: true,
         userIds: [DummyValue.UUID],
+        visibility: [AssetVisibility.Timeline, AssetVisibility.Archive],
       },
     ],
   })

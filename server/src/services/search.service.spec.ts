@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { mapAsset } from 'src/dtos/asset-response.dto';
 import { SearchSuggestionType } from 'src/dtos/search.dto';
+import { AssetVisibility } from 'src/enum';
 import { SearchService } from 'src/services/search.service';
 import { AssetFactory } from 'test/factories/asset.factory';
 import { AuthFactory } from 'test/factories/auth.factory';
@@ -250,7 +251,12 @@ describe(SearchService.name, () => {
       );
       expect(mocks.search.searchSmart).toHaveBeenCalledWith(
         { page: 1, size: 100 },
-        { query: 'test', embedding: '[1, 2, 3]', userIds: [authStub.user1.user.id], visibility: 'not-locked' },
+        {
+          query: 'test',
+          embedding: '[1, 2, 3]',
+          userIds: [authStub.user1.user.id],
+          visibility: [AssetVisibility.Timeline, AssetVisibility.Archive],
+        },
       );
     });
 

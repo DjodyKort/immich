@@ -396,12 +396,21 @@ const joinDeduplicationPlugin = new DeduplicateJoinsPlugin();
 export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearchBuilderOptions) {
   options.withDeleted ||= !!(options.trashedAfter || options.trashedBefore || options.isOffline);
 
+  // An empty array means "no filter", the same as `undefined` - not "match nothing".
+  const hasVisibilityFilter = Array.isArray(options.visibility)
+    ? options.visibility.length > 0
+    : options.visibility !== undefined;
+
   return kysely
     .withPlugin(joinDeduplicationPlugin)
     .selectFrom('asset')
-    .$if(!!options.visibility, (qb) =>
-      options.visibility === 'not-locked'
-        ? qb.where('asset.visibility', '!=', AssetVisibility.Locked)
+    .$if(hasVisibilityFilter, (qb) =>
+      Array.isArray(options.visibility)
+        ? qb.where(
+            'asset.visibility',
+            'in',
+            options.visibility.map((visibility) => sql.lit(visibility)),
+          )
         : qb.where('asset.visibility', '=', options.visibility!),
     )
     .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))

@@ -90,7 +90,7 @@ export class SearchService extends BaseService {
       {
         ...dto,
         checksum,
-        visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+        visibility: this.getSearchVisibility(auth, dto.visibility),
         userIds,
         orderDirection: dto.order ?? AssetOrder.Desc,
       },
@@ -107,7 +107,7 @@ export class SearchService extends BaseService {
 
     return await this.searchRepository.searchStatistics({
       ...dto,
-      visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+      visibility: this.getSearchVisibility(auth, dto.visibility),
       userIds,
     });
   }
@@ -120,7 +120,7 @@ export class SearchService extends BaseService {
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
     const items = await this.searchRepository.searchRandom(dto.size || 250, {
       ...dto,
-      visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+      visibility: this.getSearchVisibility(auth, dto.visibility),
       userIds,
     });
     return items.map((item) => mapAsset(item, { auth }));
@@ -134,7 +134,7 @@ export class SearchService extends BaseService {
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
     const items = await this.searchRepository.searchLargeAssets(dto.size || 250, {
       ...dto,
-      visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+      visibility: this.getSearchVisibility(auth, dto.visibility),
       userIds,
     });
     return items.map((item) => mapAsset(item, { auth }));
@@ -181,7 +181,7 @@ export class SearchService extends BaseService {
         ...dto,
         userIds: await userIds,
         embedding,
-        visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+        visibility: this.getSearchVisibility(auth, dto.visibility),
       },
     );
 
@@ -227,6 +227,15 @@ export class SearchService extends BaseService {
         return Promise.resolve([]);
       }
     }
+  }
+
+  private getSearchVisibility(auth: AuthDto, visibility?: AssetVisibility): AssetVisibility | AssetVisibility[] {
+    if (visibility) {
+      return visibility;
+    }
+    return auth.session?.hasElevatedPermission
+      ? [AssetVisibility.Timeline, AssetVisibility.Archive, AssetVisibility.Locked]
+      : [AssetVisibility.Timeline, AssetVisibility.Archive];
   }
 
   private async getUserIdsToSearch(auth: AuthDto, visibility?: AssetVisibility): Promise<string[]> {

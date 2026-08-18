@@ -152,6 +152,33 @@ describe(SearchService.name, () => {
 
         expect(response.assets.items.length).toBe(1);
       });
+
+      it('should filter out hidden assets from a default search', async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+
+        await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Hidden });
+
+        const auth = factory.auth({ user: { id: user.id } });
+
+        const response = await sut.searchMetadata(auth, { withStacked: false });
+
+        expect(response.assets.items.length).toBe(0);
+      });
+
+      it('should return archived assets in a default search', async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+
+        const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+
+        const auth = factory.auth({ user: { id: user.id } });
+
+        const response = await sut.searchMetadata(auth, { withStacked: false });
+
+        expect(response.assets.items.length).toBe(1);
+        expect(response.assets.items[0].id).toBe(asset.id);
+      });
     });
   });
 
