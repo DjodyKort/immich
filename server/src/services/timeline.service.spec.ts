@@ -22,7 +22,7 @@ describe(TimelineService.name, () => {
       );
       expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith({
         userIds: [authStub.admin.user.id],
-        includeLockedAlbumAssets: false,
+        ctx: { elevated: false },
       });
     });
 
@@ -41,7 +41,7 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith({
         userIds: [authStub.admin.user.id],
         bbox: { west: -70, south: -30, east: 120, north: 55 },
-        includeLockedAlbumAssets: false,
+        ctx: { elevated: false },
       });
     });
   });
@@ -64,13 +64,13 @@ describe(TimelineService.name, () => {
         {
           timeBucket: 'bucket',
           albumId: 'album-id',
-          includeLockedAlbumAssets: false,
+          ctx: { elevated: false },
         },
         authStub.admin,
       );
     });
 
-    it('should include locked album assets only when the session is elevated', async () => {
+    it('should pass an elevated context only when the session is elevated', async () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
       const json = `[{ id: ['asset-id'] }]`;
       mocks.asset.getTimeBucket.mockResolvedValue({ assets: json });
@@ -83,7 +83,7 @@ describe(TimelineService.name, () => {
         {
           timeBucket: 'bucket',
           albumId: 'album-id',
-          includeLockedAlbumAssets: true,
+          ctx: { elevated: true },
         },
         auth,
       );
@@ -131,7 +131,7 @@ describe(TimelineService.name, () => {
           visibility: AssetVisibility.Timeline,
           withPartners: true,
           userIds: [authStub.admin.user.id],
-          includeLockedAlbumAssets: false,
+          ctx: { elevated: false },
         },
         authStub.admin,
       );
@@ -155,7 +155,7 @@ describe(TimelineService.name, () => {
           tagId: 'tag-123',
           timeBucket: 'bucket',
           userIds: [authStub.admin.user.id],
-          includeLockedAlbumAssets: false,
+          ctx: { elevated: false },
         },
         authStub.admin,
       );

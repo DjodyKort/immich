@@ -19,6 +19,7 @@ import {
   withSearchOrder,
 } from 'src/utils/database';
 import { paginationHelper } from 'src/utils/pagination';
+import { PolicyContext } from 'src/utils/visibility-policy';
 import z from 'zod';
 
 export interface SearchAssetIdOptions {
@@ -128,8 +129,7 @@ type BaseAssetSearchOptions = SearchDateOptions &
   SearchAlbumOptions &
   SearchOcrOptions;
 
-export type AssetSearchOptions = Omit<BaseAssetSearchOptions, 'visibility'> &
-  SearchRelationOptions & { visibility?: AssetVisibility | AssetVisibility[] };
+export type AssetSearchOptions = BaseAssetSearchOptions & SearchRelationOptions & { ctx: PolicyContext };
 
 export type AssetSearchBuilderOptions = Omit<AssetSearchOptions, 'orderDirection'>;
 
@@ -152,11 +152,11 @@ export type SmartSearchOptions = SearchDateOptions &
   SearchEmbeddingOptions &
   SearchExifOptions &
   SearchOneToOneRelationOptions &
-  Omit<SearchStatusOptions, 'visibility'> &
+  SearchStatusOptions &
   SearchUserIdOptions &
   SearchPeopleOptions &
   SearchTagOptions &
-  SearchOcrOptions & { visibility?: AssetVisibility | AssetVisibility[] };
+  SearchOcrOptions & { ctx: PolicyContext };
 
 export type LargeAssetSearchOptions = AssetSearchOptions & { minFileSize?: number };
 
@@ -215,7 +215,7 @@ export class SearchRepository {
         withStacked: true,
         isFavorite: true,
         userIds: [DummyValue.UUID],
-        visibility: [AssetVisibility.Timeline, AssetVisibility.Archive],
+        ctx: { elevated: false },
       },
     ],
   })
@@ -239,6 +239,7 @@ export class SearchRepository {
         lensModel: DummyValue.STRING,
         isFavorite: true,
         userIds: [DummyValue.UUID],
+        ctx: { elevated: false },
       },
     ],
   })
@@ -257,6 +258,7 @@ export class SearchRepository {
         withStacked: true,
         isFavorite: true,
         userIds: [DummyValue.UUID],
+        ctx: { elevated: false },
       },
     ],
   })
@@ -277,6 +279,7 @@ export class SearchRepository {
         withStacked: true,
         isFavorite: true,
         userIds: [DummyValue.UUID],
+        ctx: { elevated: false },
       },
     ],
   })
@@ -301,6 +304,7 @@ export class SearchRepository {
         withStacked: true,
         isFavorite: true,
         userIds: [DummyValue.UUID],
+        ctx: { elevated: false },
       },
     ],
   })

@@ -34,7 +34,7 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."visibility" in ('timeline', 'archive')
+  "asset"."visibility" in ('archive', 'timeline')
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -55,7 +55,8 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."fileCreatedAt" >= $1
+  "asset"."visibility" in ('archive', 'timeline')
+  and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
   and "asset"."isFavorite" = $4
@@ -95,7 +96,8 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."fileCreatedAt" >= $1
+  "asset"."visibility" in ('archive', 'timeline')
+  and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
   and "asset"."isFavorite" = $4
@@ -140,7 +142,8 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."fileCreatedAt" >= $1
+  "asset"."visibility" in ('archive', 'timeline')
+  and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
   and "asset"."isFavorite" = $4
@@ -189,7 +192,8 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."fileCreatedAt" >= $1
+  "asset"."visibility" in ('archive', 'timeline')
+  and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
   and "asset"."isFavorite" = $4

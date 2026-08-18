@@ -23,6 +23,7 @@ import { BaseService } from 'src/services/base.service';
 import { requireElevatedPermission } from 'src/utils/access';
 import { getMyPartnerIds } from 'src/utils/asset.util';
 import { isSmartSearchEnabled } from 'src/utils/misc';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -90,7 +91,8 @@ export class SearchService extends BaseService {
       {
         ...dto,
         checksum,
-        visibility: this.getSearchVisibility(auth, dto.visibility),
+        visibility: dto.visibility,
+        ctx: forViewer(auth),
         userIds,
         orderDirection: dto.order ?? AssetOrder.Desc,
       },
@@ -107,7 +109,8 @@ export class SearchService extends BaseService {
 
     return await this.searchRepository.searchStatistics({
       ...dto,
-      visibility: this.getSearchVisibility(auth, dto.visibility),
+      visibility: dto.visibility,
+      ctx: forViewer(auth),
       userIds,
     });
   }
@@ -120,7 +123,8 @@ export class SearchService extends BaseService {
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
     const items = await this.searchRepository.searchRandom(dto.size || 250, {
       ...dto,
-      visibility: this.getSearchVisibility(auth, dto.visibility),
+      visibility: dto.visibility,
+      ctx: forViewer(auth),
       userIds,
     });
     return items.map((item) => mapAsset(item, { auth }));
@@ -134,7 +138,8 @@ export class SearchService extends BaseService {
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
     const items = await this.searchRepository.searchLargeAssets(dto.size || 250, {
       ...dto,
-      visibility: this.getSearchVisibility(auth, dto.visibility),
+      visibility: dto.visibility,
+      ctx: forViewer(auth),
       userIds,
     });
     return items.map((item) => mapAsset(item, { auth }));
@@ -181,7 +186,8 @@ export class SearchService extends BaseService {
         ...dto,
         userIds: await userIds,
         embedding,
-        visibility: this.getSearchVisibility(auth, dto.visibility),
+        visibility: dto.visibility,
+        ctx: forViewer(auth),
       },
     );
 
@@ -227,15 +233,6 @@ export class SearchService extends BaseService {
         return Promise.resolve([]);
       }
     }
-  }
-
-  private getSearchVisibility(auth: AuthDto, visibility?: AssetVisibility): AssetVisibility | AssetVisibility[] {
-    if (visibility) {
-      return visibility;
-    }
-    return auth.session?.hasElevatedPermission
-      ? [AssetVisibility.Timeline, AssetVisibility.Archive, AssetVisibility.Locked]
-      : [AssetVisibility.Timeline, AssetVisibility.Archive];
   }
 
   private async getUserIdsToSearch(auth: AuthDto, visibility?: AssetVisibility): Promise<string[]> {

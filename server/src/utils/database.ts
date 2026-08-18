@@ -43,6 +43,7 @@ import { DB } from 'src/schema';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
 import { AudioStreamInfo, VectorExtension, VideoFormat, VideoPacketInfo, VideoStreamInfo } from 'src/types';
 import { fromChecksum } from 'src/utils/request';
+import { Surface, withSurface } from 'src/utils/visibility-policy';
 
 export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyConfig => {
   return {
@@ -396,23 +397,13 @@ const joinDeduplicationPlugin = new DeduplicateJoinsPlugin();
 export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearchBuilderOptions) {
   options.withDeleted ||= !!(options.trashedAfter || options.trashedBefore || options.isOffline);
 
-  // An empty array means "no filter", the same as `undefined` - not "match nothing".
-  const hasVisibilityFilter = Array.isArray(options.visibility)
-    ? options.visibility.length > 0
-    : options.visibility !== undefined;
-
+  // A caller-supplied visibility is an explicit override and wins; otherwise the search surface rule
+  // decides, so an elevated session reaches its locked folder and no session ever sees motion parts.
   return kysely
     .withPlugin(joinDeduplicationPlugin)
     .selectFrom('asset')
-    .$if(hasVisibilityFilter, (qb) =>
-      Array.isArray(options.visibility)
-        ? qb.where(
-            'asset.visibility',
-            'in',
-            options.visibility.map((visibility) => sql.lit(visibility)),
-          )
-        : qb.where('asset.visibility', '=', options.visibility!),
-    )
+    .$if(options.visibility !== undefined, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+    .$if(options.visibility === undefined, (qb) => withSurface(qb, Surface.Search, options.ctx))
     .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))
     .$if(!!options.tagIds && options.tagIds.length > 0, (qb) => hasTags(qb, options.tagIds!))
     .$if(options.tagIds === null, (qb) =>
