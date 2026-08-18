@@ -72,6 +72,19 @@ export class WorkflowExecutionService extends BaseService {
     });
   }
 
+  @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.PluginSync, workers: [ImmichWorker.Microservices] })
+  async onWorkflowCheckpointSeed() {
+    // Claim a starting point before any album asset can be added, so the first scan has a checkpoint
+    // older than the rows that triggered it. Seeding lazily inside the scan meant the first batch was
+    // always skipped. Seeding to `now` rather than to the beginning of time is deliberate: existing album
+    // members are not retroactively run through workflows.
+    const checkpoint = await this.systemMetadataRepository.get(SystemMetadataKey.WorkflowCheckpoint);
+    if (!checkpoint) {
+      const { nowId } = await this.syncCheckpointRepository.getNow();
+      await this.systemMetadataRepository.set(SystemMetadataKey.WorkflowCheckpoint, { albumAssetUuid: nowId });
+    }
+  }
+
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.PluginLoad, workers: [ImmichWorker.Microservices] })
   async onPluginLoad() {
     this.jwtSecret = this.cryptoRepository.randomBytesAsText(32);
@@ -349,12 +362,25 @@ export class WorkflowExecutionService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    this.scanning = true;
-
     if (type !== WorkflowScanType.AlbumAsset) {
       return;
     }
 
+    // `scanning` is claimed after the type guard and released in a finally: an early return or a throw
+    // used to leave it set, and every later scan then short-circuited as Skipped for the life of the
+    // process, silently disabling the trigger.
+    this.scanning = true;
+    try {
+      return await this.scanAlbumAssets();
+    } finally {
+      this.scanning = false;
+    }
+  }
+
+  private async scanAlbumAssets() {
+    // Seeded at bootstrap, so a missing checkpoint here means a database older than that change rather
+    // than a fresh install. Seeding it to `now` and returning would skip the very batch that triggered
+    // this scan, which is what used to make the feature look broken on first use.
     let checkpoint = await this.systemMetadataRepository.get(SystemMetadataKey.WorkflowCheckpoint);
     const now = await this.syncCheckpointRepository.getNow();
 
@@ -399,11 +425,15 @@ export class WorkflowExecutionService extends BaseService {
       );
       await this.jobRepository.queueAll(queues.map(({ id }) => ({ name: JobName.WorkflowRun, data: { queueId: id } })));
 
-      checkpoint!.albumAssetUuid = albumAssets[0].updateId;
+      // `getForAlbumAssetV1` orders by updateId ascending, so the batch's high-water mark is its LAST
+      // row. Taking the first advanced the checkpoint by exactly one row per iteration and re-queued the
+      // rest of the batch each time round: N + (N-1) + ... + 1 queue entries for a batch of N, up to about
+      // two million for one full 2000-row page. Invisible in workflow_log because the repeat runs are
+      // no-ops on an already-archived asset, so only workflow_queue showed it.
+      checkpoint!.albumAssetUuid = albumAssets.at(-1)!.updateId;
       await this.systemMetadataRepository.set(SystemMetadataKey.WorkflowCheckpoint, checkpoint);
     }
 
-    this.scanning = false;
     return JobStatus.Success;
   }
 
