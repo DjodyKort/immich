@@ -121,10 +121,17 @@ export class AlbumService extends BaseService {
       }
     }
 
+    const requestedAssetIds = dto.assetIds || [];
+
+    // Permission.AssetShare cannot gate the initial assets of a locked album: it hardcodes
+    // non-elevated access, so every already-locked asset would be filtered out here and the album
+    // would be created silently empty. Permission.AssetUpdate does respect session elevation, and
+    // organising assets the requester already owns, and has already locked, into a locked album
+    // they also own exposes them to nobody else. Same reasoning as addAssets() below.
     const allowedAssetIdsSet = await this.checkAccess({
       auth,
-      permission: Permission.AssetShare,
-      ids: dto.assetIds || [],
+      permission: dto.isLocked ? Permission.AssetUpdate : Permission.AssetShare,
+      ids: requestedAssetIds,
     });
     const assetIds = [...allowedAssetIdsSet].map((id) => id);
 
@@ -132,9 +139,12 @@ export class AlbumService extends BaseService {
     // that are already locked (i.e. already sitting in the locked folder) -- there's no "lock an
     // existing album" conversion path anymore, so every asset given here must already have
     // Locked visibility, or creation is rejected outright.
-    if (dto.isLocked && assetIds.length > 0) {
-      const lockedAssetIds = await this.assetRepository.getLockedAssetIds(assetIds);
-      if (lockedAssetIds.size !== assetIds.length) {
+    // Validate against what was REQUESTED rather than what survived the access filter: checking the
+    // filtered list means a rejected asset is silently dropped instead of failing the request, and
+    // an empty filtered list would skip this check altogether.
+    if (dto.isLocked && requestedAssetIds.length > 0) {
+      const lockedAssetIds = await this.assetRepository.getLockedAssetIds(requestedAssetIds);
+      if (lockedAssetIds.size !== requestedAssetIds.length || assetIds.length !== requestedAssetIds.length) {
         throw new BadRequestException('A locked album can only contain assets that are already locked');
       }
     }
