@@ -60,4 +60,18 @@ class AuthApiRepository extends ApiRepository {
   Future<void> lockPinCode() {
     return _apiService.authenticationApi.lockAuthSession();
   }
+
+  /// Whether the server still considers this session elevated, i.e. inside the window opened by the
+  /// PIN/biometric flow that `LockedGuard` drives.
+  ///
+  /// Fails closed: an unreachable server or a malformed response means "not elevated", never the
+  /// reverse, so a caller that gates locked content on this can only ever under-expose.
+  Future<bool> isSessionElevated() async {
+    try {
+      final status = await _apiService.authenticationApi.getAuthStatus();
+      return status?.isElevated ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

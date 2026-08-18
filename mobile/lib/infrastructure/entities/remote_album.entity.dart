@@ -21,6 +21,11 @@ class RemoteAlbumEntity extends Table with DriftDefaultsMixin {
 
   BoolColumn get isActivityEnabled => boolean().withDefault(const Constant(true))();
 
+  /// Mirrors `album.isLocked` from sync. A locked album lives behind the locked folder: the server
+  /// sends the flag and leaves enforcement to each client, so without this column the field is
+  /// dropped on ingest and a locked album arrives looking ordinary.
+  BoolColumn get isLocked => boolean().withDefault(const Constant(false))();
+
   IntColumn get order => intEnum<AlbumAssetOrder>()();
 
   @override

@@ -86,6 +86,29 @@ void main() {
       expect(albums.first.id, album.id);
       expect(albums.first.assetCount, 0);
     });
+
+    // A locked album belongs to the locked folder. The server sends `album.isLocked` and leaves
+    // enforcement to each client, so an unelevated session must not even learn the album exists.
+    test('excludes locked albums when the session is not elevated', () async {
+      final user = await ctx.newUser();
+      final normal = await ctx.newRemoteAlbum(ownerId: user.id);
+      await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+
+      final albums = await sut.getAll();
+
+      expect(albums.map((album) => album.id), [normal.id]);
+    });
+
+    test('includes locked albums when the session is elevated', () async {
+      final user = await ctx.newUser();
+      final normal = await ctx.newRemoteAlbum(ownerId: user.id);
+      final locked = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+
+      final albums = await sut.getAll(isElevated: true);
+
+      expect(albums.map((album) => album.id), containsAll([normal.id, locked.id]));
+      expect(albums, hasLength(2));
+    });
   });
 
   group('get', () {

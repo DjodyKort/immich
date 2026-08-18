@@ -12,6 +12,7 @@ import 'package:immich_mobile/infrastructure/entities/remote_album_user.entity.d
 import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.dart';
 import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
 enum SortRemoteAlbumsBy { id, updatedAt }
 
@@ -19,7 +20,16 @@ class DriftRemoteAlbumRepository extends DriftDatabaseRepository {
   final Drift _db;
   const DriftRemoteAlbumRepository(this._db) : super(_db);
 
-  Future<List<RemoteAlbum>> getAll({Set<SortRemoteAlbumsBy> sortBy = const {SortRemoteAlbumsBy.updatedAt}}) {
+  /// Lists albums for the UI.
+  ///
+  /// [isElevated] says whether the caller's session has cleared the PIN/biometric flow; it is threaded
+  /// in rather than read from global state here, mirroring how the server passes a `PolicyContext` into
+  /// a query. It defaults to the restrictive branch, so an omission hides locked albums rather than
+  /// exposing them.
+  Future<List<RemoteAlbum>> getAll({
+    Set<SortRemoteAlbumsBy> sortBy = const {SortRemoteAlbumsBy.updatedAt},
+    bool isElevated = false,
+  }) {
     // Count non-trashed assets via the joined asset table. Filtering trashed assets in the
     // join condition (instead of the where clause) keeps albums whose assets are all trashed
     // in the result, the same way truly empty albums are kept
@@ -55,6 +65,11 @@ class DriftRemoteAlbumRepository extends DriftDatabaseRepository {
       ..addColumns([_db.userEntity.name, _db.userEntity.id])
       ..addColumns([_db.remoteAlbumUserEntity.userId.count(distinct: true)])
       ..groupBy([_db.remoteAlbumEntity.id]);
+
+    final listable = VisibilityPolicy.albumListing(_db.remoteAlbumEntity, isElevated: isElevated);
+    if (listable != null) {
+      query.where(listable);
+    }
 
     if (sortBy.isNotEmpty) {
       final orderings = <OrderingTerm>[];
