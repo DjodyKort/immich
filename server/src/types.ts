@@ -29,6 +29,7 @@ import {
   SystemMetadataKey,
   TranscodeTarget,
   UserMetadataKey,
+  WorkflowScanType,
 } from 'src/enum';
 import { Mocked } from 'vitest';
 
@@ -426,6 +427,8 @@ export type JobItem =
 
   // Workflow
   | { name: JobName.WorkflowAssetTrigger; data: { workflowId: string; assetId: string } }
+  | { name: JobName.WorkflowRun; data: { queueId: string } }
+  | { name: JobName.WorkflowScan; data: { type: WorkflowScanType } }
 
   // Integrity
   | { name: JobName.IntegrityUntrackedFilesQueueAll; data?: IIntegrityJob }
@@ -539,6 +542,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.VersionCheckState]: VersionCheckMetadata;
   [SystemMetadataKey.MemoriesState]: MemoriesState;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
+  [SystemMetadataKey.WorkflowCheckpoint]: { albumAssetUuid: string };
 }
 
 export type UserPreferences = {
