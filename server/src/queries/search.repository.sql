@@ -282,13 +282,13 @@ with recursive
         inner join "asset" on "asset"."id" = "asset_exif"."assetId"
       where
         "asset"."ownerId" = any ($1::uuid[])
-        and "asset"."visibility" = $2
-        and "asset"."type" = $3
+        and "asset"."visibility" in ('timeline')
+        and "asset"."type" = $2
         and "asset"."deletedAt" is null
       order by
         "city"
       limit
-        $4
+        $3
     )
     union all
     (
@@ -305,15 +305,15 @@ with recursive
             "asset_exif"
             inner join "asset" on "asset"."id" = "asset_exif"."assetId"
           where
-            "asset"."ownerId" = any ($5::uuid[])
-            and "asset"."visibility" = $6
-            and "asset"."type" = $7
+            "asset"."ownerId" = any ($4::uuid[])
+            and "asset"."visibility" in ('timeline')
+            and "asset"."type" = $5
             and "asset"."deletedAt" is null
             and "asset_exif"."city" > "cte"."city"
           order by
             "city"
           limit
-            $8
+            $6
         ) as "l" on true
     )
   )
@@ -362,10 +362,10 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "visibility" = $2
+  and "asset"."visibility" in ('timeline')
   and "deletedAt" is null
   and "state" is not null
-  and "state" != $3
+  and "state" != $2
 
 -- SearchRepository.getCities
 select distinct
@@ -375,10 +375,10 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "visibility" = $2
+  and "asset"."visibility" in ('timeline')
   and "deletedAt" is null
   and "city" is not null
-  and "city" != $3
+  and "city" != $2
 
 -- SearchRepository.getCameraMakes
 select distinct
@@ -388,10 +388,10 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "visibility" = $2
+  and "asset"."visibility" in ('timeline')
   and "deletedAt" is null
   and "make" is not null
-  and "make" != $3
+  and "make" != $2
 
 -- SearchRepository.getCameraModels
 select distinct
@@ -401,10 +401,10 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "visibility" = $2
+  and "asset"."visibility" in ('timeline')
   and "deletedAt" is null
   and "model" is not null
-  and "model" != $3
+  and "model" != $2
 
 -- SearchRepository.getCameraLensModels
 select distinct
@@ -414,10 +414,10 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "visibility" = $2
+  and "asset"."visibility" in ('timeline')
   and "deletedAt" is null
   and "lensModel" is not null
-  and "lensModel" != $3
+  and "lensModel" != $2
 
 -- SearchRepository.searchMetadataV3 (baseline)
 select

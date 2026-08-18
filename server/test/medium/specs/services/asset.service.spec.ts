@@ -17,6 +17,7 @@ import { StorageRepository } from 'src/repositories/storage.repository';
 import { UserRepository } from 'src/repositories/user.repository';
 import { DB } from 'src/schema';
 import { AssetService } from 'src/services/asset.service';
+import { forSystem } from 'src/utils/visibility-policy';
 import { newMediumService } from 'test/medium.factory';
 import { factory } from 'test/small.factory';
 import { getKyselyDB } from 'test/utils';
@@ -130,9 +131,9 @@ describe(AssetService.name, () => {
       const auth = factory.auth({ user: { id: user.id } });
       await sut.copy(auth, { sourceId: oldAsset.id, targetId: newAsset.id });
 
-      await expect(stackRepo.getById(oldAsset.id)).resolves.toEqual(undefined);
+      await expect(stackRepo.getById(oldAsset.id, forSystem())).resolves.toEqual(undefined);
 
-      const newStack = await stackRepo.getById(newStackId);
+      const newStack = await stackRepo.getById(newStackId, forSystem());
       expect(newStack).toEqual(
         expect.objectContaining({
           primaryAssetId: newAsset.id,
@@ -163,7 +164,7 @@ describe(AssetService.name, () => {
       const auth = factory.auth({ user: { id: user.id } });
       await sut.copy(auth, { sourceId: oldAsset.id, targetId: newAsset.id });
 
-      const stack = await stackRepo.getById(stackId);
+      const stack = await stackRepo.getById(stackId, forSystem());
       expect(stack).toEqual(
         expect.objectContaining({
           primaryAssetId: oldAsset.id,
@@ -266,7 +267,7 @@ describe(AssetService.name, () => {
       await sut.handleAssetDeletion({ id: asset1.id, deleteOnDisk: true });
 
       // stack is deleted as well
-      await expect(stackRepo.getById(stack.id)).resolves.toBe(undefined);
+      await expect(stackRepo.getById(stack.id, forSystem())).resolves.toBe(undefined);
     });
 
     it('should delete a stacked primary asset (3 assets)', async () => {
@@ -284,7 +285,9 @@ describe(AssetService.name, () => {
       await sut.handleAssetDeletion({ id: asset1.id, deleteOnDisk: true });
 
       // new primary asset is picked
-      await expect(ctx.get(StackRepository).getById(stack.id)).resolves.toMatchObject({ primaryAssetId: asset2.id });
+      await expect(ctx.get(StackRepository).getById(stack.id, forSystem())).resolves.toMatchObject({
+        primaryAssetId: asset2.id,
+      });
     });
 
     it('should delete a stacked primary asset (3 trashed assets)', async () => {
@@ -307,7 +310,7 @@ describe(AssetService.name, () => {
       await sut.handleAssetDeletion({ id: asset1.id, deleteOnDisk: true });
 
       // stack is deleted as well
-      await expect(ctx.get(StackRepository).getById(stack.id)).resolves.toBe(undefined);
+      await expect(ctx.get(StackRepository).getById(stack.id, forSystem())).resolves.toBe(undefined);
     });
 
     it('should not delete offline assets', async () => {

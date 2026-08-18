@@ -59,6 +59,7 @@ import { TagRepository } from 'src/repositories/tag.repository';
 import { TelemetryRepository } from 'src/repositories/telemetry.repository';
 import { UserRepository } from 'src/repositories/user.repository';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository';
+import { ViewRepository } from 'src/repositories/view-repository';
 import { WorkflowRepository } from 'src/repositories/workflow.repository';
 import { DB } from 'src/schema';
 import { AlbumTable } from 'src/schema/tables/album.table';
@@ -80,6 +81,7 @@ import { MetadataService } from 'src/services/metadata.service';
 import { SyncService } from 'src/services/sync.service';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types';
 import { getConfig, updateConfig } from 'src/utils/config';
+import { forSystem } from 'src/utils/visibility-policy';
 import { mockEnvData } from 'test/repositories/config.repository.mock';
 import { newTelemetryRepositoryMock } from 'test/repositories/telemetry.repository.mock';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory';
@@ -185,7 +187,7 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
       ...dto,
     };
 
-    const result = await this.get(StackRepository).create(stack, assetIds);
+    const result = await this.get(StackRepository).create(stack, assetIds, forSystem());
     return { stack: { ...stack, primaryAssetId: assetIds[0] }, result };
   }
 
@@ -214,7 +216,7 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
 
   async newMemory(dto: Partial<Insertable<MemoryTable>> = {}) {
     const memory = mediumFactory.memoryInsert(dto);
-    const result = await this.get(MemoryRepository).create(memory, new Set<string>());
+    const result = await this.get(MemoryRepository).create(memory, new Set<string>(), forSystem());
     return { memory, result };
   }
 
@@ -235,6 +237,7 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
       assetIds ?? [],
       [{ userId: ownerId, role: AlbumUserRole.Owner }],
       ownerId,
+      forSystem(),
     );
     return { album, result };
   }
@@ -465,6 +468,7 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
     case SystemMetadataRepository:
     case UserRepository:
     case VersionHistoryRepository:
+    case ViewRepository:
     case WorkflowRepository: {
       return new key(db) as InstanceType<T>;
     }

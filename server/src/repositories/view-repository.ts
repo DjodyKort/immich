@@ -1,21 +1,21 @@
 import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetVisibility } from 'src/enum';
 import { DB } from 'src/schema';
 import { asUuid, withExif } from 'src/utils/database';
+import { PolicyContext, Surface, surfacePredicate } from 'src/utils/visibility-policy';
 
 export class ViewRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async getUniqueOriginalPaths(userId: string) {
+  @GenerateSql({ params: [DummyValue.UUID, { elevated: false }] })
+  async getUniqueOriginalPaths(userId: string, ctx: PolicyContext) {
     const results = await this.db
       .selectFrom('asset')
       .select((eb) => eb.fn<string>('substring', ['asset.originalPath', eb.val('^(.*/)[^/]*$')]).as('directoryPath'))
       .distinct()
       .where('ownerId', '=', asUuid(userId))
-      .where('visibility', '=', AssetVisibility.Timeline)
+      .where((eb) => surfacePredicate(eb, Surface.FolderView, ctx))
       .where('deletedAt', 'is', null)
       .where('fileCreatedAt', 'is not', null)
       .where('fileModifiedAt', 'is not', null)
@@ -26,8 +26,8 @@ export class ViewRepository {
     return results.map((row) => row.directoryPath.replaceAll(/\/$/g, ''));
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
-  async getAssetsByOriginalPath(userId: string, partialPath: string) {
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, { elevated: false }] })
+  async getAssetsByOriginalPath(userId: string, partialPath: string, ctx: PolicyContext) {
     const normalizedPath = partialPath.replaceAll(/\/$/g, '');
 
     return this.db
@@ -35,7 +35,7 @@ export class ViewRepository {
       .selectAll('asset')
       .$call(withExif)
       .where('ownerId', '=', asUuid(userId))
-      .where('visibility', '=', AssetVisibility.Timeline)
+      .where((eb) => surfacePredicate(eb, Surface.FolderView, ctx))
       .where('deletedAt', 'is', null)
       .where('fileCreatedAt', 'is not', null)
       .where('fileModifiedAt', 'is not', null)

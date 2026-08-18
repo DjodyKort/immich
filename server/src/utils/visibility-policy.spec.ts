@@ -1,5 +1,12 @@
 import { AssetVisibility } from 'src/enum';
-import { forOtherUser, forSharing, forViewer, getAdmittedVisibility, Surface } from 'src/utils/visibility-policy';
+import {
+  forOtherUser,
+  forSharing,
+  forSystem,
+  forViewer,
+  getAdmittedVisibility,
+  Surface,
+} from 'src/utils/visibility-policy';
 import { factory } from 'test/small.factory';
 import { describe, expect, it } from 'vitest';
 
@@ -41,7 +48,7 @@ describe('visibility policy', () => {
   });
 
   describe('rules', () => {
-    it.each([
+    const RULES: Array<[Surface, AssetVisibility[], AssetVisibility[]]> = [
       [Surface.Timeline, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
       [Surface.AlbumTimeline, [AssetVisibility.Archive, AssetVisibility.Timeline], [AssetVisibility.Locked]],
       [Surface.Search, [AssetVisibility.Archive, AssetVisibility.Timeline], [AssetVisibility.Locked]],
@@ -51,9 +58,24 @@ describe('visibility policy', () => {
       [Surface.AlbumMap, [AssetVisibility.Archive, AssetVisibility.Timeline], [AssetVisibility.Locked]],
       [Surface.GlobalMap, [AssetVisibility.Timeline], []],
       [Surface.TimelineDownload, [AssetVisibility.Archive, AssetVisibility.Timeline], [AssetVisibility.Locked]],
-    ])('%s admits the documented set', (surface, base, elevatedAdds) => {
+      [Surface.People, [AssetVisibility.Timeline], []],
+      [Surface.Memories, [AssetVisibility.Timeline], []],
+      [Surface.FolderView, [AssetVisibility.Timeline], []],
+      [Surface.SearchSuggestions, [AssetVisibility.Timeline], []],
+      [Surface.AlbumContents, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
+      [Surface.Duplicates, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
+      [Surface.StackContents, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
+    ];
+
+    it.each(RULES)('%s admits the documented set', (surface, base, elevatedAdds) => {
       expect(getAdmittedVisibility(surface, notElevated)).toEqual(base);
       expect(getAdmittedVisibility(surface, elevated)).toEqual([...base, ...elevatedAdds]);
+    });
+
+    it('should assert a rule for every surface, so a new one cannot be added without a row', () => {
+      // The it.each table above is the reviewable copy of POLICY. Without this, adding a Surface and
+      // forgetting its row would leave the new rule unasserted.
+      expect(new Set(RULES.map(([surface]) => surface))).toEqual(new Set(Object.values(Surface)));
     });
 
     it('should leave elevation a no-op on the main timeline and the global map', () => {
@@ -88,9 +110,10 @@ describe('visibility policy', () => {
       expect(forViewer(factory.auth({ session: { hasElevatedPermission: true } }))).toEqual({ elevated: true });
     });
 
-    it('should never elevate a sharing or other-user context', () => {
+    it('should never elevate a sharing, other-user, or system context', () => {
       expect(forSharing()).toEqual({ elevated: false });
       expect(forOtherUser()).toEqual({ elevated: false });
+      expect(forSystem()).toEqual({ elevated: false });
     });
   });
 });

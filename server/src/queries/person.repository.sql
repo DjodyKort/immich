@@ -30,7 +30,7 @@ from
   "person"
   inner join "asset_face" on "asset_face"."personId" = "person"."id"
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
-  and "asset"."visibility" = 'timeline'
+  and "asset"."visibility" in ('timeline')
   and "asset"."deletedAt" is null
 where
   "person"."ownerId" = $1
@@ -242,7 +242,7 @@ select
 from
   "asset_face"
   left join "asset" on "asset"."id" = "asset_face"."assetId"
-  and "asset"."visibility" = 'timeline'
+  and "asset"."visibility" in ('timeline')
   and "asset"."deletedAt" is null
 where
   "asset_face"."deletedAt" is null
@@ -276,7 +276,7 @@ where
           "asset"
         where
           "asset"."id" = "asset_face"."assetId"
-          and "asset"."visibility" = 'timeline'
+          and "asset"."visibility" in ('timeline')
           and "asset"."deletedAt" is null
       )
   )

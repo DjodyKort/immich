@@ -36,6 +36,7 @@ import { isAssetChecksumConstraint } from 'src/utils/database';
 import { getFilenameExtension, getFileNameWithoutExtension, ImmichFileResponse } from 'src/utils/file';
 import { mimeTypes } from 'src/utils/mime-types';
 import { fromChecksum } from 'src/utils/request';
+import { forSharing } from 'src/utils/visibility-policy';
 
 export interface AssetMediaRedirectResponse {
   targetSize: AssetMediaSize | 'original';
@@ -351,7 +352,7 @@ export class AssetMediaService extends BaseService {
       return;
     }
 
-    const album = await this.albumRepository.getById(sharedLink.albumId, { withAssets: false });
+    const album = await this.albumRepository.getById(sharedLink.albumId, { withAssets: false }, forSharing());
     if (!album) {
       return;
     }

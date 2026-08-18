@@ -19,7 +19,7 @@ import {
   withSearchOrder,
 } from 'src/utils/database';
 import { paginationHelper } from 'src/utils/pagination';
-import { PolicyContext } from 'src/utils/visibility-policy';
+import { PolicyContext, Surface, surfacePredicate } from 'src/utils/visibility-policy';
 import z from 'zod';
 
 export interface SearchAssetIdOptions {
@@ -408,8 +408,8 @@ export class SearchRepository {
       .execute();
   }
 
-  @GenerateSql({ params: [[DummyValue.UUID]] })
-  getAssetsByCity(userIds: string[]) {
+  @GenerateSql({ params: [[DummyValue.UUID], { elevated: false }] })
+  getAssetsByCity(userIds: string[], ctx: PolicyContext) {
     return this.db
       .withRecursive('cte', (qb) => {
         const base = qb
@@ -417,7 +417,7 @@ export class SearchRepository {
           .select(['city', 'assetId'])
           .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
           .where('asset.ownerId', '=', anyUuid(userIds))
-          .where('asset.visibility', '=', AssetVisibility.Timeline)
+          .where((eb) => surfacePredicate(eb, Surface.SearchSuggestions, ctx))
           .where('asset.type', '=', AssetType.Image)
           .where('asset.deletedAt', 'is', null)
           .orderBy('city')
@@ -433,7 +433,7 @@ export class SearchRepository {
                 .select(['city', 'assetId'])
                 .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
                 .where('asset.ownerId', '=', anyUuid(userIds))
-                .where('asset.visibility', '=', AssetVisibility.Timeline)
+                .where((eb) => surfacePredicate(eb, Surface.SearchSuggestions, ctx))
                 .where('asset.type', '=', AssetType.Image)
                 .where('asset.deletedAt', 'is', null)
                 .whereRef('asset_exif.city', '>', 'cte.city')
@@ -467,23 +467,23 @@ export class SearchRepository {
       .execute();
   }
 
-  async getCountries(userIds: string[]): Promise<string[]> {
-    const res = await this.getExifField('country', userIds).execute();
+  async getCountries(userIds: string[], ctx: PolicyContext): Promise<string[]> {
+    const res = await this.getExifField('country', userIds, ctx).execute();
     return res.map((row) => row.country!);
   }
 
-  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING] })
-  async getStates(userIds: string[], { country }: GetStatesOptions): Promise<string[]> {
-    const res = await this.getExifField('state', userIds)
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, { elevated: false }] })
+  async getStates(userIds: string[], { country }: GetStatesOptions, ctx: PolicyContext): Promise<string[]> {
+    const res = await this.getExifField('state', userIds, ctx)
       .$if(!!country, (qb) => qb.where('country', '=', country!))
       .execute();
 
     return res.map((row) => row.state!);
   }
 
-  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING] })
-  async getCities(userIds: string[], { country, state }: GetCitiesOptions): Promise<string[]> {
-    const res = await this.getExifField('city', userIds)
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING, { elevated: false }] })
+  async getCities(userIds: string[], { country, state }: GetCitiesOptions, ctx: PolicyContext): Promise<string[]> {
+    const res = await this.getExifField('city', userIds, ctx)
       .$if(!!country, (qb) => qb.where('country', '=', country!))
       .$if(!!state, (qb) => qb.where('state', '=', state!))
       .execute();
@@ -491,9 +491,13 @@ export class SearchRepository {
     return res.map((row) => row.city!);
   }
 
-  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING] })
-  async getCameraMakes(userIds: string[], { model, lensModel }: GetCameraMakesOptions): Promise<string[]> {
-    const res = await this.getExifField('make', userIds)
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING, { elevated: false }] })
+  async getCameraMakes(
+    userIds: string[],
+    { model, lensModel }: GetCameraMakesOptions,
+    ctx: PolicyContext,
+  ): Promise<string[]> {
+    const res = await this.getExifField('make', userIds, ctx)
       .$if(!!model, (qb) => qb.where('model', '=', model!))
       .$if(!!lensModel, (qb) => qb.where('lensModel', '=', lensModel!))
       .execute();
@@ -501,9 +505,13 @@ export class SearchRepository {
     return res.map((row) => row.make!);
   }
 
-  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING] })
-  async getCameraModels(userIds: string[], { make, lensModel }: GetCameraModelsOptions): Promise<string[]> {
-    const res = await this.getExifField('model', userIds)
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, DummyValue.STRING, { elevated: false }] })
+  async getCameraModels(
+    userIds: string[],
+    { make, lensModel }: GetCameraModelsOptions,
+    ctx: PolicyContext,
+  ): Promise<string[]> {
+    const res = await this.getExifField('model', userIds, ctx)
       .$if(!!make, (qb) => qb.where('make', '=', make!))
       .$if(!!lensModel, (qb) => qb.where('lensModel', '=', lensModel!))
       .execute();
@@ -511,9 +519,13 @@ export class SearchRepository {
     return res.map((row) => row.model!);
   }
 
-  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING] })
-  async getCameraLensModels(userIds: string[], { make, model }: GetCameraLensModelsOptions): Promise<string[]> {
-    const res = await this.getExifField('lensModel', userIds)
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.STRING, { elevated: false }] })
+  async getCameraLensModels(
+    userIds: string[],
+    { make, model }: GetCameraLensModelsOptions,
+    ctx: PolicyContext,
+  ): Promise<string[]> {
+    const res = await this.getExifField('lensModel', userIds, ctx)
       .$if(!!make, (qb) => qb.where('make', '=', make!))
       .$if(!!model, (qb) => qb.where('model', '=', model!))
       .execute();
@@ -539,14 +551,18 @@ export class SearchRepository {
       .executeTakeFirstOrThrow();
   }
 
-  private getExifField(field: 'city' | 'state' | 'country' | 'make' | 'model' | 'lensModel', userIds: string[]) {
+  private getExifField(
+    field: 'city' | 'state' | 'country' | 'make' | 'model' | 'lensModel',
+    userIds: string[],
+    ctx: PolicyContext,
+  ) {
     return this.db
       .selectFrom('asset_exif')
       .select(field)
       .distinctOn(field)
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
       .where('ownerId', '=', anyUuid(userIds))
-      .where('visibility', '=', AssetVisibility.Timeline)
+      .where((eb) => surfacePredicate(eb, Surface.SearchSuggestions, ctx))
       .where('deletedAt', 'is', null)
       .where(field, 'is not', null)
       .where(field, '!=', '');

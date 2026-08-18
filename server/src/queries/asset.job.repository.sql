@@ -389,7 +389,8 @@ from
   inner join "asset_job_status" as "job_status" on "job_status"."assetId" = "asset"."id"
 where
   "asset"."deletedAt" is null
-  and "asset"."visibility" in ('archive', 'timeline')
+  and "asset"."visibility" != 'hidden'
+  and "asset"."visibility" != 'locked'
   and "job_status"."duplicatesDetectedAt" is null
 
 -- AssetJobRepository.streamForEncodeClip
@@ -399,7 +400,7 @@ from
   "asset"
   inner join "asset_job_status" as "job_status" on "assetId" = "asset"."id"
 where
-  "asset"."visibility" != $1
+  "asset"."visibility" != 'hidden'
   and "asset"."deletedAt" is null
   and exists (
     select
@@ -407,7 +408,7 @@ where
       "asset_file"
     where
       "assetId" = "asset"."id"
-      and "asset_file"."type" = $2
+      and "asset_file"."type" = $1
   )
   and not exists (
     select
@@ -751,7 +752,7 @@ from
 where
   "asset"."deletedAt" is null
   and "asset"."id" = $2
-  and "asset"."visibility" != $3
+  and "asset"."visibility" != 'hidden'
 
 -- AssetJobRepository.streamForStorageTemplateJob
 select
@@ -792,7 +793,7 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
   "asset"."deletedAt" is null
-  and "asset"."visibility" != $2
+  and "asset"."visibility" != 'hidden'
 
 -- AssetJobRepository.streamForDeletedJob
 select
@@ -826,7 +827,7 @@ from
   "asset"
   inner join "asset_job_status" as "job_status" on "assetId" = "asset"."id"
 where
-  "asset"."visibility" != $1
+  "asset"."visibility" != 'hidden'
   and "asset"."deletedAt" is null
   and exists (
     select
@@ -834,7 +835,7 @@ where
       "asset_file"
     where
       "assetId" = "asset"."id"
-      and "asset_file"."type" = $2
+      and "asset_file"."type" = $1
   )
 order by
   "asset"."fileCreatedAt" desc
@@ -848,7 +849,7 @@ from
 where
   "asset_job_status"."ocrAt" is null
   and "asset"."deletedAt" is null
-  and "asset"."visibility" != $1
+  and "asset"."visibility" != 'hidden'
 
 -- AssetJobRepository.streamForMigrationJob
 select

@@ -2,6 +2,7 @@ import { Kysely } from 'kysely';
 import { SyncEntityType, SyncRequestType } from 'src/enum';
 import { StackRepository } from 'src/repositories/stack.repository';
 import { DB } from 'src/schema';
+import { forSystem } from 'src/utils/visibility-policy';
 import { SyncTestContext } from 'test/medium.factory';
 import { getKyselyDB } from 'test/utils';
 
@@ -80,7 +81,7 @@ describe(SyncEntityType.StackV1, () => {
     ]);
     await ctx.syncAckAll(auth, response);
 
-    await stackRepo.update(stack.id, { primaryAssetId: asset2.id });
+    await stackRepo.update(stack.id, { primaryAssetId: asset2.id }, forSystem());
     const newResponse = await ctx.syncStream(auth, [SyncRequestType.StacksV1]);
     expect(newResponse).toEqual([
       expect.objectContaining({ type: SyncEntityType.StackV1 }),

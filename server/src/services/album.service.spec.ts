@@ -240,6 +240,7 @@ describe(AlbumService.name, () => {
           { userId: albumUser.userId, role: AlbumUserRole.Editor },
         ],
         owner.id,
+        { elevated: false },
       );
 
       expect(mocks.user.get).toHaveBeenCalledWith(albumUser.userId, {});
@@ -296,6 +297,7 @@ describe(AlbumService.name, () => {
         [assetId],
         [{ userId: owner.id, role: AlbumUserRole.Owner }, albumUser],
         owner.id,
+        { elevated: false },
       );
 
       expect(mocks.user.get).toHaveBeenCalledWith(albumUser.userId, {});
@@ -351,6 +353,7 @@ describe(AlbumService.name, () => {
         [assetId],
         [{ userId: owner.id, role: AlbumUserRole.Owner }],
         owner.id,
+        { elevated: false },
       );
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([assetId, 'asset-2']), {
         elevated: false,
@@ -375,6 +378,7 @@ describe(AlbumService.name, () => {
         [],
         [{ userId: auth.user.id, role: AlbumUserRole.Owner }],
         auth.user.id,
+        { elevated: false },
       );
     });
   });
@@ -600,7 +604,7 @@ describe(AlbumService.name, () => {
 
       expect(mocks.albumUser.delete).toHaveBeenCalledTimes(1);
       expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: album.id, userId });
-      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, owner.id);
+      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, { elevated: false }, owner.id);
     });
 
     it('should prevent removing a shared user from a not-owned album (shared with auth user)', async () => {
@@ -704,7 +708,7 @@ describe(AlbumService.name, () => {
 
       await sut.get(AuthFactory.create(owner), album.id);
 
-      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, owner.id);
+      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, { elevated: false }, owner.id);
       expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([album.id]), {
         elevated: false,
       });
@@ -727,7 +731,12 @@ describe(AlbumService.name, () => {
       const auth = AuthFactory.from().sharedLink().build();
       await sut.get(auth, album.id);
 
-      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, auth.user.id);
+      expect(mocks.album.getById).toHaveBeenCalledWith(
+        album.id,
+        { withAssets: false },
+        { elevated: false },
+        auth.user.id,
+      );
       expect(mocks.access.album.checkSharedLinkAccess).toHaveBeenCalledWith(auth.sharedLink!.id, new Set([album.id]));
     });
 
@@ -748,7 +757,7 @@ describe(AlbumService.name, () => {
 
       await sut.get(AuthFactory.create(user), album.id);
 
-      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, user.id);
+      expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, { elevated: false }, user.id);
       expect(mocks.access.album.checkSharedAlbumAccess).toHaveBeenCalledWith(
         user.id,
         new Set([album.id]),

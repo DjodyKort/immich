@@ -157,7 +157,8 @@ with
       "asset"
       inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
     where
-      "asset"."visibility" in ('archive', 'timeline')
+      "asset"."visibility" != 'hidden'
+      and "asset"."visibility" != 'locked'
       and "asset"."ownerId" = any ($2::uuid[])
       and "asset"."deletedAt" is null
       and "asset"."type" = $3

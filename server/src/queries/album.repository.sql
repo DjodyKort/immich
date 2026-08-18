@@ -435,6 +435,7 @@ select
           "album_user"."albumId" = "album"."id"
         order by
           "album_user"."role",
+          "album_user"."userId" = $5 desc,
           "user"."name" asc
       ) as agg
   ) as "albumUsers",

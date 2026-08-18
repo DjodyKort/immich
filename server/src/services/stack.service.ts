@@ -1,19 +1,23 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
-import { StackCreateDto, StackResponseDto, StackSearchDto, StackUpdateDto, mapStack } from 'src/dtos/stack.dto';
+import { mapStack, StackCreateDto, StackResponseDto, StackSearchDto, StackUpdateDto } from 'src/dtos/stack.dto';
 import { Permission } from 'src/enum';
 import { BaseService } from 'src/services/base.service';
 import { findOrFail } from 'src/utils/misc';
+import { forViewer, PolicyContext } from 'src/utils/visibility-policy';
 import { UUIDAssetIDParamDto } from 'src/validation';
 
 @Injectable()
 export class StackService extends BaseService {
   async search(auth: AuthDto, dto: StackSearchDto): Promise<StackResponseDto[]> {
-    const stacks = await this.stackRepository.search({
-      ownerId: auth.user.id,
-      primaryAssetId: dto.primaryAssetId,
-    });
+    const stacks = await this.stackRepository.search(
+      {
+        ownerId: auth.user.id,
+        primaryAssetId: dto.primaryAssetId,
+      },
+      forViewer(auth),
+    );
 
     return stacks.map((stack) => mapStack(stack, { auth }));
   }
@@ -21,7 +25,7 @@ export class StackService extends BaseService {
   async create(auth: AuthDto, dto: StackCreateDto): Promise<StackResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.assetIds });
 
-    const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds);
+    const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds, forViewer(auth));
 
     await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
 
@@ -30,18 +34,22 @@ export class StackService extends BaseService {
 
   async get(auth: AuthDto, id: string): Promise<StackResponseDto> {
     await this.requireAccess({ auth, permission: Permission.StackRead, ids: [id] });
-    const stack = await this.findOrFail(id);
+    const stack = await this.findOrFail(id, forViewer(auth));
     return mapStack(stack, { auth });
   }
 
   async update(auth: AuthDto, id: string, dto: StackUpdateDto): Promise<StackResponseDto> {
     await this.requireAccess({ auth, permission: Permission.StackUpdate, ids: [id] });
-    const stack = await this.findOrFail(id);
+    const stack = await this.findOrFail(id, forViewer(auth));
     if (dto.primaryAssetId && stack.assets.every(({ id }) => id !== dto.primaryAssetId)) {
       throw new BadRequestException('Primary asset must be in the stack');
     }
 
-    const updatedStack = await this.stackRepository.update(id, { id, primaryAssetId: dto.primaryAssetId });
+    const updatedStack = await this.stackRepository.update(
+      id,
+      { id, primaryAssetId: dto.primaryAssetId },
+      forViewer(auth),
+    );
 
     await this.eventRepository.emit('StackUpdate', { stackId: id, userId: auth.user.id });
 
@@ -78,7 +86,7 @@ export class StackService extends BaseService {
     await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
   }
 
-  private findOrFail(id: string) {
-    return findOrFail(() => this.stackRepository.getById(id), 'Asset stack');
+  private findOrFail(id: string, ctx: PolicyContext) {
+    return findOrFail(() => this.stackRepository.getById(id, ctx), 'Asset stack');
   }
 }

@@ -44,6 +44,7 @@ import { ImmichFileResponse } from 'src/utils/file';
 import { mimeTypes } from 'src/utils/mime-types';
 import { batched, findOrFail, isFacialRecognitionEnabled } from 'src/utils/misc';
 import { Point, transformPoints } from 'src/utils/transform';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class PersonService extends BaseService {
@@ -62,11 +63,16 @@ export class PersonService extends BaseService {
       }
       closestFaceAssetId = person.faceAssetId;
     }
-    const { items, hasNextPage } = await this.personRepository.getAllForUser(pagination, auth.user.id, {
-      withHidden,
-      closestFaceAssetId,
-    });
-    const { total, hidden } = await this.personRepository.getNumberOfPeople(auth.user.id);
+    const { items, hasNextPage } = await this.personRepository.getAllForUser(
+      pagination,
+      auth.user.id,
+      forViewer(auth),
+      {
+        withHidden,
+        closestFaceAssetId,
+      },
+    );
+    const { total, hidden } = await this.personRepository.getNumberOfPeople(auth.user.id, forViewer(auth));
 
     return {
       people: items.map((person) => mapPerson(person)),
@@ -156,7 +162,7 @@ export class PersonService extends BaseService {
 
   async getStatistics(auth: AuthDto, id: string): Promise<PersonStatisticsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [id] });
-    return this.personRepository.getStatistics(id);
+    return this.personRepository.getStatistics(id, forViewer(auth));
   }
 
   async getThumbnail(auth: AuthDto, id: string): Promise<ImmichFileResponse> {

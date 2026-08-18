@@ -18,8 +18,8 @@ import { AlbumUserRole } from 'src/enum';
 import { DB } from 'src/schema';
 import { AlbumTable } from 'src/schema/tables/album.table';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { asUuid, dummy, withDefaultVisibility } from 'src/utils/database';
-import { PolicyContext, Surface, withSurface } from 'src/utils/visibility-policy';
+import { asUuid, dummy } from 'src/utils/database';
+import { PolicyContext, Surface, surfacePredicate, withSurface } from 'src/utils/visibility-policy';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -53,7 +53,7 @@ const withSharedLink = (eb: ExpressionBuilder<DB, 'album'>) =>
     eb.selectFrom('shared_link').selectAll('shared_link').whereRef('shared_link.albumId', '=', 'album.id'),
   ).as('sharedLinks');
 
-const withAssets = (eb: ExpressionBuilder<DB, 'album'>) => {
+const withAssets = (eb: ExpressionBuilder<DB, 'album'>, ctx: PolicyContext) => {
   return eb
     .selectFrom((eb) =>
       eb
@@ -66,7 +66,7 @@ const withAssets = (eb: ExpressionBuilder<DB, 'album'>) => {
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .whereRef('album_asset.albumId', '=', 'album.id')
         .where('asset.deletedAt', 'is', null)
-        .$call(withDefaultVisibility)
+        .where((eb) => surfacePredicate(eb, Surface.AlbumContents, ctx))
         .orderBy('asset.fileCreatedAt', 'desc')
         .as('asset'),
     )
@@ -87,8 +87,8 @@ const isAlbumOwned = (ownerId: string) => (eb: ExpressionBuilder<DB, 'album'>) =
 export class AlbumRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  @GenerateSql({ params: [DummyValue.UUID, { withAssets: true }, DummyValue.UUID] })
-  getById(id: string, options: AlbumInfoOptions, authUserId?: string) {
+  @GenerateSql({ params: [DummyValue.UUID, { withAssets: true }, { elevated: false }, DummyValue.UUID] })
+  getById(id: string, options: AlbumInfoOptions, ctx: PolicyContext, authUserId?: string) {
     return this.db
       .with('album_user', (qb) => qb.selectFrom('album_user').selectAll().where('album_user.albumId', '=', id))
       .selectFrom('album')
@@ -97,7 +97,7 @@ export class AlbumRepository {
       .where('album.deletedAt', 'is', null)
       .select(withAlbumUsers(authUserId))
       .select(withSharedLink)
-      .$if(options.withAssets, (eb) => eb.select(withAssets))
+      .$if(options.withAssets, (eb) => eb.select((eb) => withAssets(eb, ctx)))
       .$narrowType<{ assets: NotNull }>()
       .executeTakeFirst();
   }
@@ -392,7 +392,9 @@ export class AlbumRepository {
     params: [
       { albumName: DummyValue.STRING },
       [],
-      [{ userId: DummyValue.UUID, role: AlbumUserRole.Owner }, DummyValue.UUID],
+      [{ userId: DummyValue.UUID, role: AlbumUserRole.Owner }],
+      DummyValue.UUID,
+      { elevated: false },
     ],
   })
   async create(
@@ -400,6 +402,7 @@ export class AlbumRepository {
     assetIds: string[],
     albumUsers: AlbumUserCreateDto[],
     authUserId: string,
+    ctx: PolicyContext,
   ) {
     if (albumUsers.every((u) => u.role !== AlbumUserRole.Owner)) {
       throw new Error('Album must have an owner');
@@ -438,7 +441,7 @@ export class AlbumRepository {
       .selectFrom('album')
       .selectAll('album')
       .select(withAlbumUsers(authUserId))
-      .select(withAssets)
+      .select((eb) => withAssets(eb, ctx))
       .$narrowType<{ assets: NotNull }>()
       .executeTakeFirstOrThrow();
 

@@ -40,7 +40,7 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and "asset"."visibility" in ('timeline')
           and "asset"."deletedAt" is null
           and not exists (
             select
@@ -79,7 +79,7 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and "asset"."visibility" in ('timeline')
           and "asset"."deletedAt" is null
           and not exists (
             select
@@ -127,7 +127,7 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and "asset"."visibility" in ('timeline')
           and "asset"."deletedAt" is null
         order by
           "asset"."fileCreatedAt" asc
@@ -160,7 +160,7 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and "asset"."visibility" in ('timeline')
           and "asset"."deletedAt" is null
         order by
           "asset"."fileCreatedAt" asc

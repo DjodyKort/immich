@@ -9,7 +9,15 @@ import { AssetType, VectorIndex } from 'src/enum';
 import { probes } from 'src/repositories/database.repository';
 import { DB } from 'src/schema';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { anyUuid, asUuid, withDefaultVisibility } from 'src/utils/database';
+import { anyUuid, asUuid } from 'src/utils/database';
+import {
+  excludeLockedUnlessElevated,
+  excludeMotionParts,
+  forSystem,
+  PolicyContext,
+  Surface,
+  withSurface,
+} from 'src/utils/visibility-policy';
 
 // Maximum number of candidate duplicates to return from vector search
 const DUPLICATE_SEARCH_LIMIT = 64;
@@ -32,14 +40,14 @@ interface DuplicateMergeOptions {
 export class DuplicateRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  @GenerateSql({ params: [DummyValue.UUID] })
-  getAll(userId: string) {
+  @GenerateSql({ params: [DummyValue.UUID, { elevated: false }] })
+  getAll(userId: string, ctx: PolicyContext) {
     return (
       this.db
         .with('duplicates', (qb) =>
           qb
             .selectFrom('asset')
-            .$call(withDefaultVisibility)
+            .$call((qb) => withSurface(qb, Surface.Duplicates, ctx))
             // Use innerJoinLateral to build a composite object per asset that includes
             // exifInfo and tags. This "asset2" object is then aggregated via jsonAgg.
             // Tags must be included here (not via separate joins) so they appear in the
@@ -111,11 +119,11 @@ export class DuplicateRepository {
       .execute();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
-  async get(duplicateId: string): Promise<{ duplicateId: string; assets: MapAsset[] } | undefined> {
+  @GenerateSql({ params: [DummyValue.UUID, { elevated: false }] })
+  async get(duplicateId: string, ctx: PolicyContext): Promise<{ duplicateId: string; assets: MapAsset[] } | undefined> {
     const result = await this.db
       .selectFrom('asset')
-      .$call(withDefaultVisibility)
+      .$call((qb) => withSurface(qb, Surface.Duplicates, ctx))
       // Use innerJoinLateral to build a composite object per asset that includes
       // exifInfo and tags. This "asset2" object is then aggregated via jsonAgg.
       // Tags must be included here (not via separate joins) so they appear in the
@@ -197,7 +205,10 @@ export class DuplicateRepository {
         .with('cte', (qb) =>
           qb
             .selectFrom('asset')
-            .$call(withDefaultVisibility)
+            // Duplicate detection is a background job, so it skips motion parts and never reaches into
+            // the locked folder. `withDefaultVisibility` used to say exactly this without saying why.
+            .$call(excludeMotionParts)
+            .$call((qb) => excludeLockedUnlessElevated(qb, forSystem()))
             .select([
               'asset.id as assetId',
               'asset.duplicateId',
