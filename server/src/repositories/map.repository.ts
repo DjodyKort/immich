@@ -72,14 +72,27 @@ export class MapRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getAlbumMapMarkers(albumId: string, hasElevatedPermission?: boolean) {
-    return this.mapMarkersQuery()
-      .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
-      .where('album_asset.albumId', '=', albumId)
-      // Reading a locked album already requires an elevated session, so for legitimate flows this
-      // is a no-op. It is here as defence in depth: without it, a locked asset in an ordinary
-      // album would publish its coordinates to a session that has never entered the PIN.
-      .$if(!hasElevatedPermission, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Locked))
-      .execute();
+    return (
+      this.mapMarkersQuery()
+        .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
+        .where('album_asset.albumId', '=', albumId)
+        // State the admitted set positively rather than excluding one value. An earlier version
+        // excluded only Locked, which let Hidden through, so the album map was the one surface that
+        // rendered the video half of a live photo as its own pin. Reading a locked album already
+        // requires elevation, so the Locked term is defence in depth: without it, a locked asset in
+        // an ordinary album would publish its coordinates to a session that never entered the PIN.
+        .$if(!hasElevatedPermission, (qb) =>
+          qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]),
+        )
+        .$if(!!hasElevatedPermission, (qb) =>
+          qb.where('asset.visibility', 'in', [
+            sql.lit(AssetVisibility.Archive),
+            sql.lit(AssetVisibility.Timeline),
+            sql.lit(AssetVisibility.Locked),
+          ]),
+        )
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })
