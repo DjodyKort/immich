@@ -68,6 +68,7 @@ interface AssetStatsOptions {
   isFavorite?: boolean;
   isTrashed?: boolean;
   visibility?: AssetVisibility;
+  hasElevatedPermission?: boolean;
 }
 
 interface LivePhotoSearchOptions {
@@ -726,26 +727,43 @@ export class AssetRepository {
       .executeTakeFirst();
   }
 
-  getStatistics(ownerId: string, { visibility, isFavorite, isTrashed }: AssetStatsOptions): Promise<AssetStats> {
-    return this.db
-      .selectFrom('asset')
-      .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Audio).as(AssetType.Audio))
-      .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Image).as(AssetType.Image))
-      .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Video).as(AssetType.Video))
-      .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
-      .where('ownerId', '=', asUuid(ownerId))
-      .$if(visibility === undefined, withDefaultVisibility)
-      .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
-      .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
-      .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
-      .where('deletedAt', isTrashed ? 'is not' : 'is', null)
-      .executeTakeFirstOrThrow();
+  getStatistics(
+    ownerId: string,
+    { visibility, isFavorite, isTrashed, hasElevatedPermission }: AssetStatsOptions,
+  ): Promise<AssetStats> {
+    return (
+      this.db
+        .selectFrom('asset')
+        .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Audio).as(AssetType.Audio))
+        .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Image).as(AssetType.Image))
+        .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Video).as(AssetType.Video))
+        .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
+        .where('ownerId', '=', asUuid(ownerId))
+        // An elevated session sees its locked assets counted, matching SearchService.searchStatistics,
+        // which answers the same question and previously disagreed with this one.
+        .$if(visibility === undefined && !hasElevatedPermission, withDefaultVisibility)
+        .$if(visibility === undefined && !!hasElevatedPermission, (qb) =>
+          qb.where('asset.visibility', 'in', [
+            sql.lit(AssetVisibility.Archive),
+            sql.lit(AssetVisibility.Timeline),
+            sql.lit(AssetVisibility.Locked),
+          ]),
+        )
+        .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
+        .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
+        .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
+        .where('deletedAt', isTrashed ? 'is not' : 'is', null)
+        .executeTakeFirstOrThrow()
+    );
   }
 
   @GenerateSql({
     params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload }],
   })
-  getCalendarHeatmap(ownerId: string, dto: { from: Date; to: Date; type: CalendarHeatmapType }) {
+  getCalendarHeatmap(
+    ownerId: string,
+    dto: { from: Date; to: Date; type: CalendarHeatmapType; hasElevatedPermission?: boolean },
+  ) {
     const dateColumns: Record<CalendarHeatmapType, { order: AssetOrderBy; column: 'createdAt' | 'localDateTime' }> = {
       [CalendarHeatmapType.Upload]: { order: AssetOrderBy.CreatedAt, column: 'createdAt' },
       [CalendarHeatmapType.Taken]: { order: AssetOrderBy.TakenAt, column: 'localDateTime' },
@@ -755,17 +773,31 @@ export class AssetRepository {
 
     const date = truncatedDate<Date>(order, 'DAY');
 
-    return this.db
-      .selectFrom('asset')
-      .select(date.as('date'))
-      .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where('ownerId', '=', asUuid(ownerId))
-      .where(column, '>=', dto.from)
-      .where(column, '<', dto.to)
-      .where('deletedAt', 'is', null)
-      .groupBy(date)
-      .orderBy('date', 'asc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(date.as('date'))
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .where('ownerId', '=', asUuid(ownerId))
+        .where(column, '>=', dto.from)
+        .where(column, '<', dto.to)
+        .where('deletedAt', 'is', null)
+        // This query previously applied no visibility predicate at all, so the counts described the
+        // owner's locked folder to any session, and motion-photo parts inflated every total.
+        .$if(!dto.hasElevatedPermission, (qb) =>
+          qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]),
+        )
+        .$if(!!dto.hasElevatedPermission, (qb) =>
+          qb.where('asset.visibility', 'in', [
+            sql.lit(AssetVisibility.Archive),
+            sql.lit(AssetVisibility.Timeline),
+            sql.lit(AssetVisibility.Locked),
+          ]),
+        )
+        .groupBy(date)
+        .orderBy('date', 'asc')
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [{}] })
@@ -792,7 +824,10 @@ export class AssetRepository {
             return withBoundingBox(withBoundingCircle, bbox);
           })
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
-          .$if(options.visibility === undefined && !(options.includeLockedAlbumAssets && options.albumId), withDefaultVisibility)
+          .$if(
+            options.visibility === undefined && !(options.includeLockedAlbumAssets && options.albumId),
+            withDefaultVisibility,
+          )
           .$if(options.visibility === undefined && !!options.includeLockedAlbumAssets && !!options.albumId, (qb) =>
             qb.where('asset.visibility', 'in', [
               sql.lit(AssetVisibility.Archive),
@@ -874,7 +909,10 @@ export class AssetRepository {
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
-          .$if(options.visibility === undefined && !(options.includeLockedAlbumAssets && options.albumId), withDefaultVisibility)
+          .$if(
+            options.visibility === undefined && !(options.includeLockedAlbumAssets && options.albumId),
+            withDefaultVisibility,
+          )
           .$if(options.visibility === undefined && !!options.includeLockedAlbumAssets && !!options.albumId, (qb) =>
             qb.where('asset.visibility', 'in', [
               sql.lit(AssetVisibility.Archive),

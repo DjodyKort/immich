@@ -127,6 +127,8 @@ export class UserAdminService extends BaseService {
 
   async getCalendarHeatmap(auth: AuthDto, id: string, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
     await this.findOrFail(id, { withDeleted: false });
+    // Deliberately not passing the admin's own elevation: unlocking your own locked folder must not
+    // reveal counts from someone else's.
     return getCalendarHeatmap(id, dto, { asset: this.assetRepository });
   }
 
