@@ -8,6 +8,7 @@ export const getCalendarHeatmap = async (
   userId: string,
   dto: CalendarHeatmapDto,
   repos: { asset: AssetRepository },
+  hasElevatedPermission = false,
 ) => {
   const toDate = DateTime.fromJSDate(dto.to ?? new Date(), { zone: 'utc' }).startOf('day');
   const fromDate = (
@@ -18,6 +19,7 @@ export const getCalendarHeatmap = async (
     from: fromDate.toJSDate(),
     to: toDate.plus({ days: 1 }).toJSDate(),
     type: dto.type ?? CalendarHeatmapType.Upload,
+    hasElevatedPermission,
   });
   const countsMap = new Map(counts.map((item) => [asDateString(item.date)!, item.count]));
 

@@ -50,7 +50,12 @@ export class UserService extends BaseService {
   }
 
   getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
-    return getCalendarHeatmap(auth.user.id, dto, { asset: this.assetRepository });
+    return getCalendarHeatmap(
+      auth.user.id,
+      dto,
+      { asset: this.assetRepository },
+      !!auth.session?.hasElevatedPermission,
+    );
   }
 
   async updateMe({ user }: AuthDto, dto: UserUpdateMeDto): Promise<UserAdminResponseDto> {
