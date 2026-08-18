@@ -5,6 +5,11 @@ import { ChunkedSet, DummyValue, GenerateSql } from 'src/decorators';
 import { AlbumUserRole, AssetVisibility } from 'src/enum';
 import { DB } from 'src/schema';
 import { asUuid } from 'src/utils/database';
+import {
+  excludeLockedAlbumsUnlessElevated,
+  excludeLockedUnlessElevated,
+  PolicyContext,
+} from 'src/utils/visibility-policy';
 
 class ActivityAccess {
   constructor(private db: Kysely<DB>) {}
@@ -71,9 +76,9 @@ class ActivityAccess {
 class AlbumAccess {
   constructor(private db: Kysely<DB>) {}
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, { elevated: false }] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, albumIds: Set<string>, hasElevatedPermission: boolean | undefined) {
+  async checkOwnerAccess(userId: string, albumIds: Set<string>, ctx: PolicyContext) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
@@ -89,19 +94,14 @@ class AlbumAccess {
           .on('album_user.userId', '=', userId),
       )
       .where('album.deletedAt', 'is', null)
-      .$if(!hasElevatedPermission, (eb) => eb.where('album.isLocked', '=', false))
+      .$call((qb) => excludeLockedAlbumsUnlessElevated(qb, ctx))
       .execute()
       .then((albums) => new Set(albums.map((album) => album.id)));
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, AlbumUserRole.Viewer, { elevated: false }] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkSharedAlbumAccess(
-    userId: string,
-    albumIds: Set<string>,
-    access: AlbumUserRole,
-    hasElevatedPermission: boolean | undefined,
-  ) {
+  async checkSharedAlbumAccess(userId: string, albumIds: Set<string>, access: AlbumUserRole, ctx: PolicyContext) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
@@ -118,7 +118,7 @@ class AlbumAccess {
       .where('album.deletedAt', 'is', null)
       .where('user.id', '=', userId)
       .where('album_user.role', 'in', [...accessRole])
-      .$if(!hasElevatedPermission, (eb) => eb.where('album.isLocked', '=', false))
+      .$call((qb) => excludeLockedAlbumsUnlessElevated(qb, ctx))
       .execute()
       .then((albums) => new Set(albums.map((album) => album.id)));
   }
@@ -148,9 +148,9 @@ class AlbumAccess {
 class AssetAccess {
   constructor(private db: Kysely<DB>) {}
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, { elevated: false }] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkAlbumAccess(userId: string, assetIds: Set<string>, hasElevatedPermission: boolean | undefined) {
+  async checkAlbumAccess(userId: string, assetIds: Set<string>, ctx: PolicyContext) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
@@ -179,12 +179,12 @@ class AssetAccess {
         // asset is locked, a non-elevated session (even the owner/an editor/a viewer of that album)
         // must not gain asset-view access through this path. Without this, locking an album would be
         // pointless -- its own members could still view its assets directly without ever unlocking.
-        .$if(!hasElevatedPermission, (eb) => eb.where('album.isLocked', '=', false))
+        .$call((qb) => excludeLockedAlbumsUnlessElevated(qb, ctx))
         // Defence in depth: the album-level check above relies on the invariant that a locked asset
         // only ever lives in a locked album. Should any path ever break that invariant, a locked
         // asset sitting in an ordinary album would otherwise become viewable through album
         // membership -- including by another user who merely shares that album.
-        .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+        .$call((qb) => excludeLockedUnlessElevated(qb, ctx))
         .execute()
         .then((assets) => {
           const allowedIds = new Set<string>();
@@ -201,9 +201,9 @@ class AssetAccess {
     );
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, { elevated: false }] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, assetIds: Set<string>, hasElevatedPermission: boolean | undefined) {
+  async checkOwnerAccess(userId: string, assetIds: Set<string>, ctx: PolicyContext) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
@@ -213,7 +213,7 @@ class AssetAccess {
       .select('asset.id')
       .where('asset.id', 'in', [...assetIds])
       .where('asset.ownerId', '=', userId)
-      .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+      .$call((qb) => excludeLockedUnlessElevated(qb, ctx))
       .execute()
       .then((assets) => new Set(assets.map((asset) => asset.id)));
   }

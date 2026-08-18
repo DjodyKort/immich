@@ -14,11 +14,12 @@ import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto';
-import { AlbumUserRole, AssetVisibility } from 'src/enum';
+import { AlbumUserRole } from 'src/enum';
 import { DB } from 'src/schema';
 import { AlbumTable } from 'src/schema/tables/album.table';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
 import { asUuid, dummy, withDefaultVisibility } from 'src/utils/database';
+import { PolicyContext, Surface, withSurface } from 'src/utils/visibility-policy';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -158,15 +159,14 @@ export class AlbumRepository {
   }
 
   /**
-   * @param includeLockedAlbumAssets When true, Locked-visibility assets are counted too, instead
-   * of only the default (Archive/Timeline) set. Only pass true when every album ID in `ids` has
-   * already had its access verified for the current session (elevated, if locked) -- e.g. the
-   * single-album detail fetch. The album list view must NOT set this, since it would leak asset
-   * counts for locked albums to sessions that haven't unlocked them.
+   * Locked members are counted only for an elevated session, so the caller no longer decides: pass
+   * `forViewer(auth)` and the {@link Surface.AlbumMetadata} rule answers it. The album list view and
+   * the single-album detail fetch previously disagreed here, which is how asset counts, start and end
+   * dates for a locked album reached a session that had never entered the PIN.
    */
-  @GenerateSql({ params: [[DummyValue.UUID]] })
+  @GenerateSql({ params: [[DummyValue.UUID], { elevated: false }] })
   @ChunkedArray()
-  async getMetadataForIds(ids: string[], includeLockedAlbumAssets = false): Promise<AlbumAssetCount[]> {
+  async getMetadataForIds(ids: string[], ctx: PolicyContext): Promise<AlbumAssetCount[]> {
     // Guard against running invalid query when ids list is empty.
     if (ids.length === 0) {
       return [];
@@ -175,14 +175,7 @@ export class AlbumRepository {
     return (
       this.db
         .selectFrom('asset')
-        .$if(!includeLockedAlbumAssets, withDefaultVisibility)
-        .$if(includeLockedAlbumAssets, (qb) =>
-          qb.where('asset.visibility', 'in', [
-            sql.lit(AssetVisibility.Archive),
-            sql.lit(AssetVisibility.Timeline),
-            sql.lit(AssetVisibility.Locked),
-          ]),
-        )
+        .$call((qb) => withSurface(qb, Surface.AlbumMetadata, ctx))
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .select('album_asset.albumId as albumId')
         .select((eb) => eb.fn.min(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('startDate'))

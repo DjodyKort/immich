@@ -252,11 +252,9 @@ describe(DownloadService.name, () => {
 
       await expect(sut.getDownloadInfo(authStub.admin, { albumId: 'album-1' })).resolves.toEqual(downloadResponse);
 
-      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(
-        authStub.admin.user.id,
-        new Set(['album-1']),
-        undefined,
-      );
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['album-1']), {
+        elevated: false,
+      });
       expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1');
     });
 
@@ -273,7 +271,9 @@ describe(DownloadService.name, () => {
         downloadResponse,
       );
 
-      expect(mocks.downloadRepository.downloadUserId).toHaveBeenCalledWith(authStub.admin.user.id, false);
+      expect(mocks.downloadRepository.downloadUserId).toHaveBeenCalledWith(authStub.admin.user.id, {
+        elevated: false,
+      });
     });
 
     it('should split archives by size', async () => {

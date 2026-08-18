@@ -21,6 +21,7 @@ import { BaseService } from 'src/services/base.service';
 import { JobOf, StorageAsset } from 'src/types';
 import { getAssetFile } from 'src/utils/asset.util';
 import { getFilenameExtension, getLivePhotoMotionFilename } from 'src/utils/file';
+import { forOtherUser } from 'src/utils/visibility-policy';
 
 const storageTokens = {
   secondOptions: ['s', 'ss', 'SSS'],
@@ -315,7 +316,9 @@ export class StorageTemplateService extends BaseService {
           albumName = album.albumName || null;
 
           if (this.template.needsAlbumMetadata) {
-            const [metadata] = await this.albumRepository.getMetadataForIds([album.id]);
+            // A job has no session, so it can never be elevated: the template renders the album's
+            // non-locked date range, exactly as before.
+            const [metadata] = await this.albumRepository.getMetadataForIds([album.id], forOtherUser());
             albumStartDate = metadata?.startDate || null;
             albumEndDate = metadata?.endDate || null;
           }

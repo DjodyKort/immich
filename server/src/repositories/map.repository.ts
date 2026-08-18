@@ -14,6 +14,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { DB } from 'src/schema';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table';
+import { PolicyContext, Surface, withSurface } from 'src/utils/visibility-policy';
 
 export interface MapMarkerSearchOptions {
   isArchived?: boolean;
@@ -70,74 +71,70 @@ export class MapRepository {
     this.logger.log('Geodata import completed');
   }
 
-  @GenerateSql({ params: [DummyValue.UUID] })
-  getAlbumMapMarkers(albumId: string, hasElevatedPermission?: boolean) {
+  @GenerateSql({ params: [DummyValue.UUID, { elevated: false }] })
+  getAlbumMapMarkers(albumId: string, ctx: PolicyContext) {
     return (
       this.mapMarkersQuery()
         .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
         .where('album_asset.albumId', '=', albumId)
-        // State the admitted set positively rather than excluding one value. An earlier version
+        // The surface rule states the admitted set positively. An earlier hand-written version here
         // excluded only Locked, which let Hidden through, so the album map was the one surface that
         // rendered the video half of a live photo as its own pin. Reading a locked album already
         // requires elevation, so the Locked term is defence in depth: without it, a locked asset in
         // an ordinary album would publish its coordinates to a session that never entered the PIN.
-        .$if(!hasElevatedPermission, (qb) =>
-          qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]),
-        )
-        .$if(!!hasElevatedPermission, (qb) =>
-          qb.where('asset.visibility', 'in', [
-            sql.lit(AssetVisibility.Archive),
-            sql.lit(AssetVisibility.Timeline),
-            sql.lit(AssetVisibility.Locked),
-          ]),
-        )
+        .$call((qb) => withSurface(qb, Surface.AlbumMap, ctx))
         .execute()
     );
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID], { elevated: false }] })
   getMapMarkers(
     authUserId: string,
     ownerIds: string[],
     albumIds: string[],
+    ctx: PolicyContext,
     { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore }: MapMarkerSearchOptions = {},
   ) {
-    return this.mapMarkersQuery()
-      .$if(isArchived === true, (qb) =>
-        qb.where((eb) =>
-          eb.or([
-            eb('asset.visibility', '=', AssetVisibility.Timeline),
-            eb.and([eb('asset.ownerId', '=', authUserId), eb('asset.visibility', '=', AssetVisibility.Archive)]),
-          ]),
-        ),
-      )
-      .$if(isArchived === false || isArchived === undefined, (qb) =>
-        qb.where('asset.visibility', '=', AssetVisibility.Timeline),
-      )
-      .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
-      .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
-      .$if(fileCreatedBefore !== undefined, (q) => q.where('fileCreatedAt', '<=', fileCreatedBefore!))
-      .where((eb) => {
-        const expression: Expression<SqlBool>[] = [];
+    return (
+      this.mapMarkersQuery()
+        // `isArchived: true` is a caller-supplied override of the surface default, not a rule of its own:
+        // it widens the global map to the requester's own archived assets on top of the shared timeline
+        // set. It stays hand-written because it is additive and owner-scoped, which the policy table
+        // deliberately cannot express.
+        .$if(isArchived === true, (qb) =>
+          qb.where((eb) =>
+            eb.or([
+              eb('asset.visibility', '=', AssetVisibility.Timeline),
+              eb.and([eb('asset.ownerId', '=', authUserId), eb('asset.visibility', '=', AssetVisibility.Archive)]),
+            ]),
+          ),
+        )
+        .$if(isArchived === false || isArchived === undefined, (qb) => withSurface(qb, Surface.GlobalMap, ctx))
+        .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
+        .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
+        .$if(fileCreatedBefore !== undefined, (q) => q.where('fileCreatedAt', '<=', fileCreatedBefore!))
+        .where((eb) => {
+          const expression: Expression<SqlBool>[] = [];
 
-        if (ownerIds.length > 0) {
-          expression.push(eb('ownerId', 'in', ownerIds));
-        }
+          if (ownerIds.length > 0) {
+            expression.push(eb('ownerId', 'in', ownerIds));
+          }
 
-        if (albumIds.length > 0) {
-          expression.push(
-            eb.exists((eb) =>
-              eb
-                .selectFrom('album_asset')
-                .whereRef('asset.id', '=', 'album_asset.assetId')
-                .where('album_asset.albumId', 'in', albumIds),
-            ),
-          );
-        }
+          if (albumIds.length > 0) {
+            expression.push(
+              eb.exists((eb) =>
+                eb
+                  .selectFrom('album_asset')
+                  .whereRef('asset.id', '=', 'album_asset.assetId')
+                  .where('album_asset.albumId', 'in', albumIds),
+              ),
+            );
+          }
 
-        return eb.or(expression);
-      })
-      .execute();
+          return eb.or(expression);
+        })
+        .execute()
+    );
   }
 
   private mapMarkersQuery() {

@@ -19,6 +19,7 @@ import { BaseService } from 'src/services/base.service';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods';
 import { findOrFail } from 'src/utils/misc';
 import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences';
+import { forOtherUser } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class UserAdminService extends BaseService {
@@ -129,7 +130,7 @@ export class UserAdminService extends BaseService {
     await this.findOrFail(id, { withDeleted: false });
     // Deliberately not passing the admin's own elevation: unlocking your own locked folder must not
     // reveal counts from someone else's.
-    return getCalendarHeatmap(id, dto, { asset: this.assetRepository });
+    return getCalendarHeatmap(id, dto, { asset: this.assetRepository }, forOtherUser());
   }
 
   async getSessions(auth: AuthDto, id: string): Promise<SessionResponseDto[]> {
@@ -138,7 +139,9 @@ export class UserAdminService extends BaseService {
   }
 
   async getStatistics(auth: AuthDto, id: string, dto: AssetStatsDto): Promise<AssetStatsResponseDto> {
-    const stats = await this.assetRepository.getStatistics(id, dto);
+    // Same reason as the heatmap above: this reports on another user, so the admin's own elevation
+    // must not widen the counted set.
+    const stats = await this.assetRepository.getStatistics(id, dto, forOtherUser());
     return mapStats(stats);
   }
 

@@ -21,6 +21,7 @@ import { addAssets, removeAssets } from 'src/utils/asset.util';
 import { asDateTimeString } from 'src/utils/date';
 import { findOrFail } from 'src/utils/misc';
 import { getPreferences } from 'src/utils/preferences';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class AlbumService extends BaseService {
@@ -53,13 +54,12 @@ export class AlbumService extends BaseService {
     // PIN elevation is session-wide, not per-album: once elevated, the requester already has
     // standing access to open any of their locked albums with no extra friction. So it's safe
     // to also reveal locked albums' real counts here rather than showing a stale 0.
-    const includeLockedAlbumAssets = !!auth.session?.hasElevatedPermission;
-
+    //
     // Get asset count for each album. Then map the result to an object:
     // { [albumId]: assetCount }
     const results = await this.albumRepository.getMetadataForIds(
       albums.map((album) => album.id),
-      includeLockedAlbumAssets,
+      forViewer(auth),
     );
     const albumMetadata: Record<string, AlbumAssetCount> = {};
     for (const metadata of results) {
@@ -86,10 +86,7 @@ export class AlbumService extends BaseService {
     // that a locked asset can never sit in an ordinary album, and getMapMarkers a few lines below
     // deliberately refuses to trust exactly that. Without this, assetCount, startDate, endDate and
     // lastModifiedAssetTimestamp described an album's locked members to a session with no PIN.
-    const [albumMetadataForIds] = await this.albumRepository.getMetadataForIds(
-      [album.id],
-      !!auth.session?.hasElevatedPermission,
-    );
+    const [albumMetadataForIds] = await this.albumRepository.getMetadataForIds([album.id], forViewer(auth));
 
     const hasSharedUsers = album.albumUsers && album.albumUsers.length > 1;
     const hasSharedLink = album.sharedLinks && album.sharedLinks.length > 0;
@@ -112,7 +109,7 @@ export class AlbumService extends BaseService {
       return [];
     }
 
-    return this.mapRepository.getAlbumMapMarkers(id, auth.session?.hasElevatedPermission);
+    return this.mapRepository.getAlbumMapMarkers(id, forViewer(auth));
   }
 
   async create(auth: AuthDto, dto: CreateAlbumDto): Promise<AlbumResponseDto> {

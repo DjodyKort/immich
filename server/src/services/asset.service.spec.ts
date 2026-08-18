@@ -42,37 +42,36 @@ describe(AssetService.name, () => {
       const auth = AuthFactory.create();
       mocks.asset.getStatistics.mockResolvedValue(stats);
       await expect(sut.getStatistics(auth, { visibility: AssetVisibility.Timeline })).resolves.toEqual(statResponse);
-      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(auth.user.id, {
-        visibility: AssetVisibility.Timeline,
-        hasElevatedPermission: false,
-      });
+      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(
+        auth.user.id,
+        { visibility: AssetVisibility.Timeline },
+        { elevated: false },
+      );
     });
 
     it('should get the statistics for a user for archived assets', async () => {
       const auth = AuthFactory.create();
       mocks.asset.getStatistics.mockResolvedValue(stats);
       await expect(sut.getStatistics(auth, { visibility: AssetVisibility.Archive })).resolves.toEqual(statResponse);
-      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(auth.user.id, {
-        visibility: AssetVisibility.Archive,
-        hasElevatedPermission: false,
-      });
+      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(
+        auth.user.id,
+        { visibility: AssetVisibility.Archive },
+        { elevated: false },
+      );
     });
 
     it('should get the statistics for a user for favorite assets', async () => {
       const auth = AuthFactory.create();
       mocks.asset.getStatistics.mockResolvedValue(stats);
       await expect(sut.getStatistics(auth, { isFavorite: true })).resolves.toEqual(statResponse);
-      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(auth.user.id, {
-        isFavorite: true,
-        hasElevatedPermission: false,
-      });
+      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(auth.user.id, { isFavorite: true }, { elevated: false });
     });
 
     it('should get the statistics for a user for all assets', async () => {
       const auth = AuthFactory.create();
       mocks.asset.getStatistics.mockResolvedValue(stats);
       await expect(sut.getStatistics(auth, {})).resolves.toEqual(statResponse);
-      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(auth.user.id, { hasElevatedPermission: false });
+      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(auth.user.id, {}, { elevated: false });
     });
   });
 
@@ -84,11 +83,9 @@ describe(AssetService.name, () => {
 
       await sut.get(authStub.admin, asset.id);
 
-      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
-        authStub.admin.user.id,
-        new Set([asset.id]),
-        undefined,
-      );
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]), {
+        elevated: false,
+      });
     });
 
     it('should allow shared link access', async () => {
@@ -139,11 +136,9 @@ describe(AssetService.name, () => {
 
       await sut.get(authStub.admin, asset.id);
 
-      expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(
-        authStub.admin.user.id,
-        new Set([asset.id]),
-        undefined,
-      );
+      expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]), {
+        elevated: false,
+      });
     });
 
     it('should throw an error for no access', async () => {
@@ -671,11 +666,9 @@ describe(AssetService.name, () => {
 
       await expect(sut.getOcr(authStub.admin, asset.id)).resolves.toEqual([ocr1, ocr2]);
 
-      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
-        authStub.admin.user.id,
-        new Set([asset.id]),
-        undefined,
-      );
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]), {
+        elevated: false,
+      });
       expect(mocks.ocr.getByAssetId).toHaveBeenCalledWith(asset.id);
     });
 

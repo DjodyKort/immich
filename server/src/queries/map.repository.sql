@@ -36,16 +36,16 @@ from
   and "asset_exif"."longitude" is not null
 where
   "asset"."deletedAt" is null
-  and "asset"."visibility" = $1
+  and "asset"."visibility" in ('timeline')
   and (
-    "ownerId" in ($2)
+    "ownerId" in ($1)
     or exists (
       select
       from
         "album_asset"
       where
         "asset"."id" = "album_asset"."assetId"
-        and "album_asset"."albumId" in ($3)
+        and "album_asset"."albumId" in ($2)
     )
   )
 order by

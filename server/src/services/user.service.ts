@@ -23,6 +23,7 @@ import { mimeTypes } from 'src/utils/mime-types';
 import { findOrFail } from 'src/utils/misc';
 import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences';
 import { generateProfileImage } from 'src/utils/profile-image';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class UserService extends BaseService {
@@ -50,12 +51,7 @@ export class UserService extends BaseService {
   }
 
   getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
-    return getCalendarHeatmap(
-      auth.user.id,
-      dto,
-      { asset: this.assetRepository },
-      !!auth.session?.hasElevatedPermission,
-    );
+    return getCalendarHeatmap(auth.user.id, dto, { asset: this.assetRepository }, forViewer(auth));
   }
 
   async updateMe({ user }: AuthDto, dto: UserUpdateMeDto): Promise<UserAdminResponseDto> {

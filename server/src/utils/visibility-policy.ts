@@ -136,6 +136,23 @@ export function surfacePredicate(
 }
 
 /**
+ * Access checks join up to five tables behind a CTE, which widens the builder's own `DB` generic and
+ * makes it structurally incompatible with a parameter typed `SelectQueryBuilder<DB, 'asset', O>`. The
+ * two access-check helpers below are therefore generic over the caller's schema -- unconstrained,
+ * because a left join rewrites its table to `Nullable<...>` and so no longer extends `DB` -- and
+ * re-narrow the expression builder here so the column reference itself is still resolved against the
+ * real table and a mistyped column name is still a compile error.
+ *
+ * The alternative was to let each joined access check spell the predicate out inline, which is exactly
+ * how the locked folder leaked in the first place.
+ */
+const asAssetBuilder = <DBT, TB extends keyof DBT & string>(eb: ExpressionBuilder<DBT, TB>) =>
+  eb as ExpressionBuilder<DB, 'asset'>;
+
+const asAlbumBuilder = <DBT, TB extends keyof DBT & string>(eb: ExpressionBuilder<DBT, TB>) =>
+  eb as ExpressionBuilder<DB, 'album'>;
+
+/**
  * Withhold locked assets from a session that has not been elevated.
  *
  * This is deliberately NOT a surface rule. An access check answers "may this session touch this
@@ -144,8 +161,31 @@ export function surfacePredicate(
  * applying a surface rule here would wrongly deny `hidden` and break that. The only thing an access
  * check owes the locked folder is that a non-elevated session cannot reach through it.
  */
-export function excludeLockedUnlessElevated<O>(qb: SelectQueryBuilder<DB, 'asset', O>, ctx: PolicyContext) {
-  return qb.$if(!ctx.elevated, (eb) => eb.where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)));
+export function excludeLockedUnlessElevated<DBT, TB extends keyof DBT & string, O>(
+  qb: SelectQueryBuilder<DBT, TB, O>,
+  ctx: PolicyContext,
+): SelectQueryBuilder<DBT, TB, O> {
+  return ctx.elevated
+    ? qb
+    : qb.where((eb) => asAssetBuilder(eb)('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)));
+}
+
+/**
+ * Withhold locked *albums* from a session that has not been elevated.
+ *
+ * The album-granularity sibling of {@link excludeLockedUnlessElevated}. Album locking is recorded on
+ * `album.isLocked`, not on `asset.visibility`, so the two predicates read different columns and
+ * cannot share an implementation -- but they answer the same question at two granularities and have
+ * to move together, so both live here rather than being re-spelled at each access-check call site.
+ *
+ * Like its asset-level sibling this is deliberately NOT a surface rule: an access check asks whether
+ * a session may touch a row at all, not whether the row belongs on a screen.
+ */
+export function excludeLockedAlbumsUnlessElevated<DBT, TB extends keyof DBT & string, O>(
+  qb: SelectQueryBuilder<DBT, TB, O>,
+  ctx: PolicyContext,
+): SelectQueryBuilder<DBT, TB, O> {
+  return ctx.elevated ? qb : qb.where((eb) => asAlbumBuilder(eb)('album.isLocked', '=', false));
 }
 
 /**
