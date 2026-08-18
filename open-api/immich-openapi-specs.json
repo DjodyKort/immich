@@ -16715,6 +16715,10 @@
             "description": "Activity feed enabled",
             "type": "boolean"
           },
+          "isLocked": {
+            "description": "Album is locked and requires PIN elevation to view",
+            "type": "boolean"
+          },
           "lastModifiedAssetTimestamp": {
             "description": "Last modified asset timestamp",
             "format": "date-time",
@@ -16748,6 +16752,7 @@
           "hasSharedLink",
           "id",
           "isActivityEnabled",
+          "isLocked",
           "shared",
           "updatedAt"
         ],
@@ -18323,7 +18328,8 @@
           "no_permission",
           "not_found",
           "unknown",
-          "validation"
+          "validation",
+          "already_in_locked_album"
         ],
         "type": "string"
       },
@@ -18565,6 +18571,10 @@
                 "description": "Sending an empty string is deprecated; send null instead. Empty strings will no longer be coerced to null in v4."
               }
             ]
+          },
+          "isLocked": {
+            "description": "Create the album already locked. Every asset in `assetIds` must already have Locked visibility (i.e. already be in the locked folder) -- an album can only ever be locked at creation time, and can only ever contain assets that are already locked.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -24119,6 +24129,10 @@
             "description": "Is activity enabled",
             "type": "boolean"
           },
+          "isLocked": {
+            "description": "Album is locked and requires PIN elevation to view",
+            "type": "boolean"
+          },
           "name": {
             "description": "Album name",
             "type": "string"
@@ -24144,6 +24158,7 @@
           "description",
           "id",
           "isActivityEnabled",
+          "isLocked",
           "name",
           "order",
           "thumbnailAssetId",

@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { AssetVisibility } from 'src/enum';
 import { TimelineService } from 'src/services/timeline.service';
 import { authStub } from 'test/fixtures/auth.stub';
+import { factory } from 'test/small.factory';
 import { newTestService, ServiceMocks } from 'test/utils';
 
 describe(TimelineService.name, () => {
@@ -21,6 +22,7 @@ describe(TimelineService.name, () => {
       );
       expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith({
         userIds: [authStub.admin.user.id],
+        includeLockedAlbumAssets: false,
       });
     });
 
@@ -39,6 +41,7 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith({
         userIds: [authStub.admin.user.id],
         bbox: { west: -70, south: -30, east: 120, north: 55 },
+        includeLockedAlbumAssets: false,
       });
     });
   });
@@ -53,14 +56,38 @@ describe(TimelineService.name, () => {
         json,
       );
 
-      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['album-id']));
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set(['album-id']),
+        undefined,
+      );
       expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
         'bucket',
         {
           timeBucket: 'bucket',
           albumId: 'album-id',
+          includeLockedAlbumAssets: false,
         },
         authStub.admin,
+      );
+    });
+
+    it('should include locked album assets only when the session is elevated', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
+      const json = `[{ id: ['asset-id'] }]`;
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: json });
+      const auth = factory.auth({ session: { hasElevatedPermission: true } });
+
+      await expect(sut.getTimeBucket(auth, { timeBucket: 'bucket', albumId: 'album-id' })).resolves.toEqual(json);
+
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        {
+          timeBucket: 'bucket',
+          albumId: 'album-id',
+          includeLockedAlbumAssets: true,
+        },
+        auth,
       );
     });
 
@@ -106,6 +133,7 @@ describe(TimelineService.name, () => {
           visibility: AssetVisibility.Timeline,
           withPartners: true,
           userIds: [authStub.admin.user.id],
+          includeLockedAlbumAssets: false,
         },
         authStub.admin,
       );
@@ -129,6 +157,7 @@ describe(TimelineService.name, () => {
           tagId: 'tag-123',
           timeBucket: 'bucket',
           userIds: [authStub.admin.user.id],
+          includeLockedAlbumAssets: false,
         },
         authStub.admin,
       );

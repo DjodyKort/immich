@@ -24,12 +24,19 @@
   type Props = {
     onClose: (albums?: AlbumResponseDto[]) => void;
     selectedItemsCount?: number;
+    // When true, only locked albums are offered as targets, and creating a new album creates it
+    // already locked. Used exclusively from within the Locked Folder view, where every asset being
+    // added is already locked -- a locked album can never be created any other way, and can never
+    // receive a not-yet-locked asset. Omitted (false) everywhere else, where locked albums are
+    // never offered at all.
+    lockedOnly?: boolean;
   };
 
-  let { onClose, selectedItemsCount }: Props = $props();
+  let { onClose, selectedItemsCount, lockedOnly = false }: Props = $props();
 
   onMount(async () => {
-    albums = await getAllAlbums({});
+    const allAlbums = await getAllAlbums({});
+    albums = allAlbums.filter((album) => album.isLocked === lockedOnly);
     recentAlbums = [...albums].sort((a, b) => (new Date(a.updatedAt) > new Date(b.updatedAt) ? -1 : 1)).slice(0, 3);
     loading = false;
   });
@@ -44,7 +51,7 @@
   const selectableRowCount = $derived(albumModalRows.filter((row) => isSelectableRowType(row.type)).length);
 
   const onNewAlbum = async (name: string) => {
-    const album = await createAlbum({ createAlbumDto: { albumName: name } });
+    const album = await createAlbum({ createAlbumDto: { albumName: name, isLocked: lockedOnly } });
     eventManager.emit('AlbumCreate', album);
     onClose([album]);
   };
@@ -78,11 +85,12 @@
 
   const handleMultiSubmit = () => {
     const selectedAlbums = new Set(albums.filter(({ id }) => multiSelectedAlbumIds.includes(id)));
-    if (selectedAlbums.size > 0) {
-      onClose([...selectedAlbums]);
-    } else {
+    if (selectedAlbums.size === 0) {
       onClose();
+      return;
     }
+
+    onClose([...selectedAlbums]);
   };
 
   const onEnter = async () => {

@@ -517,6 +517,8 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
+    /** Album is locked and requires PIN elevation to view */
+    isLocked: boolean;
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
     order?: AssetOrder;
@@ -541,6 +543,8 @@ export type CreateAlbumDto = {
     assetIds?: string[];
     /** Album description */
     description?: string | null;
+    /** Create the album already locked. Every asset in `assetIds` must already have Locked visibility (i.e. already be in the locked folder) -- an album can only ever be locked at creation time, and can only ever contain assets that are already locked. */
+    isLocked?: boolean;
 };
 export type AlbumsAddAssetsDto = {
     /** Album IDs */
@@ -2939,6 +2943,8 @@ export type SyncAlbumV2 = {
     id: string;
     /** Is activity enabled */
     isActivityEnabled: boolean;
+    /** Album is locked and requires PIN elevation to view */
+    isLocked: boolean;
     /** Album name */
     name: string;
     order: AssetOrder;
@@ -7202,7 +7208,8 @@ export enum BulkIdErrorReason {
     NoPermission = "no_permission",
     NotFound = "not_found",
     Unknown = "unknown",
-    Validation = "validation"
+    Validation = "validation",
+    AlreadyInLockedAlbum = "already_in_locked_album"
 }
 export enum Permission {
     All = "all",
