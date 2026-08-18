@@ -46,6 +46,38 @@ void main() {
       expect((assets.first as RemoteAsset).id, remoteAsset.id);
       expect([localAsset1.id, localAsset2.id], contains((assets.first as RemoteAsset).localId));
     });
+
+    test('does not expose locked assets in an album view', () async {
+      // A locked album syncs down looking ordinary, because RemoteAlbumEntity has no isLocked column,
+      // so the visibility predicate on the album queries is the only thing keeping locked-folder
+      // assets from rendering with no PIN.
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final visible = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.timeline);
+      final locked = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: visible.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: locked.id);
+
+      final query = sut.remoteAlbum(album.id, .day);
+
+      final assets = await query.assetSource(0, 10);
+      expect(assets.map((asset) => (asset as RemoteAsset).id), [visible.id]);
+
+      final buckets = await query.bucketSource().first;
+      expect(buckets.fold<int>(0, (sum, bucket) => sum + bucket.assetCount), 1);
+    });
+
+    test('does not count locked assets in an ungrouped album bucket', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final visible = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.timeline);
+      final locked = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: visible.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: locked.id);
+
+      final buckets = await sut.remoteAlbum(album.id, .none).bucketSource().first;
+      expect(buckets.single.assetCount, 1);
+    });
   });
 
   group('person assets', () {

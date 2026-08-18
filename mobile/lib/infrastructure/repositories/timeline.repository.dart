@@ -181,6 +181,15 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
         .get();
   }
 
+  /// Album views must not surface assets the server would withhold. The server applies its default
+  /// visibility set (timeline + archive) to album buckets, and that filter is the only thing keeping
+  /// locked-folder assets out of an album view. Mobile has no `isLocked` column on albums, so a locked
+  /// album syncs down looking ordinary; without this predicate its assets would render with no PIN.
+  /// Excluding `hidden` as well matches the server and keeps motion-photo video parts out.
+  Expression<bool> _albumAssetVisibility() =>
+      _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) |
+      _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.archive);
+
   TimelineQuery remoteAlbum(String albumId, GroupAssetsBy groupBy) => (
     bucketSource: () => _watchRemoteAlbumBucket(albumId, groupBy: groupBy),
     assetSource: (offset, count) => _getRemoteAlbumBucketAssets(albumId, offset: offset, count: count),
@@ -189,11 +198,27 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
 
   Stream<List<Bucket>> _watchRemoteAlbumBucket(String albumId, {GroupAssetsBy groupBy = GroupAssetsBy.day}) {
     if (groupBy == GroupAssetsBy.none) {
-      return _db.remoteAlbumAssetEntity
-          .count(where: (row) => row.albumId.equals(albumId))
-          .map(_generateBuckets)
-          .watch()
-          .map((results) => results.isNotEmpty ? results.first : const <Bucket>[])
+      // Counted through a join on the asset table rather than straight off album membership, so the
+      // visibility predicate can apply. This also stops soft-deleted assets being counted, matching
+      // the grouped branch below.
+      final countExp = _db.remoteAssetEntity.id.count();
+      return (_db.remoteAssetEntity.selectOnly()
+            ..addColumns([countExp])
+            ..join([
+              innerJoin(
+                _db.remoteAlbumAssetEntity,
+                _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
+                useColumns: false,
+              ),
+            ])
+            ..where(
+              _db.remoteAssetEntity.deletedAt.isNull() &
+                  _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
+                  _albumAssetVisibility(),
+            ))
+          .map((row) => row.read(countExp) ?? 0)
+          .watchSingleOrNull()
+          .map((count) => _generateBuckets(count ?? 0))
           .handleError((error) => const <Bucket>[]);
     }
 
@@ -218,7 +243,11 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
                 useColumns: false,
               ),
             ])
-            ..where(_db.remoteAssetEntity.deletedAt.isNull() & _db.remoteAlbumAssetEntity.albumId.equals(albumId))
+            ..where(
+              _db.remoteAssetEntity.deletedAt.isNull() &
+                  _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
+                  _albumAssetVisibility(),
+            )
             ..groupBy([dateExp]);
 
           if (isAscending) {
@@ -262,7 +291,11 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
         _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
         useColumns: false,
       ),
-    ])..where(_db.remoteAssetEntity.deletedAt.isNull() & _db.remoteAlbumAssetEntity.albumId.equals(albumId));
+    ])..where(
+      _db.remoteAssetEntity.deletedAt.isNull() &
+          _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
+          _albumAssetVisibility(),
+    );
 
     if (isAscending) {
       query.orderBy([OrderingTerm.asc(_db.remoteAssetEntity.createdAt)]);
