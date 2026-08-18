@@ -47,7 +47,7 @@ import { updateLockedColumns } from 'src/utils/database';
 import { extractTimeZone } from 'src/utils/date';
 import { batched, findOrFail } from 'src/utils/misc';
 import { transformOcrBoundingBox } from 'src/utils/transform';
-import { forViewer } from 'src/utils/visibility-policy';
+import { forSystem, forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class AssetService extends BaseService {
@@ -327,10 +327,15 @@ export class AssetService extends BaseService {
         await this.stackRepository.delete(asset.stack.id);
       } else if (asset.stack.primaryAssetId === id) {
         // the primary is being deleted but others remain: promote a new primary
-        await this.stackRepository.update(asset.stack.id, {
-          id: asset.stack.id,
-          primaryAssetId: remainingStackAssetIds[0],
-        });
+        // Asset deletion is a background job with no session, and the stack it returns is discarded.
+        await this.stackRepository.update(
+          asset.stack.id,
+          {
+            id: asset.stack.id,
+            primaryAssetId: remainingStackAssetIds[0],
+          },
+          forSystem(),
+        );
       }
     }
 

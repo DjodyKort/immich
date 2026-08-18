@@ -2,6 +2,7 @@ import { Kysely } from 'kysely';
 import { SyncEntityType, SyncRequestType } from 'src/enum';
 import { MemoryRepository } from 'src/repositories/memory.repository';
 import { DB } from 'src/schema';
+import { forSystem } from 'src/utils/visibility-policy';
 import { SyncTestContext } from 'test/medium.factory';
 import { getKyselyDB } from 'test/utils';
 
@@ -87,7 +88,7 @@ describe(SyncEntityType.MemoryV1, () => {
     ]);
 
     await ctx.syncAckAll(auth, response);
-    await memoryRepo.update(memory.id, { seenAt: new Date() });
+    await memoryRepo.update(memory.id, { seenAt: new Date() }, forSystem());
     const newResponse = await ctx.syncStream(auth, [SyncRequestType.MemoriesV1]);
     expect(newResponse).toEqual([
       {

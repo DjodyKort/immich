@@ -5,10 +5,11 @@ import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators';
 import { MemorySearchDto } from 'src/dtos/memory.dto';
-import { AssetOrderWithRandom, AssetVisibility } from 'src/enum';
+import { AssetOrderWithRandom } from 'src/enum';
 import { DB } from 'src/schema';
 import { MemoryTable } from 'src/schema/tables/memory.table';
 import { IBulkAsset } from 'src/types';
+import { PolicyContext, Surface, surfacePredicate, whereNoLongerOnTimeline } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class MemoryRepository implements IBulkAsset {
@@ -19,7 +20,7 @@ export class MemoryRepository implements IBulkAsset {
       .deleteFrom('memory_asset')
       .using('asset')
       .whereRef('memory_asset.assetId', '=', 'asset.id')
-      .where('asset.visibility', '!=', AssetVisibility.Timeline)
+      .where((eb) => whereNoLongerOnTimeline(eb))
       .execute();
 
     return this.db
@@ -54,10 +55,10 @@ export class MemoryRepository implements IBulkAsset {
   }
 
   @GenerateSql(
-    { params: [DummyValue.UUID, {}] },
-    { name: 'date filter', params: [DummyValue.UUID, { for: DummyValue.DATE }] },
+    { params: [DummyValue.UUID, {}, { elevated: false }] },
+    { name: 'date filter', params: [DummyValue.UUID, { for: DummyValue.DATE }, { elevated: false }] },
   )
-  search(ownerId: string, dto: MemorySearchDto) {
+  search(ownerId: string, dto: MemorySearchDto, ctx: PolicyContext) {
     return this.searchBuilder(ownerId, dto)
       .select((eb) =>
         jsonArrayFrom(
@@ -66,7 +67,7 @@ export class MemoryRepository implements IBulkAsset {
             .selectAll('asset')
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-            .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+            .where((eb) => surfacePredicate(eb, Surface.Memories, ctx))
             .where('asset.deletedAt', 'is', null)
             .where((eb) =>
               eb.not(
@@ -93,12 +94,12 @@ export class MemoryRepository implements IBulkAsset {
       .execute();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID] })
-  get(id: string) {
-    return this.getByIdBuilder(id).executeTakeFirst();
+  @GenerateSql({ params: [DummyValue.UUID, { elevated: false }] })
+  get(id: string, ctx: PolicyContext) {
+    return this.getByIdBuilder(id, ctx).executeTakeFirst();
   }
 
-  async create(memory: Insertable<MemoryTable>, assetIds: Set<string>) {
+  async create(memory: Insertable<MemoryTable>, assetIds: Set<string>, ctx: PolicyContext) {
     const id = await this.db.transaction().execute(async (tx) => {
       const { id } = await tx.insertInto('memory').values(memory).returning('id').executeTakeFirstOrThrow();
 
@@ -110,13 +111,13 @@ export class MemoryRepository implements IBulkAsset {
       return id;
     });
 
-    return this.getByIdBuilder(id).executeTakeFirstOrThrow();
+    return this.getByIdBuilder(id, ctx).executeTakeFirstOrThrow();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, { ownerId: DummyValue.UUID, isSaved: true }] })
-  async update(id: string, memory: Updateable<MemoryTable>) {
+  @GenerateSql({ params: [DummyValue.UUID, { ownerId: DummyValue.UUID, isSaved: true }, { elevated: false }] })
+  async update(id: string, memory: Updateable<MemoryTable>, ctx: PolicyContext) {
     await this.db.updateTable('memory').set(memory).where('id', '=', id).execute();
-    return this.getByIdBuilder(id).executeTakeFirstOrThrow();
+    return this.getByIdBuilder(id, ctx).executeTakeFirstOrThrow();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -163,7 +164,7 @@ export class MemoryRepository implements IBulkAsset {
     await this.db.deleteFrom('memory_asset').where('memoriesId', '=', id).where('assetId', 'in', assetIds).execute();
   }
 
-  private getByIdBuilder(id: string) {
+  private getByIdBuilder(id: string, ctx: PolicyContext) {
     return this.db
       .selectFrom('memory')
       .selectAll('memory')
@@ -175,7 +176,7 @@ export class MemoryRepository implements IBulkAsset {
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .orderBy('asset.fileCreatedAt', 'asc')
-            .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+            .where((eb) => surfacePredicate(eb, Surface.Memories, ctx))
             .where('asset.deletedAt', 'is', null),
         ).as('assets'),
       )

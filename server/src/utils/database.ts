@@ -33,7 +33,6 @@ import {
   AssetFileType,
   AssetOrder,
   AssetOrderBy,
-  AssetVisibility,
   DatabaseExtension,
   ExifOrientation,
   SearchOrderField,
@@ -102,10 +101,6 @@ export const isAssetChecksumConstraint = (error: unknown) =>
 
 export const isVideoStreamSessionPkConstraint = (error: unknown) =>
   (error as PostgresError)?.constraint_name === VIDEO_STREAM_SESSION_PK_CONSTRAINT;
-
-export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>) {
-  return qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]);
-}
 
 const selectExifInfo = (eb: AssetExpressionBuilder) =>
   eb.fn

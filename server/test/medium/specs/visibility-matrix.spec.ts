@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
 import { AuthDto } from 'src/dtos/auth.dto';
+import { SearchSuggestionType } from 'src/dtos/search.dto';
 import { AssetVisibility, CalendarHeatmapType } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
@@ -8,10 +9,12 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
 import { DatabaseRepository } from 'src/repositories/database.repository';
 import { DownloadRepository } from 'src/repositories/download.repository';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository';
 import { EventRepository } from 'src/repositories/event.repository';
 import { JobRepository } from 'src/repositories/job.repository';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { MapRepository } from 'src/repositories/map.repository';
+import { MemoryRepository } from 'src/repositories/memory.repository';
 import { OcrRepository } from 'src/repositories/ocr.repository';
 import { PartnerRepository } from 'src/repositories/partner.repository';
 import { PersonRepository } from 'src/repositories/person.repository';
@@ -20,14 +23,20 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { StackRepository } from 'src/repositories/stack.repository';
 import { StorageRepository } from 'src/repositories/storage.repository';
 import { UserRepository } from 'src/repositories/user.repository';
+import { ViewRepository } from 'src/repositories/view-repository';
 import { DB } from 'src/schema';
 import { AlbumService } from 'src/services/album.service';
 import { AssetService } from 'src/services/asset.service';
 import { DownloadService } from 'src/services/download.service';
+import { DuplicateService } from 'src/services/duplicate.service';
 import { MapService } from 'src/services/map.service';
+import { MemoryService } from 'src/services/memory.service';
+import { PersonService } from 'src/services/person.service';
 import { SearchService } from 'src/services/search.service';
+import { StackService } from 'src/services/stack.service';
 import { TimelineService } from 'src/services/timeline.service';
 import { UserService } from 'src/services/user.service';
+import { ViewService } from 'src/services/view.service';
 import { MediumTestContext, newMediumService } from 'test/medium.factory';
 import { factory } from 'test/small.factory';
 import { getKyselyDB } from 'test/utils';
@@ -74,35 +83,85 @@ const BUCKET_KEY = '1970-02-01';
 type Fixture = {
   userId: string;
   albumId: string;
+  /** One person, with a visible face on every asset, for the people surface. */
+  personId: string;
+  /** One memory, containing every asset, for the memories surface. */
+  memoryId: string;
+  /** Shared by all four assets, so that they form a single duplicate group. */
+  duplicateId: string;
   /** asset id, per visibility */
   ids: Record<AssetVisibility, string>;
 };
 
-type FixtureContext = Pick<MediumTestContext, 'newUser' | 'newAlbum' | 'newAsset' | 'newExif' | 'newAlbumAsset'>;
+type FixtureContext = Pick<
+  MediumTestContext,
+  | 'newUser'
+  | 'newAlbum'
+  | 'newAsset'
+  | 'newExif'
+  | 'newAlbumAsset'
+  | 'newPerson'
+  | 'newAssetFace'
+  | 'newMemory'
+  | 'newMemoryAsset'
+  | 'newStack'
+>;
 
 /**
- * One user, one ordinary (non-locked) album, and one asset per visibility - each with an EXIF row
- * carrying coordinates and a non-zero file size, so the map and large-asset surfaces are reachable.
- * Every asset is a member of the album.
+ * Every asset shares this directory, because it is assetInsert's default originalPath, so the folder
+ * view can be probed without the fixture inventing a path scheme of its own.
+ */
+const FOLDER_PATH = '/path/to';
+
+/**
+ * One user, one ordinary (non-locked) album, one person, one memory, and one asset per visibility -
+ * each with an EXIF row carrying coordinates, a distinct city, and a non-zero file size, so the map,
+ * large-asset, and search-suggestion surfaces are reachable. Every asset is a member of the album and
+ * of the memory, carries a visible face of the person, and shares one duplicateId, so the four form a
+ * single duplicate group.
+ *
+ * Those extras are inert for the surfaces that do not read them: no surface filters on duplicateId, on
+ * originalPath, on the EXIF city, or on face membership, and the person is not hidden, which is the
+ * only thing the memories query asks about a face. Nothing here puts the assets in a stack - a stack
+ * hides its non-primary members from the timeline, which would move cells recorded before this file
+ * existed.
  */
 const newFixture = async (ctx: FixtureContext): Promise<Fixture> => {
   const { user } = await ctx.newUser();
   const { album } = await ctx.newAlbum({ ownerId: user.id });
+  const { person } = await ctx.newPerson({ ownerId: user.id });
+  const { memory } = await ctx.newMemory({ ownerId: user.id });
+  const duplicateId = factory.uuid();
 
   const ids = {} as Record<AssetVisibility, string>;
   for (const [index, visibility] of ALL_VISIBILITIES.entries()) {
-    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility, localDateTime: BUCKET_DATE });
+    const { asset } = await ctx.newAsset({
+      ownerId: user.id,
+      visibility,
+      localDateTime: BUCKET_DATE,
+      duplicateId,
+    });
     await ctx.newExif({
       assetId: asset.id,
       latitude: 40.7128 + index,
       longitude: -74.006,
       fileSizeInByte: 1024 * (index + 1),
+      city: 'City ' + index,
     });
     await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+    await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
     ids[visibility] = asset.id;
   }
 
-  return { userId: user.id, albumId: album.id, ids };
+  return {
+    userId: user.id,
+    albumId: album.id,
+    personId: person.id,
+    memoryId: memory.id,
+    duplicateId,
+    ids,
+  };
 };
 
 const authFor = (fixture: Fixture, elevated: boolean): AuthDto =>
@@ -124,6 +183,8 @@ const defineSurface = <S>(config: {
   name: string;
   setup: (database: Kysely<DB>) => { sut: S; ctx: FixtureContext };
   probe: (args: { sut: S; fixture: Fixture; auth: AuthDto }) => Promise<ProbeResult>;
+  /** Rows this surface needs that would perturb the other surfaces if the base fixture created them. */
+  extend?: (args: { ctx: FixtureContext; fixture: Fixture }) => Promise<void>;
   notElevated: AssetVisibility[];
   elevated: AssetVisibility[];
 }): Surface => ({
@@ -133,6 +194,7 @@ const defineSurface = <S>(config: {
   run: async (database, elevated) => {
     const { sut, ctx } = config.setup(database);
     const fixture = await newFixture(ctx);
+    await config.extend?.({ ctx, fixture });
     const auth = authFor(fixture, elevated);
     return { fixture, result: await config.probe({ sut, fixture, auth }) };
   },
@@ -203,6 +265,41 @@ const setupDownload = (database: Kysely<DB>) =>
     mock: [LoggingRepository, StorageRepository],
   });
 
+const setupPerson = (database: Kysely<DB>) =>
+  newMediumService(PersonService, {
+    database,
+    real: [PersonRepository, AccessRepository],
+    mock: [LoggingRepository],
+  });
+
+const setupMemory = (database: Kysely<DB>) =>
+  newMediumService(MemoryService, {
+    database,
+    real: [MemoryRepository, AccessRepository],
+    mock: [LoggingRepository],
+  });
+
+const setupView = (database: Kysely<DB>) =>
+  newMediumService(ViewService, {
+    database,
+    real: [ViewRepository],
+    mock: [LoggingRepository],
+  });
+
+const setupDuplicate = (database: Kysely<DB>) =>
+  newMediumService(DuplicateService, {
+    database,
+    real: [DuplicateRepository, AccessRepository],
+    mock: [LoggingRepository],
+  });
+
+const setupStack = (database: Kysely<DB>) =>
+  newMediumService(StackService, {
+    database,
+    real: [StackRepository, AccessRepository],
+    mock: [LoggingRepository, EventRepository],
+  });
+
 const sumBucketCounts = (buckets: Array<{ count: number }>) =>
   buckets.reduce((total, bucket) => total + Number(bucket.count), 0);
 
@@ -239,8 +336,9 @@ const SURFACES: Surface[] = [
       count: sumBucketCounts(await sut.getTimeBuckets(auth, { albumId: fixture.albumId })),
     }),
     notElevated: [Timeline, Archive],
-    // The only surface that deliberately widens to Locked: `includeLockedAlbumAssets` in
-    // `TimelineService.buildTimeBucketOptions` requires both an albumId and an elevated session.
+    // An album-scoped bucket query asks the policy table for `Surface.AlbumTimeline`, which widens to
+    // Locked on elevation, where the plain timeline above asks for `Surface.Timeline`, which never
+    // does. The albumId in the request is the only thing that chooses between the two.
     elevated: [Timeline, Archive, Locked],
   }),
   defineSurface({
@@ -363,6 +461,99 @@ const SURFACES: Surface[] = [
     // query itself has to exclude locked assets for a session that never entered the PIN.
     notElevated: [Timeline, Archive],
     elevated: [Timeline, Archive, Locked],
+  }),
+
+  // The surfaces below pin `Surface.People`, `Surface.Memories`, `Surface.FolderView`,
+  // `Surface.SearchSuggestions`, `Surface.AlbumContents`, `Surface.Duplicates`, and
+  // `Surface.StackContents`. None of them widens on elevation, which is what they did before the
+  // policy layer reached them: the first four asked for `visibility = 'timeline'` exactly, and the
+  // last three shared `withDefaultVisibility`, which had no way to ask about elevation at all.
+  defineSurface({
+    name: 'PersonService.getStatistics',
+    setup: setupPerson,
+    probe: async ({ sut, fixture, auth }) => {
+      const statistics = await sut.getStatistics(auth, fixture.personId);
+      return { count: statistics.assets };
+    },
+    // The strictest rule in the table alongside the global map: a person's asset count omits the
+    // owner's own archived photos, so archiving a face's only photo makes the person read as empty.
+    notElevated: [Timeline],
+    elevated: [Timeline],
+  }),
+  defineSurface({
+    name: 'MemoryService.search',
+    setup: setupMemory,
+    probe: async ({ sut, auth }) => {
+      const memories = await sut.search(auth, {});
+      return { ids: memories.flatMap((memory) => memory.assets.map((asset) => asset.id)) };
+    },
+    notElevated: [Timeline],
+    elevated: [Timeline],
+  }),
+  defineSurface({
+    name: 'ViewService.getAssetsByOriginalPath',
+    setup: setupView,
+    probe: async ({ sut, auth }) => {
+      const assets = await sut.getAssetsByOriginalPath(auth, FOLDER_PATH);
+      return { ids: assets.map((asset) => asset.id) };
+    },
+    notElevated: [Timeline],
+    elevated: [Timeline],
+  }),
+  defineSurface({
+    name: 'SearchService.getSearchSuggestions (city)',
+    setup: setupSearch,
+    probe: async ({ sut, auth }) => {
+      // One distinct city per asset, so the number of suggestions is the number of admitted assets.
+      const suggestions = await sut.getSearchSuggestions(auth, { type: SearchSuggestionType.CITY });
+      return { count: suggestions.length };
+    },
+    notElevated: [Timeline],
+    elevated: [Timeline],
+  }),
+  defineSurface({
+    name: 'AlbumService.update (assetCount)',
+    setup: setupAlbum,
+    probe: async ({ sut, fixture, auth }) => {
+      // mapAlbum derives assetCount from the album's own asset list, so this counts Surface.AlbumContents
+      // rather than Surface.AlbumMetadata, which is what AlbumService.get reports under the same name.
+      const album = await sut.update(auth, fixture.albumId, { albumName: 'renamed' });
+      return { count: album.assetCount };
+    },
+    // Deliberately narrower than `AlbumService.get (assetCount)` above, which widens to Locked on
+    // elevation while this does not - the same response field, decided by two different rules. The
+    // disagreement is recorded here rather than resolved, so whichever commit reconciles them has to
+    // move a cell on purpose.
+    notElevated: [Timeline, Archive],
+    elevated: [Timeline, Archive],
+  }),
+  defineSurface({
+    name: 'DuplicateService.getDuplicates',
+    setup: setupDuplicate,
+    probe: async ({ sut, auth }) => {
+      const groups = await sut.getDuplicates(auth);
+      return { ids: groups.flatMap((group) => group.assets.map((asset) => asset.id)) };
+    },
+    notElevated: [Timeline, Archive],
+    elevated: [Timeline, Archive],
+  }),
+  defineSurface({
+    name: 'StackService.search',
+    setup: setupStack,
+    // A stack is created only for this surface: a stack hides its non-primary members from the
+    // timeline, so putting one in the base fixture would move cells on unrelated surfaces.
+    extend: async ({ ctx, fixture }) => {
+      await ctx.newStack(
+        { ownerId: fixture.userId },
+        ALL_VISIBILITIES.map((visibility) => fixture.ids[visibility]),
+      );
+    },
+    probe: async ({ sut, auth }) => {
+      const stacks = await sut.search(auth, {});
+      return { ids: stacks.flatMap((stack) => stack.assets.map((asset) => asset.id)) };
+    },
+    notElevated: [Timeline, Archive],
+    elevated: [Timeline, Archive],
   }),
 ];
 

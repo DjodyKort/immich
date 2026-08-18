@@ -11,6 +11,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository';
 import { DB } from 'src/schema';
 import { MemoryService } from 'src/services/memory.service';
+import { forSystem } from 'src/utils/visibility-policy';
 import { newMediumService } from 'test/medium.factory';
 import { factory } from 'test/small.factory';
 import { getKyselyDB } from 'test/utils';
@@ -132,7 +133,7 @@ describe(MemoryService.name, () => {
       vi.setSystemTime(now.toJSDate());
       await sut.onMemoriesCreate();
 
-      const memories = await memoryRepo.search(user.id, {});
+      const memories = await memoryRepo.search(user.id, {}, forSystem());
       expect(memories.length).toBe(1);
       expect(memories[0]).toEqual(
         expect.objectContaining({
@@ -172,7 +173,7 @@ describe(MemoryService.name, () => {
       vi.setSystemTime(now.toJSDate());
       await sut.onMemoriesCreate();
 
-      const memories = await memoryRepo.search(user.id, {});
+      const memories = await memoryRepo.search(user.id, {}, forSystem());
       expect(memories.length).toBe(1);
       expect(memories[0]).toEqual(
         expect.objectContaining({
@@ -227,12 +228,12 @@ describe(MemoryService.name, () => {
       vi.setSystemTime(now.toJSDate());
       await sut.onMemoriesCreate();
 
-      const memories = await memoryRepo.search(user.id, {});
+      const memories = await memoryRepo.search(user.id, {}, forSystem());
       expect(memories.length).toBe(1);
 
       await sut.onMemoriesCreate();
 
-      const memoriesAfter = await memoryRepo.search(user.id, {});
+      const memoriesAfter = await memoryRepo.search(user.id, {}, forSystem());
       expect(memoriesAfter.length).toBe(1);
     });
   });

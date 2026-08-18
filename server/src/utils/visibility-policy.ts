@@ -10,7 +10,14 @@ import { DB } from 'src/schema';
  * call site: `withDefaultVisibility`, a `getSearchVisibility` helper, an `includeLockedAlbumAssets`
  * option, a bespoke `!= 'hidden'` on the download query, and several surfaces with no filter at all.
  * Four of the six defects that turned up while shipping locked albums were only possible because the
- * policy could be re-decided per query.
+ * policy could be re-decided per query. All five of those mechanisms are now deleted: every
+ * user-facing read surface asks the table below, and the job and processing paths use the named
+ * non-surface helpers at the bottom of this file.
+ *
+ * What is deliberately still hand-written elsewhere answers a different question, not this one: a
+ * caller-supplied `visibility` filter (a request parameter, not a policy), predicates on a self-joined
+ * `asset` alias such as `stacked` or `stack_asset`, the `!= hidden` in library and user storage
+ * statistics, and the access checks that must keep motion parts reachable through their parent.
  *
  * `hidden` appears in no rule. Motion-photo video parts are therefore excluded from every user-facing
  * surface by construction rather than by each author remembering. Job and processing paths that
@@ -35,6 +42,23 @@ export enum Surface {
   GlobalMap = 'globalMap',
   /** "Download everything I own". */
   TimelineDownload = 'timelineDownload',
+  /** The people list, a person's asset count, and the "how many people do I have" badge. */
+  People = 'people',
+  /** A memory's assets, and the memory list's inline asset previews. */
+  Memories = 'memories',
+  /** The folder view: the directory tree and one directory's assets. */
+  FolderView = 'folderView',
+  /**
+   * The search filter suggestion lists (country, state, city, camera make/model/lens) and the
+   * city-grouped "explore places" row, which read the same rule from the same table.
+   */
+  SearchSuggestions = 'searchSuggestions',
+  /** An album's own asset list, as returned by album creation, album update, and adding album users. */
+  AlbumContents = 'albumContents',
+  /** A duplicate group's assets, on the duplicates review page. */
+  Duplicates = 'duplicates',
+  /** A stack's member assets, as returned by stack read, create, and update. */
+  StackContents = 'stackContents',
 }
 
 type SurfaceRule = {
@@ -49,7 +73,7 @@ const { Archive, Timeline, Locked } = AssetVisibility;
 /**
  * The whole visibility policy, on one screen, reviewable as a table.
  *
- * Fourteen endpoints collapse into three distinct rules. Elevation deliberately buys nothing on the
+ * Sixteen surfaces collapse into three distinct rules. Elevation deliberately buys nothing on the
  * main timeline or the global map: widening those would drop locked photos into the main Photos tab
  * and onto the map for the rest of the elevated window, which is a regression, not a fix. The locked
  * folder is reached by asking for `visibility: locked` explicitly, which requires elevation of its own.
@@ -68,6 +92,19 @@ const POLICY: Record<Surface, SurfaceRule> = {
   [Surface.AlbumMap]: { base: [Archive, Timeline], elevatedAdds: [Locked] },
   [Surface.GlobalMap]: { base: [Timeline], elevatedAdds: [] },
   [Surface.TimelineDownload]: { base: [Archive, Timeline], elevatedAdds: [Locked] },
+  [Surface.People]: { base: [Timeline], elevatedAdds: [] },
+  [Surface.Memories]: { base: [Timeline], elevatedAdds: [] },
+  [Surface.FolderView]: { base: [Timeline], elevatedAdds: [] },
+  [Surface.SearchSuggestions]: { base: [Timeline], elevatedAdds: [] },
+  // The three surfaces below inherited their rule from `withDefaultVisibility`, which excluded hidden
+  // and locked unconditionally and had no way to ask about elevation. `elevatedAdds` is therefore empty
+  // on purpose: it records what these paths do today rather than what they arguably should do. Album
+  // contents in particular does NOT widen the way Surface.AlbumTimeline does, so a locked album's
+  // detail response lists no assets even for an elevated session. Widening it is a behaviour change and
+  // belongs in its own commit, where this table and the visibility matrix change together.
+  [Surface.AlbumContents]: { base: [Archive, Timeline], elevatedAdds: [] },
+  [Surface.Duplicates]: { base: [Archive, Timeline], elevatedAdds: [] },
+  [Surface.StackContents]: { base: [Archive, Timeline], elevatedAdds: [] },
 };
 
 /**
@@ -99,6 +136,15 @@ export const forSharing = (): PolicyContext => ({ elevated: false });
  */
 export const forOtherUser = (): PolicyContext => ({ elevated: false });
 
+/**
+ * A background job, or a repository method reached from one. There is no session to elevate, and an
+ * unattended path must never be the thing that reaches into someone's locked folder.
+ *
+ * Only sound on a surface whose `elevatedAdds` is empty, since anywhere else it would silently pick
+ * the narrow branch of a rule that has a wide one. Every current caller is such a surface.
+ */
+export const forSystem = (): PolicyContext => ({ elevated: false });
+
 const admitted = (surface: Surface, ctx: PolicyContext): AssetVisibility[] => {
   const rule = POLICY[surface];
   return ctx.elevated ? [...rule.base, ...rule.elevatedAdds] : [...rule.base];
@@ -120,15 +166,21 @@ export function withSurface<O>(qb: SelectQueryBuilder<DB, 'asset', O>, surface: 
 }
 
 /**
- * The same rule as an expression, for `or` groups and the v3 search filter, which cannot take a query
- * builder. Reads the same table, so the two cannot drift apart.
+ * The same rule as an expression, for `or` groups, join `ON` clauses, and the v3 search filter, none of
+ * which can take a query builder. Reads the same table as {@link withSurface}, so the two cannot drift
+ * apart.
+ *
+ * Generic over the caller's schema for the reason given below {@link asAssetBuilder}: a join `ON`
+ * clause and a left-joined builder both widen `DB`, so neither can satisfy
+ * `ExpressionBuilder<DB, 'asset'>`. Prefer {@link withSurface} where the builder is a plain
+ * `selectFrom('asset')`; it keeps the stronger type.
  */
-export function surfacePredicate(
-  eb: ExpressionBuilder<DB, 'asset'>,
+export function surfacePredicate<DBT, TB extends keyof DBT & string>(
+  eb: ExpressionBuilder<DBT, TB>,
   surface: Surface,
   ctx: PolicyContext,
 ): Expression<SqlBool> {
-  return eb(
+  return asAssetBuilder(eb)(
     'asset.visibility',
     'in',
     admitted(surface, ctx).map((visibility) => sql.lit(visibility)),
@@ -196,9 +248,27 @@ export function excludeLockedAlbumsUnlessElevated<DBT, TB extends keyof DBT & st
  * and library and user statistics. Kept separate so those paths do not have to borrow a surface rule
  * that does not describe them.
  */
-export function excludeMotionParts<O>(qb: SelectQueryBuilder<DB, 'asset', O>) {
-  return qb.where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden));
+export function excludeMotionParts<DBT, TB extends keyof DBT & string, O>(
+  qb: SelectQueryBuilder<DBT, TB, O>,
+): SelectQueryBuilder<DBT, TB, O> {
+  return qb.where((eb) => asAssetBuilder(eb)('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)));
 }
+
+/**
+ * The inverse of the {@link Surface.Memories} rule: the asset has left the timeline.
+ *
+ * Maintenance logic, not a read surface. `MemoryRepository.cleanup` deletes the `memory_asset` rows of
+ * assets that are no longer on the timeline, so archiving, hiding, or locking an asset drops it out of
+ * every memory. Because it is a deletion predicate it has to be the complement of the read rule, and
+ * because it is a complement it cannot be expressed by asking the policy table for an admitted set --
+ * `withSurface` would keep exactly the rows this needs to remove.
+ *
+ * It lives here anyway so that the pair moves together: widen `Surface.Memories` without widening this
+ * and cleanup starts deleting rows the surface would have shown.
+ */
+export const whereNoLongerOnTimeline = <DBT, TB extends keyof DBT & string>(
+  eb: ExpressionBuilder<DBT, TB>,
+): Expression<SqlBool> => asAssetBuilder(eb)('asset.visibility', '!=', sql.lit(AssetVisibility.Timeline));
 
 /** Exposed for the policy unit test, so the table itself can be asserted without a database. */
 export const getAdmittedVisibility = admitted;

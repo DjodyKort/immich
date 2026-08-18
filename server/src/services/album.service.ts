@@ -21,7 +21,7 @@ import { addAssets, removeAssets } from 'src/utils/asset.util';
 import { asDateTimeString } from 'src/utils/date';
 import { findOrFail } from 'src/utils/misc';
 import { getPreferences } from 'src/utils/preferences';
-import { forViewer } from 'src/utils/visibility-policy';
+import { forViewer, PolicyContext } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class AlbumService extends BaseService {
@@ -80,7 +80,7 @@ export class AlbumService extends BaseService {
   async get(auth: AuthDto, id: string): Promise<AlbumResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
     await this.albumRepository.updateThumbnails();
-    const album = await this.findOrFail(id, auth.user.id, { withAssets: false });
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: false }, forViewer(auth));
     // Pass the session's real elevation rather than a hardcoded true. requireAccess(AlbumRead) above
     // does deny a locked album to a non-elevated session, but relying on that alone means trusting
     // that a locked asset can never sit in an ordinary album, and getMapMarkers a few lines below
@@ -164,6 +164,7 @@ export class AlbumService extends BaseService {
       assetIds,
       [{ userId: auth.user.id, role: AlbumUserRole.Owner }, ...albumUsers],
       auth.user.id,
+      forViewer(auth),
     );
 
     for (const { userId } of albumUsers) {
@@ -176,7 +177,7 @@ export class AlbumService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAlbumDto): Promise<AlbumResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
 
-    const album = await this.findOrFail(id, auth.user.id, { withAssets: true });
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth));
 
     if (dto.albumThumbnailAssetId) {
       const results = await this.albumRepository.getAssetIds(id, [dto.albumThumbnailAssetId]);
@@ -206,7 +207,7 @@ export class AlbumService extends BaseService {
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
-    const album = await this.findOrFail(id, auth.user.id, { withAssets: false });
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: false }, forViewer(auth));
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
 
     let results: BulkIdResponseDto[];
@@ -358,7 +359,7 @@ export class AlbumService extends BaseService {
       if (notPresentAssetIds.length === 0) {
         continue;
       }
-      const album = await this.findOrFail(albumId, auth.user.id, { withAssets: false });
+      const album = await this.findOrFail(albumId, auth.user.id, { withAssets: false }, forViewer(auth));
       results.error = undefined;
       results.success = true;
 
@@ -391,7 +392,7 @@ export class AlbumService extends BaseService {
   async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AlbumAssetDelete, ids: [id] });
 
-    const album = await this.findOrFail(id, auth.user.id, { withAssets: false });
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: false }, forViewer(auth));
     const results = await removeAssets(
       auth,
       { access: this.accessRepository, bulk: this.albumRepository },
@@ -417,7 +418,7 @@ export class AlbumService extends BaseService {
   async addUsers(auth: AuthDto, id: string, { albumUsers }: AddUsersDto): Promise<AlbumResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
 
-    const album = await this.findOrFail(id, auth.user.id, { withAssets: false });
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: false }, forViewer(auth));
 
     for (const { userId, role } of albumUsers) {
       if (role === AlbumUserRole.Owner) {
@@ -439,7 +440,7 @@ export class AlbumService extends BaseService {
       await this.eventRepository.emit('AlbumInvite', { id, userId, senderName: auth.user.name });
     }
 
-    return mapAlbum(await this.findOrFail(id, auth.user.id, { withAssets: true }));
+    return mapAlbum(await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth)));
   }
 
   async removeUser(auth: AuthDto, id: string, userId: string | 'me'): Promise<void> {
@@ -447,7 +448,7 @@ export class AlbumService extends BaseService {
       userId = auth.user.id;
     }
 
-    const album = await this.findOrFail(id, auth.user.id, { withAssets: false });
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: false }, forViewer(auth));
 
     const exists = album.albumUsers.find(({ user: { id } }) => id === userId);
     if (!exists) {
@@ -472,7 +473,7 @@ export class AlbumService extends BaseService {
   async updateUser(auth: AuthDto, id: string, userId: string, dto: UpdateAlbumUserDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
 
-    const album = await this.findOrFail(id, userId, { withAssets: false });
+    const album = await this.findOrFail(id, userId, { withAssets: false }, forViewer(auth));
     const owner = album.albumUsers[0];
 
     if (owner.user.id === userId) {
@@ -482,7 +483,7 @@ export class AlbumService extends BaseService {
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
   }
 
-  private findOrFail(id: string, authUserId: string, options: AlbumInfoOptions) {
-    return findOrFail(() => this.albumRepository.getById(id, options, authUserId), 'Album');
+  private findOrFail(id: string, authUserId: string, options: AlbumInfoOptions, ctx: PolicyContext) {
+    return findOrFail(() => this.albumRepository.getById(id, options, ctx, authUserId), 'Album');
   }
 }

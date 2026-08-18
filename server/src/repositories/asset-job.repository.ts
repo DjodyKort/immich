@@ -10,7 +10,6 @@ import {
   anyUuid,
   asUuid,
   withAudioStream,
-  withDefaultVisibility,
   withEdits,
   withExif,
   withExifInner,
@@ -21,6 +20,7 @@ import {
   withVideoStream,
 } from 'src/utils/database';
 import { mimeTypes } from 'src/utils/mime-types';
+import { excludeLockedUnlessElevated, excludeMotionParts, forSystem } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class AssetJobRepository {
@@ -66,7 +66,7 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .select(['asset.id', 'asset.isEdited'])
       .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
+      .$call(excludeMotionParts)
       .$if(!options.force, (qb) =>
         qb
           // If there aren't any entries, metadata extraction hasn't run yet which is required for thumbnails
@@ -178,7 +178,7 @@ export class AssetJobRepository {
   private assetsWithPreviews() {
     return this.db
       .selectFrom('asset')
-      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .$call(excludeMotionParts)
       .where('asset.deletedAt', 'is', null)
       .innerJoin('asset_job_status as job_status', 'assetId', 'asset.id')
       .where((eb) =>
@@ -193,18 +193,23 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [], stream: true })
   streamForSearchDuplicates(force?: boolean) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id'])
-      .where('asset.deletedAt', 'is', null)
-      .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
-      .$call(withDefaultVisibility)
-      .$if(!force, (qb) =>
-        qb
-          .innerJoin('asset_job_status as job_status', 'job_status.assetId', 'asset.id')
-          .where('job_status.duplicatesDetectedAt', 'is', null),
-      )
-      .stream();
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(['asset.id'])
+        .where('asset.deletedAt', 'is', null)
+        .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
+        // Duplicate detection is a background job: it skips motion parts, and it never reaches into the
+        // locked folder, which is what `withDefaultVisibility` used to say here without saying why.
+        .$call(excludeMotionParts)
+        .$call((qb) => excludeLockedUnlessElevated(qb, forSystem()))
+        .$if(!force, (qb) =>
+          qb
+            .innerJoin('asset_job_status as job_status', 'job_status.assetId', 'asset.id')
+            .where('job_status.duplicatesDetectedAt', 'is', null),
+        )
+        .stream()
+    );
   }
 
   @GenerateSql({ params: [], stream: true })
@@ -293,6 +298,15 @@ export class AssetJobRepository {
                   .select(['stack_asset.id'])
                   .whereRef('stack_asset.stackId', '=', 'stack.id')
                   .whereRef('stack_asset.id', '!=', 'stack.primaryAssetId')
+                  // The one visibility predicate in this file left outside the policy module.
+                  // `asset as stack_asset`
+                  // is a self-join alias, and every helper in the module resolves its column against
+                  // the real `asset` table -- that is the property that makes a mistyped column a
+                  // compile error. Taking an alias would mean taking a `string`, which puts a
+                  // stringly-typed hole in the module's only static guarantee for the sake of one call
+                  // site. It is also not a surface: the result decides whether a stack survives its
+                  // primary asset's deletion, and it wants `= timeline` exactly rather than an admitted
+                  // set, so no existing rule describes it either.
                   .where('stack_asset.visibility', '=', sql.val(AssetVisibility.Timeline))
                   .where('stack_asset.status', '!=', sql.val(AssetStatus.Deleted)),
               ).as('assets'),
@@ -329,7 +343,7 @@ export class AssetJobRepository {
               ),
             ),
           )
-          .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
+          .$call(excludeMotionParts),
       )
       .where('asset.deletedAt', 'is', null)
       .stream();
@@ -397,13 +411,13 @@ export class AssetJobRepository {
   getForStorageTemplateJob(id: string, options?: { includeHidden?: boolean }) {
     return this.storageTemplateAssetQuery()
       .where('asset.id', '=', id)
-      .$if(!options?.includeHidden, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Hidden))
+      .$if(!options?.includeHidden, (qb) => excludeMotionParts(qb))
       .executeTakeFirst();
   }
 
   @GenerateSql({ params: [], stream: true })
   streamForStorageTemplateJob() {
-    return this.storageTemplateAssetQuery().where('asset.visibility', '!=', AssetVisibility.Hidden).stream();
+    return this.storageTemplateAssetQuery().$call(excludeMotionParts).stream();
   }
 
   @GenerateSql({ params: [DummyValue.DATE], stream: true })
@@ -456,7 +470,7 @@ export class AssetJobRepository {
           .where('asset_job_status.ocrAt', 'is', null),
       )
       .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .$call(excludeMotionParts)
       .stream();
   }
 

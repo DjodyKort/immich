@@ -23,7 +23,7 @@ import { BaseService } from 'src/services/base.service';
 import { requireElevatedPermission } from 'src/utils/access';
 import { getMyPartnerIds } from 'src/utils/asset.util';
 import { isSmartSearchEnabled } from 'src/utils/misc';
-import { forViewer } from 'src/utils/visibility-policy';
+import { forViewer, PolicyContext } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -196,38 +196,42 @@ export class SearchService extends BaseService {
 
   async getAssetsByCity(auth: AuthDto): Promise<AssetResponseDto[]> {
     const userIds = await this.getUserIdsToSearch(auth);
-    const assets = await this.searchRepository.getAssetsByCity(userIds);
+    const assets = await this.searchRepository.getAssetsByCity(userIds, forViewer(auth));
     return assets.map((asset) => mapAsset(asset));
   }
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {
     const userIds = await this.getUserIdsToSearch(auth);
-    const suggestions = await this.getSuggestions(userIds, dto);
+    const suggestions = await this.getSuggestions(userIds, dto, forViewer(auth));
     if (dto.includeNull) {
       suggestions.push(null);
     }
     return suggestions;
   }
 
-  private getSuggestions(userIds: string[], dto: SearchSuggestionRequestDto): Promise<Array<string | null>> {
+  private getSuggestions(
+    userIds: string[],
+    dto: SearchSuggestionRequestDto,
+    ctx: PolicyContext,
+  ): Promise<Array<string | null>> {
     switch (dto.type) {
       case SearchSuggestionType.COUNTRY: {
-        return this.searchRepository.getCountries(userIds);
+        return this.searchRepository.getCountries(userIds, ctx);
       }
       case SearchSuggestionType.STATE: {
-        return this.searchRepository.getStates(userIds, dto);
+        return this.searchRepository.getStates(userIds, dto, ctx);
       }
       case SearchSuggestionType.CITY: {
-        return this.searchRepository.getCities(userIds, dto);
+        return this.searchRepository.getCities(userIds, dto, ctx);
       }
       case SearchSuggestionType.CAMERA_MAKE: {
-        return this.searchRepository.getCameraMakes(userIds, dto);
+        return this.searchRepository.getCameraMakes(userIds, dto, ctx);
       }
       case SearchSuggestionType.CAMERA_MODEL: {
-        return this.searchRepository.getCameraModels(userIds, dto);
+        return this.searchRepository.getCameraModels(userIds, dto, ctx);
       }
       case SearchSuggestionType.CAMERA_LENS_MODEL: {
-        return this.searchRepository.getCameraLensModels(userIds, dto);
+        return this.searchRepository.getCameraLensModels(userIds, dto, ctx);
       }
       default: {
         return Promise.resolve([]);

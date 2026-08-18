@@ -4,13 +4,14 @@ import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetFace } from 'src/database';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators';
-import { AssetFileType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum';
+import { AssetFileType, SourceType, UserMetadataKey } from 'src/enum';
 import { DB } from 'src/schema';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table';
 import { PersonTable } from 'src/schema/tables/person.table';
 import { dummy, removeUndefinedKeys, withFilePath } from 'src/utils/database';
 import { paginationHelper, PaginationOptions } from 'src/utils/pagination';
+import { PolicyContext, Surface, surfacePredicate } from 'src/utils/visibility-policy';
 
 export interface PersonSearchOptions {
   withHidden: boolean;
@@ -145,8 +146,13 @@ export class PersonRepository {
       .execute();
   }
 
-  @GenerateSql({ params: [{ take: 1, skip: 0 }, DummyValue.UUID] })
-  async getAllForUser(pagination: PaginationOptions, userId: string, options?: PersonSearchOptions) {
+  @GenerateSql({ params: [{ take: 1, skip: 0 }, DummyValue.UUID, { elevated: false }] })
+  async getAllForUser(
+    pagination: PaginationOptions,
+    userId: string,
+    ctx: PolicyContext,
+    options?: PersonSearchOptions,
+  ) {
     const items = await this.db
       .selectFrom('person')
       .selectAll('person')
@@ -154,7 +160,7 @@ export class PersonRepository {
       .innerJoin('asset', (join) =>
         join
           .onRef('asset_face.assetId', '=', 'asset.id')
-          .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+          .on((eb) => surfacePredicate(eb, Surface.People, ctx))
           .on('asset.deletedAt', 'is', null),
       )
       .where('person.ownerId', '=', userId)
@@ -341,14 +347,14 @@ export class PersonRepository {
       .execute();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async getStatistics(personId: string): Promise<PersonStatistics> {
+  @GenerateSql({ params: [DummyValue.UUID, { elevated: false }] })
+  async getStatistics(personId: string, ctx: PolicyContext): Promise<PersonStatistics> {
     const result = await this.db
       .selectFrom('asset_face')
       .leftJoin('asset', (join) =>
         join
           .onRef('asset.id', '=', 'asset_face.assetId')
-          .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+          .on((eb) => surfacePredicate(eb, Surface.People, ctx))
           .on('asset.deletedAt', 'is', null),
       )
       .select((eb) => eb.fn.count(eb.fn('distinct', ['asset.id'])).as('count'))
@@ -362,8 +368,8 @@ export class PersonRepository {
     };
   }
 
-  @GenerateSql({ params: [DummyValue.UUID] })
-  getNumberOfPeople(userId: string) {
+  @GenerateSql({ params: [DummyValue.UUID, { elevated: false }] })
+  getNumberOfPeople(userId: string, ctx: PolicyContext) {
     const zero = sql.lit(0);
     return this.db
       .selectFrom('person')
@@ -379,7 +385,7 @@ export class PersonRepository {
                 eb
                   .selectFrom('asset')
                   .whereRef('asset.id', '=', 'asset_face.assetId')
-                  .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                  .where((eb) => surfacePredicate(eb, Surface.People, ctx))
                   .where('asset.deletedAt', 'is', null),
               ),
             ),

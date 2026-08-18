@@ -77,7 +77,7 @@ describe(MemoryService.name, () => {
         id: memory.id,
       });
 
-      expect(mocks.memory.get).toHaveBeenCalledWith(memory.id);
+      expect(mocks.memory.get).toHaveBeenCalledWith(memory.id, { elevated: false });
       expect(mocks.access.memory.checkOwnerAccess).toHaveBeenCalledWith(memory.ownerId, new Set([memory.id]));
     });
   });
@@ -108,6 +108,7 @@ describe(MemoryService.name, () => {
           isSaved: memory.isSaved,
         },
         new Set(),
+        { elevated: false },
       );
     });
 
@@ -131,6 +132,7 @@ describe(MemoryService.name, () => {
       expect(mocks.memory.create).toHaveBeenCalledWith(
         expect.objectContaining({ ownerId: userId }),
         new Set([assetId]),
+        { elevated: false },
       );
     });
 
@@ -166,7 +168,9 @@ describe(MemoryService.name, () => {
 
       await expect(sut.update(factory.auth(), memory.id, { isSaved: true })).resolves.toBeDefined();
 
-      expect(mocks.memory.update).toHaveBeenCalledWith(memory.id, expect.objectContaining({ isSaved: true }));
+      expect(mocks.memory.update).toHaveBeenCalledWith(memory.id, expect.objectContaining({ isSaved: true }), {
+        elevated: false,
+      });
     });
   });
 

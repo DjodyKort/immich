@@ -4,11 +4,12 @@ import { Memory } from 'src/database';
 import { OnJob } from 'src/decorators';
 import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
-import { MemoryCreateDto, MemoryResponseDto, MemorySearchDto, MemoryUpdateDto, mapMemory } from 'src/dtos/memory.dto';
+import { mapMemory, MemoryCreateDto, MemoryResponseDto, MemorySearchDto, MemoryUpdateDto } from 'src/dtos/memory.dto';
 import { DatabaseLock, JobName, MemoryType, Permission, QueueName, SystemMetadataKey } from 'src/enum';
 import { BaseService } from 'src/services/base.service';
 import { addAssets, removeAssets } from 'src/utils/asset.util';
 import { findOrFail } from 'src/utils/misc';
+import { forSystem, forViewer, PolicyContext } from 'src/utils/visibility-policy';
 
 const DAYS = 3;
 
@@ -61,6 +62,7 @@ export class MemoryService extends BaseService {
             hideAt,
           },
           new Set(assets.map(({ id }) => id)),
+          forSystem(),
         ),
       ),
     );
@@ -72,7 +74,7 @@ export class MemoryService extends BaseService {
   }
 
   async search(auth: AuthDto, dto: MemorySearchDto) {
-    const memories = await this.memoryRepository.search(auth.user.id, dto);
+    const memories = await this.memoryRepository.search(auth.user.id, dto, forViewer(auth));
     return memories
       .filter((memory: Memory) => memory.assets && memory.assets.length > 0)
       .map((memory: Memory) => mapMemory(memory, auth));
@@ -84,7 +86,7 @@ export class MemoryService extends BaseService {
 
   async get(auth: AuthDto, id: string): Promise<MemoryResponseDto> {
     await this.requireAccess({ auth, permission: Permission.MemoryRead, ids: [id] });
-    const memory = await this.findOrFail(id);
+    const memory = await this.findOrFail(id, forViewer(auth));
     return mapMemory(memory, auth);
   }
 
@@ -109,6 +111,7 @@ export class MemoryService extends BaseService {
         seenAt: dto.seenAt,
       },
       allowedAssetIds,
+      forViewer(auth),
     );
 
     return mapMemory(memory, auth);
@@ -117,11 +120,15 @@ export class MemoryService extends BaseService {
   async update(auth: AuthDto, id: string, dto: MemoryUpdateDto): Promise<MemoryResponseDto> {
     await this.requireAccess({ auth, permission: Permission.MemoryUpdate, ids: [id] });
 
-    const memory = await this.memoryRepository.update(id, {
-      isSaved: dto.isSaved,
-      memoryAt: dto.memoryAt,
-      seenAt: dto.seenAt,
-    });
+    const memory = await this.memoryRepository.update(
+      id,
+      {
+        isSaved: dto.isSaved,
+        memoryAt: dto.memoryAt,
+        seenAt: dto.seenAt,
+      },
+      forViewer(auth),
+    );
 
     return mapMemory(memory, auth);
   }
@@ -139,7 +146,7 @@ export class MemoryService extends BaseService {
 
     const hasSuccess = results.some(({ success }) => success);
     if (hasSuccess) {
-      await this.memoryRepository.update(id, { updatedAt: new Date() });
+      await this.memoryRepository.update(id, { updatedAt: new Date() }, forViewer(auth));
     }
 
     return results;
@@ -157,13 +164,13 @@ export class MemoryService extends BaseService {
 
     const hasSuccess = results.some(({ success }) => success);
     if (hasSuccess) {
-      await this.memoryRepository.update(id, { id, updatedAt: new Date() });
+      await this.memoryRepository.update(id, { id, updatedAt: new Date() }, forViewer(auth));
     }
 
     return results;
   }
 
-  private findOrFail(id: string) {
-    return findOrFail(() => this.memoryRepository.get(id), 'Memory');
+  private findOrFail(id: string, ctx: PolicyContext) {
+    return findOrFail(() => this.memoryRepository.get(id, ctx), 'Memory');
   }
 }

@@ -7,7 +7,7 @@ from
   "asset"
 where
   "ownerId" = $2::uuid
-  and "visibility" = $3
+  and "asset"."visibility" in ('timeline')
   and "deletedAt" is null
   and "fileCreatedAt" is not null
   and "fileModifiedAt" is not null
@@ -24,12 +24,12 @@ from
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = $1::uuid
-  and "visibility" = $2
+  and "asset"."visibility" in ('timeline')
   and "deletedAt" is null
   and "fileCreatedAt" is not null
   and "fileModifiedAt" is not null
   and "localDateTime" is not null
-  and "originalPath" like $3
-  and "originalPath" not like $4
+  and "originalPath" like $2
+  and "originalPath" not like $3
 order by
-  regexp_replace("asset"."originalPath", $5, $6) asc
+  regexp_replace("asset"."originalPath", $4, $5) asc
