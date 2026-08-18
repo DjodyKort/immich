@@ -31,10 +31,17 @@ export class DownloadRepository {
       .stream();
   }
 
-  downloadUserId(userId: string) {
-    return builder(this.db)
-      .where('asset.ownerId', '=', userId)
-      .where('asset.visibility', '!=', AssetVisibility.Hidden)
-      .stream();
+  downloadUserId(userId: string, hasElevatedPermission?: boolean) {
+    return (
+      builder(this.db)
+        .where('asset.ownerId', '=', userId)
+        .where('asset.visibility', '!=', AssetVisibility.Hidden)
+        // Permission.TimelineDownload only checks that the requested id is the caller's own, so without
+        // this a non-elevated session received the ids and byte sizes of every locked asset. The ids
+        // then failed Permission.AssetDownload on the follow-up archive call, taking the whole request
+        // down with them.
+        .$if(!hasElevatedPermission, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Locked))
+        .stream()
+    );
   }
 }

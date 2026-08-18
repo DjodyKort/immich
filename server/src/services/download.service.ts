@@ -26,7 +26,7 @@ export class DownloadService extends BaseService {
     } else if (dto.userId) {
       const userId = dto.userId;
       await this.requireAccess({ auth, permission: Permission.TimelineDownload, ids: [userId] });
-      assets = this.downloadRepository.downloadUserId(userId);
+      assets = this.downloadRepository.downloadUserId(userId, !!auth.session?.hasElevatedPermission);
     } else {
       throw new BadRequestException('assetIds, albumId, or userId is required');
     }

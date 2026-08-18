@@ -269,7 +269,7 @@ describe(DownloadService.name, () => {
         downloadResponse,
       );
 
-      expect(mocks.downloadRepository.downloadUserId).toHaveBeenCalledWith(authStub.admin.user.id);
+      expect(mocks.downloadRepository.downloadUserId).toHaveBeenCalledWith(authStub.admin.user.id, false);
     });
 
     it('should split archives by size', async () => {
