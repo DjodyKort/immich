@@ -300,6 +300,47 @@ delete from "album_asset"
 where
   "album_asset"."assetId" in ($1)
 
+-- AlbumRepository.getLockedAlbumIds
+select
+  "album"."id"
+from
+  "album"
+where
+  "album"."id" in ($1)
+  and "album"."isLocked" = $2
+
+-- AlbumRepository.removeAssetsFromLockedAlbums
+delete from "album_asset"
+where
+  "album_asset"."assetId" in ($1)
+  and "album_asset"."albumId" in (
+    select
+      "album"."id"
+    from
+      "album"
+    where
+      "isLocked" = $2
+  )
+
+-- AlbumRepository.getAssetIdsInOtherLockedAlbums
+select
+  "album_asset"."assetId"
+from
+  "album_asset"
+  inner join "album" on "album"."id" = "album_asset"."albumId"
+where
+  "album_asset"."assetId" in ($1)
+  and "album"."isLocked" = $2
+  and "album"."id" != $3
+
+-- AlbumRepository.getAllAssetIds
+select
+  "album_asset"."assetId"
+from
+  "album_asset"
+where
+  "album_asset"."albumId" = $1
+
 -- AlbumRepository.getAssetIds
 select
   *

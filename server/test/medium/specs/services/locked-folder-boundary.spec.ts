@@ -128,11 +128,10 @@ describe('locked folder boundary', () => {
   });
 
   describe('album map markers', () => {
-    // SKIPPED: documents a real gap. `MapRepository.getAlbumMapMarkers`
-    // (server/src/repositories/map.repository.ts:74) has no visibility predicate at all, so a
-    // locked asset placed into an album - by a bug, or by a future locked-albums feature - is
-    // returned to a non-elevated session via `AlbumService.getMapMarkers`.
-    it.skip('should not expose a locked asset via album map markers to a non-elevated session', async () => {
+    // Guards the defence-in-depth filter in `MapRepository.getAlbumMapMarkers`: reading a locked
+    // album already requires elevation, so this only bites if a locked asset ever ends up in an
+    // ordinary album. Without the filter, its coordinates reach a session that never entered a PIN.
+    it('should not expose a locked asset via album map markers to a non-elevated session', async () => {
       const { sut, ctx } = setupAlbum();
       const { user } = await ctx.newUser();
       const { album } = await ctx.newAlbum({ ownerId: user.id });
@@ -149,12 +148,11 @@ describe('locked folder boundary', () => {
   });
 
   describe('album-derived asset access', () => {
-    // SKIPPED: documents a real gap. `AccessRepository`'s `AssetAccess.checkAlbumAccess`
-    // (server/src/repositories/access.repository.ts:146-183) has no visibility predicate, so once
-    // a locked asset is a member of `album_asset` it is treated as accessible through the album by
-    // `Permission.AssetRead` / `AssetView` / `AssetDownload` (server/src/utils/access.ts) to any
-    // user with album access, elevated or not.
-    it.skip('should not grant access to a locked asset via shared album membership to a non-elevated session', async () => {
+    // Guards the defence-in-depth filter in `AssetAccess.checkAlbumAccess`: the album-level
+    // `isLocked` check relies on locked assets only ever living in locked albums. If that invariant
+    // is ever broken, album membership must still not hand a locked asset to a non-elevated
+    // session - including another user who merely shares the album.
+    it('should not grant access to a locked asset via shared album membership to a non-elevated session', async () => {
       const { sut, ctx } = setupAsset();
       const { user: owner } = await ctx.newUser();
       const { user: viewer } = await ctx.newUser();

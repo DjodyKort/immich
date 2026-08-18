@@ -71,10 +71,14 @@ export class MapRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
-  getAlbumMapMarkers(albumId: string) {
+  getAlbumMapMarkers(albumId: string, hasElevatedPermission?: boolean) {
     return this.mapMarkersQuery()
       .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
       .where('album_asset.albumId', '=', albumId)
+      // Reading a locked album already requires an elevated session, so for legitimate flows this
+      // is a no-op. It is here as defence in depth: without it, a locked asset in an ordinary
+      // album would publish its coordinates to a session that has never entered the PIN.
+      .$if(!hasElevatedPermission, (qb) => qb.where('asset.visibility', '!=', AssetVisibility.Locked))
       .execute();
   }
 
