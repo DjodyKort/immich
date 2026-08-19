@@ -302,15 +302,15 @@ jobs:
       FILES: ${{ needs.merge.outputs.blocked_files }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - name: Ensure labels exist
-        run: |
-          gh label create sync --color 1D76DB --description "Upstream sync" --force
-          gh label create automation --color 0E8A16 --description "Opened by an automated workflow" --force
-
-      - name: Open an issue
+      # Reported in the run summary rather than as an issue: this repository has issues disabled, which
+      # is normal for a contribution fork, and `gh issue create` simply fails there. The job also fails
+      # on purpose, because with no issue tracker a green run is a report nobody sees.
+      - name: Explain what is blocked
         run: |
           set -euo pipefail
           {
+            echo "## Upstream sync blocked"
+            echo
             echo "The merge itself was fine. The **push** was refused, because this sync changes files"
             echo "under \`.github/workflows\` and \`GITHUB_TOKEN\` is not permitted to create or update a"
             echo "workflow file. There is no \`workflows\` permission a workflow can grant itself, so this"
@@ -332,12 +332,9 @@ jobs:
             echo '```'
             echo
             echo "Run: $RUN_URL"
-          } > issue.md
-          gh issue create \
-            --title "Upstream sync blocked: the merge touches .github/workflows" \
-            --body-file issue.md \
-            --label sync \
-            --label automation
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error ::Upstream sync blocked: the merge touches .github/workflows and no SYNC_TOKEN secret is set. See the run summary."
+          exit 1
 
   report-conflicts:
     name: Report unresolved conflicts
@@ -352,15 +349,14 @@ jobs:
       CONFLICTS: ${{ needs.merge.outputs.conflicts }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - name: Ensure labels exist
-        run: |
-          gh label create sync --color 1D76DB --description "Upstream sync" --force
-          gh label create automation --color 0E8A16 --description "Opened by an automated workflow" --force
-
-      - name: Open an issue
+      # Run summary rather than an issue, for the same reason as the blocked job: issues are disabled on
+      # this fork, so `gh issue create` fails. Failing the job is what makes it visible.
+      - name: Explain the conflicts
         run: |
           set -euo pipefail
           {
+            echo "## Upstream sync needs manual conflict resolution"
+            echo
             echo "\`upstream-sync.yml\` could not merge \`upstream/main\` without help. **$BEHIND** upstream"
             echo "commits are waiting. No branch was pushed, because a branch cannot carry an unresolved merge."
             echo
@@ -381,9 +377,6 @@ jobs:
             echo '```'
             echo
             echo "Run: $RUN_URL"
-          } > issue.md
-          gh issue create \
-            --title "Upstream sync needs manual conflict resolution" \
-            --body-file issue.md \
-            --label sync \
-            --label automation
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error ::Upstream sync hit conflicts rerere could not replay. See the run summary."
+          exit 1
