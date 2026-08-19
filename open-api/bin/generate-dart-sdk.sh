@@ -9,6 +9,7 @@ trap 'rm -rf "$TEMPLATE_DIR"' EXIT
 # Installed via mise
 openapi-generator-cli author template -g dart -o "$TEMPLATE_DIR"
 patch --no-backup-if-mismatch -u "$TEMPLATE_DIR/api.mustache" <./templates/mobile/api.mustache.patch
+patch --no-backup-if-mismatch -u "$TEMPLATE_DIR/dart_constructor.mustache" <./templates/mobile/dart_constructor.mustache.patch
 patch --no-backup-if-mismatch -u "$TEMPLATE_DIR/serialization/native/native_class.mustache" <./templates/mobile/serialization/native/native_class.mustache.patch
 
 rm -rf ../mobile/generated/openapi
