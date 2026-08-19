@@ -6,6 +6,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/actions/action.dart';
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/db.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/toast.provider.dart';
 import 'package:immich_mobile/utils/error_handler.dart';
 import 'package:immich_mobile/widgets/common/hide_from_places_picker.dart';
@@ -51,7 +52,7 @@ class HideFromPlacesAction extends AssetActionBuilder {
       // Prefilled from the stored row, not from the asset in hand: the timeline queries build their assets
       // from a narrower column set and leave `hiddenFrom` empty, so trusting one of those would show every
       // switch off and then save that back, clearing whatever was already set.
-      final stored = await ref.read(remoteAssetRepositoryProvider).get(assetId);
+      final stored = await ref.read(driftProvider).remoteAssetRepository.get(assetId);
       if (stored == null || !context.mounted) {
         return;
       }

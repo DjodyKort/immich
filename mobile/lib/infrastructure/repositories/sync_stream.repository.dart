@@ -29,6 +29,7 @@ import 'package:immich_mobile/infrastructure/entities/stack.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/user.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/user_metadata.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/sync_stream.repository.drift.dart';
 import 'package:immich_mobile/infrastructure/utils/exif.converter.dart';
 import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 import 'package:logging/logging.dart';
@@ -37,11 +38,13 @@ import 'package:openapi/api.dart'
     show AlbumUserRole, AssetEditAction, AssetSurface, AssetVisibility, UserMetadataKey;
 import 'package:openapi/api.dart' hide AlbumUserRole, AssetEditAction, AssetSurface, AssetVisibility, UserMetadataKey;
 
-class SyncStreamRepository extends DriftDatabaseRepository {
-  final Logger _logger = Logger('DriftSyncStreamRepository');
-  final Drift _db;
+@DriftAccessor()
+class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepositoryMixin {
+  final Logger _logger = Logger('SyncStreamRepository');
 
-  SyncStreamRepository(super.db) : _db = db;
+  SyncStreamRepository(super.attachedDatabase);
+
+  Drift get _db => attachedDatabase;
 
   Future<void> reset() async {
     _logger.fine("SyncResetV1 received. Resetting remote entities");

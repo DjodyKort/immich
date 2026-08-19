@@ -60,6 +60,8 @@ select
               or "asset"."hiddenFrom" & 32768 = 0
             )
           )
+        order by
+          "asset"."fileCreatedAt" asc
       ) as agg
   ) as "assets"
 from
@@ -151,6 +153,8 @@ select
               or "asset"."hiddenFrom" & 32768 = 0
             )
           )
+        order by
+          "asset"."fileCreatedAt" asc
       ) as agg
   ) as "assets"
 from
