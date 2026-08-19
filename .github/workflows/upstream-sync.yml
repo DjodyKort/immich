@@ -51,8 +51,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Credentials are kept here, unlike the gate workflow, because this job pushes a branch.
           fetch-depth: 0
+          # No stored credential on purpose. This job supplies exactly one Authorization header itself,
+          # below. Leaving checkout's in place caused three separate failures: a URL token being
+          # overridden by it, an unset that could not find it because checkout@v6 wires it in through
+          # includeIf, and then "Duplicate header: Authorization" when a second one was added alongside.
+          # Fetches from a public repository work fine unauthenticated.
+          persist-credentials: false
 
       - name: Configure git identity
         run: |
@@ -83,6 +88,8 @@ jobs:
           # Optional. Needed only to push a merge that touches .github/workflows, which GITHUB_TOKEN is
           # not allowed to do. Contents: write and Workflows: write, scoped to this repo.
           SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          # The fallback, since checkout no longer stores a credential for us.
+          JOB_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           if [ "${{ steps.drift.outputs.behind }}" = "0" ]; then
@@ -151,24 +158,16 @@ jobs:
             exit 0
           fi
 
-          # Pushing as SYNC_TOKEN takes more than putting it in the URL, and this took three attempts to
-          # get right, so the reasoning is worth keeping:
+          # Exactly one Authorization header, supplied here. The checkout above stores none, which is what
+          # makes this simple: a token in the URL was silently outranked by checkout's header, unsetting
+          # that header could not find it because checkout@v6 wires it in through includeIf, and adding
+          # one alongside produced "Duplicate header: Authorization".
           #
-          # 1. A token in the URL loses. actions/checkout leaves an Authorization header configured, and a
-          #    header beats userinfo, so the push still goes out as the job's GitHub App and is refused
-          #    for workflow files - with a message that looks like the secret was never read.
-          # 2. Unsetting `http.https://github.com/.extraheader` does not find it either. checkout@v6
-          #    stores credentials in a separate file wired in through `includeIf`, so there is no
-          #    extraheader key in the local config to remove.
-          # 3. What does work is overriding the header on the command line, which outranks any config
-          #    file. The App credential stays intact for the no-token path, where it is the only one
-          #    available and is sufficient for anything outside .github/workflows.
-          if [ -n "${SYNC_TOKEN:-}" ]; then
-            auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$SYNC_TOKEN" | base64 -w0)"
-            push() { git -c http.https://github.com/.extraheader="$auth_header" push "$@"; }
-          else
-            push() { git push "$@"; }
-          fi
+          # SYNC_TOKEN when present, otherwise the job's own token, which can push anything except a
+          # change under .github/workflows - already guarded above.
+          token="${SYNC_TOKEN:-$JOB_TOKEN}"
+          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$token" | base64 -w0)"
+          push() { git -c http.https://github.com/.extraheader="$auth_header" push "$@"; }
 
           # The branch may already exist from an earlier run at this same upstream sha, with a different
           # history, because integration moved in between. A plain push is then rejected as a
