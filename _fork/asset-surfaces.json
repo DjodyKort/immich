@@ -1,0 +1,89 @@
+{
+  "$comment": [
+    "Classification of every API operation that can return asset-bearing data, checked by",
+    "_fork/asset-surfaces.mjs. A new operation not listed here fails CI, because it is a read path our",
+    "visibility policy may not cover and neither a merge conflict nor a compile error would reveal it.",
+    "",
+    "Values for \"surface\":",
+    "  a Surface name from server/src/utils/visibility-policy.ts - the operation reads through that surface",
+    "  \"n/a\"  - deliberately not a surface; \"why\" must say what protects it instead",
+    "  null   - predates this check and has not been reviewed. Warns, does not fail. Work these off.",
+    "",
+    "Classifications below are taken from the Surface enum's own documentation and from the endpoints",
+    "server/test/medium/specs/visibility-matrix.spec.ts already asserts, not from guesswork. Where the",
+    "answer was not clear from either, the entry is null rather than an invented label."
+  ],
+  "operations": {
+    "getTimeBucket": {
+      "surface": "timeline",
+      "why": "The main timeline. Becomes albumTimeline with an albumId and trash when isTrashed; asset.repository.ts picks per call. Asserted in the matrix."
+    },
+    "searchAssets": { "surface": "search", "why": "Metadata search. Asserted in the matrix as SearchService.searchMetadata." },
+    "searchSmart": { "surface": "search", "why": "Smart search. The Search surface covers metadata, smart, random and large assets." },
+    "searchRandom": { "surface": "search", "why": "Asserted in the matrix as SearchService.searchRandom." },
+    "searchLargeAssets": { "surface": "search", "why": "Asserted in the matrix as SearchService.searchLargeAssets." },
+    "getAssetsByCity": {
+      "surface": "searchSuggestions",
+      "why": "The city-grouped explore row. The SearchSuggestions doc comment names it explicitly."
+    },
+    "getExploreData": {
+      "surface": "searchSuggestions",
+      "why": "Same explore places row, same rule from the same table, per the SearchSuggestions doc comment."
+    },
+    "getAssetsByOriginalPath": {
+      "surface": "folderView",
+      "why": "One directory's assets. Asserted in the matrix as ViewService.getAssetsByOriginalPath."
+    },
+    "getAssetDuplicates": { "surface": "duplicates", "why": "Asserted in the matrix as DuplicateService.getDuplicates." },
+    "searchStacks": { "surface": "stackContents", "why": "Asserted in the matrix as StackService.search." },
+    "getStack": { "surface": "stackContents", "why": "The StackContents doc comment covers stack read, create and update." },
+    "createStack": { "surface": "stackContents", "why": "Same, stack create." },
+    "updateStack": { "surface": "stackContents", "why": "Same, stack update." },
+    "searchMemories": { "surface": "memories", "why": "Asserted in the matrix as MemoryService.search." },
+    "getMemory": { "surface": "memories", "why": "A memory's assets, per the Memories doc comment." },
+    "createMemory": { "surface": "memories", "why": "Response carries the memory's assets." },
+    "updateMemory": { "surface": "memories", "why": "Response carries the memory's assets." },
+    "getAlbumInfo": {
+      "surface": "albumMetadata",
+      "why": "Asset count and date range. Asserted in the matrix as AlbumService.get (assetCount). The album's asset list is albumContents."
+    },
+    "getAllAlbums": { "surface": "albumMetadata", "why": "Album list with counts, same rule as getAlbumInfo." },
+    "createAlbum": { "surface": "albumContents", "why": "The AlbumContents doc comment names album creation explicitly." },
+    "updateAlbumInfo": {
+      "surface": "albumContents",
+      "why": "Named by the AlbumContents doc comment, and asserted in the matrix as AlbumService.update (assetCount)."
+    },
+    "addUsersToAlbum": { "surface": "albumContents", "why": "Named by the AlbumContents doc comment: adding album users." },
+    "getAllPeople": { "surface": "people", "why": "The people list and its counts. Asserted in the matrix via PersonService.getStatistics." },
+    "searchPerson": { "surface": "people", "why": "People list, filtered." },
+    "getAssetInfo": {
+      "surface": "n/a",
+      "why": "Single asset by id, not a listing. Protected by the per-asset access check (excludeLockedUnlessElevated), which is not a surface."
+    },
+    "updateAsset": {
+      "surface": "n/a",
+      "why": "Mutation. The response echoes the asset the caller just modified and already had access to."
+    },
+    "getPerson": { "surface": "n/a", "why": "Person metadata. Matches only because PersonResponseDto is an anchor; no asset list in the response." },
+    "createPerson": { "surface": "n/a", "why": "Person metadata, no assets. Anchor match by construction." },
+    "updatePerson": { "surface": "n/a", "why": "Person metadata, no assets. Anchor match by construction." },
+    "getFaces": { "surface": "n/a", "why": "Face metadata for one asset the caller already has access to." },
+    "reassignFaces": { "surface": "n/a", "why": "Face mutation, returns person metadata." },
+    "reassignFacesById": { "surface": "n/a", "why": "Face mutation, returns person metadata." },
+    "createSharedLink": {
+      "surface": null,
+      "why": "UNREVIEWED. Shared links read through forSharing(), which is never elevated, so locked assets should be excluded by context rather than by a surface. That reasoning has not been verified against the matrix, and sharing is exactly where a mistake is worst, so this is deliberately left open rather than marked safe."
+    },
+    "getAllSharedLinks": { "surface": null, "why": "UNREVIEWED. See createSharedLink." },
+    "getMySharedLink": { "surface": null, "why": "UNREVIEWED. See createSharedLink." },
+    "getSharedLinkById": { "surface": null, "why": "UNREVIEWED. See createSharedLink." },
+    "updateSharedLink": { "surface": null, "why": "UNREVIEWED. See createSharedLink." },
+    "sharedLinkLogin": { "surface": null, "why": "UNREVIEWED. See createSharedLink." }
+  },
+  "manual": {
+    "getSyncStream": {
+      "surface": "n/a",
+      "why": "The schema walk cannot see this one: its 2xx response carries no schema at all because it is an untyped NDJSON stream, while its body is what mobile builds its entire local visibility mask from. Listed here so that a rename or removal is still noticed. Mobile enforces its own rules in mobile/lib/infrastructure/utils/visibility_policy.dart, because sync carries surface names rather than integers."
+    }
+  }
+}
