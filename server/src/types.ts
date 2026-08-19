@@ -429,6 +429,7 @@ export type JobItem =
   | { name: JobName.WorkflowAssetTrigger; data: { workflowId: string; assetId: string } }
   | { name: JobName.WorkflowRun; data: { queueId: string } }
   | { name: JobName.WorkflowScan; data: { type: WorkflowScanType } }
+  | { name: JobName.WorkflowBackfill; data: { workflowId: string } }
 
   // Integrity
   | { name: JobName.IntegrityUntrackedFilesQueueAll; data?: IIntegrityJob }

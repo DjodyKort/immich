@@ -11,6 +11,7 @@ import { WorkflowQueueTable } from 'src/schema/tables/workflow-queue';
 import { WorkflowStepTable } from 'src/schema/tables/workflow-step.table';
 import { WorkflowTable } from 'src/schema/tables/workflow.table';
 import { withTags } from 'src/utils/database';
+import { excludeMotionParts } from 'src/utils/visibility-policy';
 
 export type WorkflowStepUpsert = Omit<Insertable<WorkflowStepTable>, 'workflowId' | 'order'>;
 
@@ -186,6 +187,44 @@ export class WorkflowRepository {
     return this.db
       .selectFrom('album_asset')
       .select(['albumId', 'assetId', 'album_asset.updateId'])
+      .orderBy('album_asset.updateId', 'asc')
+      .where('album_asset.updateId', '>', after)
+      .limit(2000)
+      .select((eb) =>
+        jsonObjectFrom(this.assetV1Query(eb.selectFrom('asset').whereRef('asset.id', '=', 'album_asset.assetId'))).as(
+          'asset',
+        ),
+      )
+      .execute();
+  }
+
+  /**
+   * The same shape as {@link getForAlbumAssetV1}, for the backfill job: replaying what the live scan
+   * would have produced for album members that already existed when a matching workflow was created.
+   *
+   * Restricted to `ownerId` because the backfill runs for one workflow, whose owner is the only user
+   * whose album assets that workflow can ever act on. A trashed asset and a motion part are excluded
+   * because neither would ever have reached the live trigger in the first place -- `AlbumAssetsAdded`
+   * only fires for assets that are actually added, and a motion part is not a first-class asset at all.
+   * A **locked** asset is deliberately left in: it would have reached the live trigger, so it stays in
+   * the backfill too. This is not a visibility read surface, so it does not belong in the `Surface`
+   * table -- it is a replay of a past event, gated only by what could have happened.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getForAlbumAssetV1Backfill(ownerId: string, after: string) {
+    return this.db
+      .selectFrom('album_asset')
+      .select(['albumId', 'assetId', 'album_asset.updateId'])
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset')
+            .whereRef('asset.id', '=', 'album_asset.assetId')
+            .where('asset.ownerId', '=', ownerId)
+            .where('asset.deletedAt', 'is', null)
+            .$call(excludeMotionParts),
+        ),
+      )
       .orderBy('album_asset.updateId', 'asc')
       .where('album_asset.updateId', '>', after)
       .limit(2000)

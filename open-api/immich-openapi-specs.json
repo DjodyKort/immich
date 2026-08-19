@@ -16247,6 +16247,51 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/workflows/{id}/backfill": {
+      "post": {
+        "description": "Run a workflow with the \"album asset added\" trigger against assets already in albums, not just ones added from now on.",
+        "operationId": "backfillWorkflow",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Backfill a workflow",
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "workflow.update"
+      }
+    },
     "/workflows/{id}/logs": {
       "get": {
         "description": "Retrieve logs of a workflows runs by ID",
@@ -19529,6 +19574,7 @@
           "WorkflowScan",
           "WorkflowRun",
           "WorkflowAssetTrigger",
+          "WorkflowBackfill",
           "IntegrityUntrackedFilesQueueAll",
           "IntegrityUntrackedFiles",
           "IntegrityUntrackedRefresh",

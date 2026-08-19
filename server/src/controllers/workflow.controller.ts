@@ -116,6 +116,19 @@ export class WorkflowController {
     return this.service.delete(auth, id);
   }
 
+  @Post(':id/backfill')
+  @Authenticated({ permission: Permission.WorkflowUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Backfill a workflow',
+    description:
+      'Run a workflow with the "album asset added" trigger against assets already in albums, not just ones added from now on.',
+    history: HistoryBuilder.v3(),
+  })
+  backfillWorkflow(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.backfill(auth, id);
+  }
+
   @Get(':id/logs')
   @Authenticated({ permission: Permission.WorkflowLogs })
   @Endpoint({

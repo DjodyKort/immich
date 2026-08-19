@@ -908,6 +908,7 @@ export enum JobName {
   WorkflowScan = 'WorkflowScan',
   WorkflowRun = 'WorkflowRun',
   WorkflowAssetTrigger = 'WorkflowAssetTrigger',
+  WorkflowBackfill = 'WorkflowBackfill',
 
   // Integrity
   IntegrityUntrackedFilesQueueAll = 'IntegrityUntrackedFilesQueueAll',

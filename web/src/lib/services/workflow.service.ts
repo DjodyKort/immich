@@ -1,4 +1,5 @@
 import {
+  backfillWorkflow,
   createWorkflow,
   deleteWorkflow,
   updateWorkflow,
@@ -20,6 +21,7 @@ import {
   mdiPencil,
   mdiPlay,
   mdiPlus,
+  mdiSync,
 } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
@@ -120,7 +122,14 @@ export const getWorkflowActions = ($t: MessageFormatter, workflow: WorkflowRespo
     onAction: () => modalManager.show(WorkflowLogsModal, { workflow }),
   };
 
-  return { CopyJson, Download, Duplicate, ToggleEnabled, Edit, Delete, Logs };
+  const Backfill: ActionItem = {
+    title: $t('run_on_existing_assets'),
+    icon: mdiSync,
+    $if: () => workflow.trigger === WorkflowTrigger.AlbumAssetAdded && workflow.enabled,
+    onAction: () => handleBackfillWorkflow(workflow),
+  };
+
+  return { CopyJson, Download, Duplicate, ToggleEnabled, Edit, Delete, Logs, Backfill };
 };
 
 export const getWorkflowShowSchemaAction = (
@@ -156,6 +165,28 @@ export const handleUpdateWorkflow = async (id: string, dto: WorkflowUpdateDto) =
     return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_update_workflow'));
+    return false;
+  }
+};
+
+export const handleBackfillWorkflow = async (workflow: WorkflowResponseDto): Promise<boolean> => {
+  const $t = await getFormatter();
+
+  const confirmed = await modalManager.showDialog({
+    prompt: $t('workflow_backfill_prompt'),
+    confirmColor: 'primary',
+  });
+
+  if (!confirmed) {
+    return false;
+  }
+
+  try {
+    await backfillWorkflow({ id: workflow.id });
+    toastManager.primary($t('workflow_backfill_started'), { closable: true });
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_backfill_workflow'));
     return false;
   }
 };
