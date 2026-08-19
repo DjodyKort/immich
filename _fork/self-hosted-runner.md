@@ -77,6 +77,39 @@ Create a fine-grained PAT scoped to **only** `DjodyKort/immich`, with:
 
 Nothing else. Store it as the repository secret `RUNNER_STATUS_TOKEN`.
 
+## The sync token
+
+`upstream-sync.yml` pushes the merge branch, and `GITHUB_TOKEN` is **not permitted to create or update
+anything under `.github/workflows`**. There is no `workflows` permission a workflow can grant itself, so
+no `permissions:` block fixes it, and upstream edits its own workflows often enough that this is the
+normal case rather than an edge one. Without a usable token the workflow stops before pushing and says
+so in the run summary.
+
+So the push uses an optional `SYNC_TOKEN` secret. A fine-grained PAT scoped to **only**
+`DjodyKort/immich`, with:
+
+- Repository permissions → **Contents: read and write**
+- Repository permissions → **Workflows: read and write**
+
+Nothing else. Fine-grained PATs must carry an expiry, so this will lapse; when it does the push fails
+loudly rather than silently, which is the acceptable failure mode.
+
+**What is in there today is not that.** It currently holds the `gh` CLI's own OAuth token, which carries
+`repo` across every repository on the account plus `gist`. That works, and it was the only thing
+available without a browser, but it is far more privilege than this needs, and a repository secret is
+readable by any workflow in the repository. Replacing it is a drop-in swap: same secret name, no
+workflow changes.
+
+**The better answer, when tokens become tiresome:** a GitHub App installed on the fork with those same
+two permissions, minting a one-hour installation token per run via `actions/create-github-app-token`.
+No long-lived usable credential in secrets, no expiry treadmill, not tied to a personal account, and it
+can absorb `RUNNER_STATUS_TOKEN` as well so the repo holds no PATs at all. This is what upstream itself
+does, via `immich-app/devtools/actions/create-workflow-token` and its `PUSH_O_MATIC_APP_*` secrets.
+
+An **org secret is not an option** here: org secrets are only readable by repositories inside the org,
+and this is a personal repository. It would also put a work-org credential behind personal-fork pushes,
+which is the boundary hiro's own rule about work seats exists to keep.
+
 ## Verify
 
 ```bash
