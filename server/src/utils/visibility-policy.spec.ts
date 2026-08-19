@@ -139,12 +139,31 @@ describe('visibility policy', () => {
     it('should keep the bit each surface has always had', () => {
       // These values are persisted in asset.hiddenFrom. Renumbering silently reinterprets stored masks,
       // so this test exists to make that impossible to do by accident. Add rows; never edit them.
-      expect(getSurfaceBit(Surface.Timeline)).toBe(1);
-      expect(getSurfaceBit(Surface.AlbumTimeline)).toBe(2);
-      expect(getSurfaceBit(Surface.Search)).toBe(4);
-      expect(getSurfaceBit(Surface.People)).toBe(512);
-      expect(getSurfaceBit(Surface.Memories)).toBe(1024);
-      expect(getSurfaceBit(Surface.StackContents)).toBe(32_768);
+      //
+      // Every bit, not a sample. This used to pin six of the sixteen, which left a real hole: the
+      // uniqueness and power-of-two checks above hold just as well after a renumber, so swapping
+      // Statistics and FolderView, say, passed the whole suite while reinterpreting every stored mask.
+      // A frozen table is also its own changelog - a diff here is the reviewable event.
+      expect(Object.values(Surface).map((surface) => [surface, getSurfaceBit(surface)] as const)).toEqual([
+        [Surface.Timeline, 1],
+        [Surface.AlbumTimeline, 2],
+        [Surface.Search, 4],
+        [Surface.Statistics, 8],
+        [Surface.CalendarHeatmap, 16],
+        [Surface.AlbumMetadata, 32],
+        [Surface.AlbumMap, 64],
+        [Surface.GlobalMap, 128],
+        [Surface.TimelineDownload, 256],
+        // Trash is deliberately absent, per the test above.
+        [Surface.Trash, undefined],
+        [Surface.People, 512],
+        [Surface.Memories, 1024],
+        [Surface.FolderView, 2048],
+        [Surface.SearchSuggestions, 4096],
+        [Surface.AlbumContents, 8192],
+        [Surface.Duplicates, 16_384],
+        [Surface.StackContents, 32_768],
+      ]);
     });
   });
 
