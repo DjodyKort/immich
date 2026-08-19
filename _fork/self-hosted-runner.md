@@ -1,6 +1,6 @@
 # Self-hosted runner for the local AI routes
 
-How to make routes `hiro` and `omniroute` reachable from CI. Both gateways bind `127.0.0.1` on the
+How to make the local model routes reachable from CI. Both gateways bind `127.0.0.1` on the
 home server, so the runner goes to them rather than the endpoints being exposed.
 
 ## Read this before registering anything
@@ -15,9 +15,10 @@ This setup is only safe with all three of the following. Check them before the r
 after:
 
 1. **No `pull_request`-triggered job may ever run on the self-hosted runner.** Today that holds:
-   `fork-ci.yml` is entirely `ubuntu-latest`, and only `ai-route.yml`'s probe job targets the
-   self-hosted runner, reached from `workflow_call`, `workflow_dispatch` and `schedule`. Keep it that
-   way. A single `runs-on: self-hosted` added to a `pull_request` job undoes everything here.
+   `fork-ci.yml` is entirely `ubuntu-latest`. The only jobs that can land on the self-hosted runner are
+   argus's `route.yml` probe and `task.yml` run job, reached from `upstream-sync.yml`, which triggers on
+   `schedule` and `workflow_dispatch` only. Keep it that way. A single `runs-on: self-hosted` added to a
+   `pull_request` job undoes everything here.
 2. **Require approval for all outside collaborators.** Settings → Actions → General → "Fork pull
    request workflows from outside collaborators" → *Require approval for all outside collaborators*.
    The default only gates first-time contributors.
@@ -26,8 +27,8 @@ after:
    `127.0.0.1`.
 
 If any of those feels like too much, the honest alternative is to skip the local routes and let the
-metered `anthropic` route be the only model route. Route selection already handles that: it reports
-`none` or `anthropic` and nothing breaks.
+metered `api` route be the only model route. Route selection already handles that: it reports
+`none` or `api` and nothing breaks.
 
 ## Register the runner
 
@@ -48,12 +49,13 @@ Get a registration token from Settings → Actions → Runners → New self-host
 ./config.sh --url https://github.com/DjodyKort/immich \
             --token <REGISTRATION_TOKEN> \
             --name hiro-box \
-            --labels hiro \
+            --labels argus \
             --unattended \
             --replace
 ```
 
-The label **must** be `hiro`: that is what `ai-route.yml` looks for.
+The label **must** be `argus`: that is the default `runner_label` in argus's `route.yml`, and nothing in
+this repo overrides it.
 
 Install it as a service so it survives reboots:
 
@@ -78,17 +80,17 @@ Nothing else. Store it as the repository secret `RUNNER_STATUS_TOKEN`.
 ## Verify
 
 ```bash
-gh workflow run "AI route" --repo DjodyKort/immich --ref integration
+gh workflow run "Upstream sync" --repo DjodyKort/immich --ref integration
 ```
 
-Then read the `Decide` job. Expected progression as pieces land:
+Then read the `Decide` job nested inside Triage. Expected progression as pieces land:
 
 | State | Expected `route` |
 |---|---|
 | Nothing set up | `none` |
-| `ANTHROPIC_API_KEY` set, no runner | `anthropic` |
-| Runner online, `RUNNER_STATUS_TOKEN` set, hiro-bridge running | `hiro` |
-| Runner online, hiro-bridge down or refusing, OmniRoute running | `omniroute` |
+| `ANTHROPIC_API_KEY` set, no runner | `api` |
+| Runner online, `RUNNER_STATUS_TOKEN` set, hiro-bridge running | `local-primary` |
+| Runner online, hiro-bridge down or refusing, OmniRoute running | `local-fallback` |
 
 The probe treats any HTTP response as alive, including 401 and 404, because it is a liveness check
 rather than an auth check. A closed port answers `000`, which is the case being distinguished.
@@ -124,4 +126,4 @@ status ∈ {allowed, allowed_warning}
 ```
 
 And remember the quota engine stops autonomous work at 90% of included headroom by design. CI triage
-is autonomous work, so `hiro` refusing a turn is normal operation; that is what `omniroute` is for.
+is autonomous work, so hiro refusing a turn is normal operation; that is what the fallback gateway is for.

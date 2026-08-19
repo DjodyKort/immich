@@ -44,6 +44,7 @@ jobs:
       status: ${{ steps.merge.outputs.status }}
       branch: ${{ steps.merge.outputs.branch }}
       behind: ${{ steps.drift.outputs.behind }}
+      base: ${{ steps.drift.outputs.base }}
       replayed: ${{ steps.merge.outputs.replayed }}
       conflicts: ${{ steps.merge.outputs.conflicts }}
     steps:
@@ -68,6 +69,13 @@ jobs:
           echo "behind=$behind" >> "$GITHUB_OUTPUT"
           echo "upstream commits not yet merged: $behind"
 
+          # Captured here, before the merge, because afterwards it is unrecoverable: once upstream/main
+          # is an ancestor of the sync branch, merge-base(HEAD, upstream/main) is upstream/main itself
+          # and the triage range collapses to empty. This is the range that answers "what arrived".
+          base=$(git merge-base HEAD upstream/main)
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "triage base: $base"
+
       - name: Merge, replaying recorded resolutions
         id: merge
         run: |
@@ -78,7 +86,10 @@ jobs:
             exit 0
           fi
 
-          branch="sync/upstream-$(date -u +%Y-%m-%d)"
+          # The upstream sha is in the name, not just the date: two runs on one day would otherwise
+          # collide on the same branch from different bases, and the second push would be rejected as a
+          # non-fast-forward. Naming it after the upstream state also makes a re-run idempotent.
+          branch="sync/upstream-$(date -u +%Y-%m-%d)-$(git rev-parse --short upstream/main)"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           git switch -c "$branch"
 
@@ -138,6 +149,8 @@ jobs:
     if: ${{ always() && github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'merged' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      number: ${{ steps.pr.outputs.number }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -154,6 +167,7 @@ jobs:
           gh label create automation --color 0E8A16 --description "Opened by an automated workflow" --force
 
       - name: Create or update the pull request
+        id: pr
         run: |
           set -euo pipefail
 
@@ -190,6 +204,7 @@ jobs:
           if [ -n "$existing" ]; then
             gh pr edit "$existing" --body-file body.md
             echo "updated PR #$existing"
+            number="$existing"
           else
             gh pr create \
               --base integration \
@@ -199,7 +214,37 @@ jobs:
               --label sync \
               --label automation \
               $draft
+            # Read it back rather than parsing the create output: the URL format is not a contract, and
+            # the triage job needs a number it can comment on.
+            number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+  triage:
+    name: Triage what arrived
+    needs: [merge, pull-request]
+    # Runs whenever something merged, even if the PR step failed. The triage is worth having on its own,
+    # and tying it to PR creation would mean a repo setting that blocks `gh pr create` also silently
+    # costs us the review. Without a PR number it falls back to an artifact, below.
+    if: ${{ always() && github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'merged' }}
+    # Tier 2. The deterministic half of this runs regardless of whether a model is reachable, so a
+    # refused quota or an off server costs the comment its review section, not the whole comment.
+    #
+    # The range is pinned to the base the merge job captured *before* merging. Recomputing it here would
+    # yield nothing: upstream/main is an ancestor of the sync branch by now, so the merge-base is
+    # upstream/main itself and the range is empty. That failure would be silent and would look like a
+    # clean report.
+    uses: DjodyKort/argus/.github/workflows/task.yml@main
+    with:
+      task: merge-triage
+      rules: _fork/argus-rules.json
+      config: _fork/argus.config.json
+      base: ${{ needs.merge.outputs.base }}
+      head: upstream/main
+      upstream_remote: https://github.com/immich-app/immich.git
+      sink: ${{ needs.pull-request.outputs.number != '' && 'pr-comment' || 'artifact' }}
+      pr_number: ${{ needs.pull-request.outputs.number }}
+    secrets: inherit
 
   report-conflicts:
     name: Report unresolved conflicts
