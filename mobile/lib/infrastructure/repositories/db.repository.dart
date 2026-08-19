@@ -120,7 +120,7 @@ class Drift extends $Drift {
   }
 
   @override
-  int get schemaVersion => 32;
+  int get schemaVersion => 33;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -320,6 +320,11 @@ class Drift extends $Drift {
               },
               from31To32: (m, v32) async {
                 await m.addColumn(v32.remoteAlbumEntity, v32.remoteAlbumEntity.isLocked);
+              },
+              from32To33: (m, v33) async {
+                // Nullable with no default, so every existing row reads as "withheld from nothing" and
+                // the queries that consult it keep returning what they returned before.
+                await m.addColumn(v33.remoteAssetEntity, v33.remoteAssetEntity.hiddenFrom);
               },
             ),
           ),

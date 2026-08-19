@@ -7,6 +7,7 @@ import { ArgsOf } from 'src/repositories/event.repository';
 import { BaseService } from 'src/services/base.service';
 import { JobItem } from 'src/types';
 import { hexOrBufferToBase64 } from 'src/utils/bytes';
+import { fromHiddenFromMask } from 'src/utils/visibility-policy';
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
   switch (dto.name) {
@@ -153,6 +154,7 @@ export class JobService extends BaseService {
               deletedAt: asset.deletedAt,
               isFavorite: asset.isFavorite,
               visibility: asset.visibility,
+              hiddenFrom: fromHiddenFromMask(asset.hiddenFrom),
               livePhotoVideoId: asset.livePhotoVideoId,
               stackId: asset.stackId,
               libraryId: asset.libraryId,
@@ -210,6 +212,7 @@ export class JobService extends BaseService {
                 deletedAt: asset.deletedAt,
                 isFavorite: asset.isFavorite,
                 visibility: asset.visibility,
+                hiddenFrom: fromHiddenFromMask(asset.hiddenFrom),
                 livePhotoVideoId: asset.livePhotoVideoId,
                 stackId: asset.stackId,
                 libraryId: asset.libraryId,

@@ -19,21 +19,31 @@ import { BaseService } from 'src/services/base.service';
 import { SyncAck } from 'src/types';
 import { hexOrBufferToBase64 } from 'src/utils/bytes';
 import { fromAck, serialize, SerializeOptions, toAck } from 'src/utils/sync';
+import { fromHiddenFromMask } from 'src/utils/visibility-policy';
 
 type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
-type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash'> & {
+type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash' | 'hiddenFrom'> & {
   checksum: Buffer<ArrayBufferLike>;
   thumbhash: Buffer<ArrayBufferLike> | null;
+  hiddenFrom: number | null;
 };
 
 const COMPLETE_ID = 'complete';
 const MAX_DAYS = 30;
 const MAX_DURATION = Duration.fromObject({ days: MAX_DAYS });
 
-const mapSyncAssetV2 = ({ checksum, thumbhash, ...data }: AssetLike): SyncAssetV2 => ({
+/**
+ * `asset.hiddenFrom` goes over the wire as surface names, never as the stored mask.
+ *
+ * The bit numbering in `visibility-policy.ts` is pinned by a test precisely because it must never
+ * change; shipping the integers would make a client's own stored data depend on it forever. Names cost
+ * a translation here and buy every client the freedom to number its own bits however it likes.
+ */
+const mapSyncAssetV2 = ({ checksum, thumbhash, hiddenFrom, ...data }: AssetLike): SyncAssetV2 => ({
   ...data,
   checksum: hexOrBufferToBase64(checksum),
   thumbhash: thumbhash ? hexOrBufferToBase64(thumbhash) : null,
+  hiddenFrom: fromHiddenFromMask(hiddenFrom),
 });
 
 const isEntityBackfillComplete = (createId: string, checkpoint: SyncAck | undefined): boolean =>

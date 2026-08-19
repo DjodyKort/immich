@@ -186,6 +186,10 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
   /// views need it at all, lives in [VisibilityPolicy.albumAssets].
   Expression<bool> _albumAssetVisibility() => VisibilityPolicy.albumAssets(_db.remoteAssetEntity);
 
+  /// The per-asset exclusion clause for a query standing in for one of the six surfaces a user can hide
+  /// an asset from. Album and trash views deliberately get none; see [VisibilityPolicy.notHiddenFrom].
+  Expression<bool> _visibleOn(AssetSurface surface) => VisibilityPolicy.notHiddenFrom(_db.remoteAssetEntity, surface);
+
   TimelineQuery remoteAlbum(String albumId, GroupAssetsBy groupBy) => (
     bucketSource: () => _watchRemoteAlbumBucket(albumId, groupBy: groupBy),
     assetSource: (offset, count) => _getRemoteAlbumBucketAssets(albumId, offset: offset, count: count),
@@ -345,7 +349,10 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
 
   TimelineQuery remote(String ownerId, GroupAssetsBy groupBy) => _remoteQueryBuilder(
     filter: (row) =>
-        row.deletedAt.isNull() & row.visibility.equalsValue(AssetVisibility.timeline) & row.ownerId.equals(ownerId),
+        row.deletedAt.isNull() &
+        row.visibility.equalsValue(AssetVisibility.timeline) &
+        row.ownerId.equals(ownerId) &
+        VisibilityPolicy.notHiddenFrom(row, AssetSurface.timeline),
     groupBy: groupBy,
     origin: TimelineOrigin.remoteAssets,
   );
@@ -355,7 +362,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
         row.uploadedAt.isNotNull() &
         row.deletedAt.isNull() &
         row.ownerId.equals(userId) &
-        (row.visibility.equalsValue(AssetVisibility.timeline) | row.visibility.equalsValue(AssetVisibility.archive)),
+        (row.visibility.equalsValue(AssetVisibility.timeline) | row.visibility.equalsValue(AssetVisibility.archive)) &
+        VisibilityPolicy.notHiddenFrom(row, AssetSurface.timeline),
     origin: TimelineOrigin.recentlyAdded,
     groupBy: groupBy,
     sortBy: SortAssetsBy.uploaded,
@@ -366,7 +374,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
         row.deletedAt.isNull() &
         row.isFavorite.equals(true) &
         row.ownerId.equals(userId) &
-        (row.visibility.equalsValue(AssetVisibility.timeline) | row.visibility.equalsValue(AssetVisibility.archive)),
+        (row.visibility.equalsValue(AssetVisibility.timeline) | row.visibility.equalsValue(AssetVisibility.archive)) &
+        VisibilityPolicy.notHiddenFrom(row, AssetSurface.timeline),
     groupBy: groupBy,
     origin: TimelineOrigin.favorite,
   );
@@ -398,7 +407,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
         row.deletedAt.isNull() &
         row.type.equalsValue(AssetType.video) &
         row.visibility.equalsValue(AssetVisibility.timeline) &
-        row.ownerId.equals(userId),
+        row.ownerId.equals(userId) &
+        VisibilityPolicy.notHiddenFrom(row, AssetSurface.timeline),
     origin: TimelineOrigin.video,
     groupBy: groupBy,
   );
@@ -436,7 +446,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
       ..where(
         _db.remoteExifEntity.city.equals(place) &
             _db.remoteAssetEntity.deletedAt.isNull() &
-            _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline),
+            _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) &
+            _visibleOn(AssetSurface.search),
       )
       ..groupBy([dateExp])
       ..orderBy([OrderingTerm.desc(dateExp)]);
@@ -460,7 +471,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
           ..where(
             _db.remoteAssetEntity.deletedAt.isNull() &
                 _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) &
-                _db.remoteExifEntity.city.equals(place),
+                _db.remoteExifEntity.city.equals(place) &
+                _visibleOn(AssetSurface.search),
           )
           ..orderBy([OrderingTerm.desc(_db.remoteAssetEntity.createdAt)])
           ..limit(count, offset: offset);
@@ -483,7 +495,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
           _db.remoteAssetEntity.id.isInQuery(idQuery) &
               _db.remoteAssetEntity.deletedAt.isNull() &
               _db.remoteAssetEntity.ownerId.equals(userId) &
-              _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline),
+              _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) &
+              _visibleOn(AssetSurface.timeline),
         );
 
       return query.map((row) {
@@ -501,7 +514,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
         _db.remoteAssetEntity.id.isInQuery(idQuery) &
             _db.remoteAssetEntity.ownerId.equals(userId) &
             _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) &
-            _db.remoteAssetEntity.deletedAt.isNull(),
+            _db.remoteAssetEntity.deletedAt.isNull() &
+            _visibleOn(AssetSurface.timeline),
       )
       ..groupBy([dateExp])
       ..orderBy([OrderingTerm.desc(dateExp)]);
@@ -533,7 +547,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
             row.id.isInQuery(idQuery) &
             row.deletedAt.isNull() &
             row.ownerId.equals(userId) &
-            row.visibility.equalsValue(AssetVisibility.timeline),
+            row.visibility.equalsValue(AssetVisibility.timeline) &
+            VisibilityPolicy.notHiddenFrom(row, AssetSurface.timeline),
       )
       ..orderBy([(row) => OrderingTerm.desc(row.createdAt)])
       ..limit(count, offset: offset);
@@ -576,7 +591,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
               AssetVisibility.timeline.index,
               if (options.includeArchived) AssetVisibility.archive.index,
             ]) &
-            _db.remoteAssetEntity.deletedAt.isNull(),
+            _db.remoteAssetEntity.deletedAt.isNull() &
+            _visibleOn(AssetSurface.map),
       )
       ..groupBy([dateExp])
       ..orderBy([OrderingTerm.desc(dateExp)]);
@@ -631,7 +647,8 @@ class DriftTimelineRepository extends DriftDatabaseRepository {
                   AssetVisibility.timeline.index,
                   if (options.includeArchived) AssetVisibility.archive.index,
                 ]) &
-                _db.remoteAssetEntity.deletedAt.isNull(),
+                _db.remoteAssetEntity.deletedAt.isNull() &
+                _visibleOn(AssetSurface.map),
           )
           ..orderBy([OrderingTerm.desc(_db.remoteAssetEntity.createdAt)])
           ..limit(count, offset: offset);

@@ -23,6 +23,7 @@ import 'package:immich_mobile/infrastructure/entities/trashed_local_asset.entity
 import 'package:immich_mobile/infrastructure/entities/trashed_local_asset.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/user.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 import 'package:immich_mobile/utils/option.dart';
 import 'package:uuid/uuid.dart';
 
@@ -112,6 +113,7 @@ class MediumRepositoryContext {
     DateTime? deletedAt,
     AssetType? type,
     AssetVisibility? visibility,
+    Iterable<AssetSurface>? hiddenFrom,
     int? durationMs,
     int? width,
     int? height,
@@ -136,6 +138,7 @@ class MediumRepositoryContext {
             updatedAt: .new(TestUtils.date(updatedAt)),
             ownerId: .new(TestUtils.uuid(ownerId)),
             visibility: .new(visibility ?? .timeline),
+            hiddenFrom: .new(VisibilityPolicy.maskFor(hiddenFrom ?? const [])),
             deletedAt: .new(deletedAt),
             durationMs: .new(durationMs ?? 0),
             width: .new(width ?? TestUtils.randInt(1000)),

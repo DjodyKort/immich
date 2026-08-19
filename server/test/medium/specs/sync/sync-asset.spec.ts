@@ -60,6 +60,7 @@ describe(SyncEntityType.AssetV2, () => {
           localDateTime: asset.localDateTime,
           type: asset.type,
           visibility: asset.visibility,
+          hiddenFrom: [],
           duration: asset.duration,
           stackId: null,
           livePhotoVideoId: null,

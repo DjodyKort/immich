@@ -45,6 +45,13 @@ class RemoteAssetEntity extends Table with DriftDefaultsMixin, AssetEntityMixin 
 
   IntColumn get visibility => intEnum<AssetVisibility>()();
 
+  /// Per-asset, per-surface exclusions, as a bitmask over `VisibilityPolicy.surfaceBit`.
+  ///
+  /// Independent of `visibility`: an asset withheld from a surface is otherwise a normal asset. `null`
+  /// means "withheld from nothing", which is what every row written before this column existed holds, so
+  /// the queries that read it are no-ops until something sets it.
+  IntColumn get hiddenFrom => integer().nullable()();
+
   TextColumn get stackId => text().nullable()();
 
   TextColumn get libraryId => text().nullable()();

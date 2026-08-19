@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { AuthDto } from 'src/dtos/auth.dto';
 import { SearchSuggestionType } from 'src/dtos/search.dto';
-import { AssetSurface, AssetVisibility, CalendarHeatmapType } from 'src/enum';
+import { AssetStatus, AssetSurface, AssetVisibility, CalendarHeatmapType } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
@@ -710,6 +710,29 @@ describe('per-asset exclusions', () => {
 
     const { sut: timeline } = setupTimeline(defaultDatabase);
     expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(3);
+  });
+
+  it('should still show a timeline-hidden asset in trash, so it stays recoverable', async () => {
+    // The trash view asks the bucket queries with isTrashed and no explicit visibility. Before
+    // Surface.Trash existed it inherited the timeline's rule, mask included, so hiding a photo from the
+    // timeline quietly made it unrecoverable through the UI. Surface.Trash has no entry in SURFACE_BIT.
+    const { sut, ctx } = setupTimeline(defaultDatabase);
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({
+      ownerId: user.id,
+      visibility: AssetVisibility.Timeline,
+      hiddenFrom: getSurfaceBit(PolicySurface.Timeline),
+      deletedAt: new Date(),
+      status: AssetStatus.Trashed,
+    });
+    const auth = factory.auth({ user: { id: user.id } });
+
+    const visible = await sut.getTimeBuckets(auth, {});
+    expect(visible.reduce((total, bucket) => total + bucket.count, 0)).toBe(0);
+
+    const trashed = await sut.getTimeBuckets(auth, { isTrashed: true });
+    expect(trashed.reduce((total, bucket) => total + bucket.count, 0)).toBe(1);
+    expect(asset.id).toBeDefined();
   });
 
   it('should leave a null mask behaving exactly as before', async () => {

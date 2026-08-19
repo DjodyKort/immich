@@ -3,10 +3,12 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/album/local_album.model.dart';
+import 'package:immich_mobile/domain/models/asset/base_asset.model.dart' as domain;
 import 'package:immich_mobile/infrastructure/entities/local_album.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/remote_album.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/sync_stream.repository.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 import 'package:openapi/api.dart';
 
 SyncUserV1 _createUser({String id = 'user-1'}) {
@@ -43,6 +45,32 @@ SyncAssetV1 _createAsset({
     visibility: AssetVisibility.timeline,
     width: width,
     height: height,
+    deletedAt: null,
+    duration: null,
+    libraryId: null,
+    livePhotoVideoId: null,
+    stackId: null,
+    thumbhash: null,
+    isEdited: false,
+  );
+}
+
+SyncAssetV2 _createAssetV2({required String id, List<AssetSurface> hiddenFrom = const [], String ownerId = 'user-1'}) {
+  return SyncAssetV2(
+    id: id,
+    checksum: 'checksum-$id',
+    originalFileName: '$id.jpg',
+    type: AssetTypeEnum.IMAGE,
+    ownerId: ownerId,
+    isFavorite: false,
+    fileCreatedAt: DateTime(2024, 1, 1),
+    fileModifiedAt: DateTime(2024, 1, 1),
+    createdAt: DateTime(2024, 1, 1),
+    localDateTime: DateTime(2024, 1, 1),
+    visibility: AssetVisibility.timeline,
+    hiddenFrom: hiddenFrom,
+    width: 100,
+    height: 100,
     deletedAt: null,
     duration: null,
     libraryId: null,
@@ -276,6 +304,62 @@ void main() {
       expect(after.linkedRemoteAlbumId, isNull);
       expect(after.name, equals('Camera'));
       expect(after.backupSelection, equals(BackupSelection.none));
+    });
+  });
+
+  group('SyncStreamRepository - hiddenFrom', () {
+    // Sync carries surface *names* (the unprefixed AssetSurface here is the wire enum from the generated
+    // client); the column holds mobile's own mask, whose literal values visibility_policy_test.dart pins.
+    // These tests assert the translation between the two, in both directions.
+    Future<int?> storedMask(String id) async {
+      final row = await (db.remoteAssetEntity.select()..where((tbl) => tbl.id.equals(id))).getSingle();
+      return row.hiddenFrom;
+    }
+
+    setUp(() async {
+      await sut.updateUsersV1([_createUser()]);
+    });
+
+    test('round-trips a surface name array into the mask', () async {
+      await sut.updateAssetsV2([
+        _createAssetV2(id: 'asset-hidden', hiddenFrom: const [AssetSurface.search, AssetSurface.memories]),
+      ]);
+
+      const expected = [domain.AssetSurface.search, domain.AssetSurface.memories];
+      final mask = await storedMask('asset-hidden');
+      expect(mask, VisibilityPolicy.maskFor(expected));
+      expect(VisibilityPolicy.namesFor(mask), unorderedEquals(expected));
+    });
+
+    test('maps every wire surface to the local surface of the same name', () async {
+      // Guards the one place the two vocabularies meet. A surface added on the server and mistranslated
+      // here would mean an asset the user hid staying visible, so the mapping is checked exhaustively.
+      for (final wire in AssetSurface.values) {
+        final id = 'asset-$wire';
+        await sut.updateAssetsV2([
+          _createAssetV2(id: id, hiddenFrom: [wire]),
+        ]);
+
+        expect(VisibilityPolicy.namesFor(await storedMask(id)), [
+          domain.AssetSurface.values.firstWhere((local) => local.name == wire.name),
+        ], reason: 'wire surface $wire');
+      }
+    });
+
+    test('stores null for an empty array, matching every pre-existing row', () async {
+      await sut.updateAssetsV2([_createAssetV2(id: 'asset-plain')]);
+
+      expect(await storedMask('asset-plain'), isNull);
+    });
+
+    test('clears the mask when the server stops withholding the asset', () async {
+      await sut.updateAssetsV2([
+        _createAssetV2(id: 'asset-toggle', hiddenFrom: const [AssetSurface.timeline]),
+      ]);
+      expect(await storedMask('asset-toggle'), isNotNull);
+
+      await sut.updateAssetsV2([_createAssetV2(id: 'asset-toggle')]);
+      expect(await storedMask('asset-toggle'), isNull);
     });
   });
 }

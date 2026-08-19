@@ -80,6 +80,67 @@ void main() {
     });
   });
 
+  group('hiddenFrom', () {
+    test('withholds an asset from the main timeline but not from an album view', () async {
+      // The whole point of the column: per-asset, per-surface. Hiding from the timeline is not hiding
+      // from an album -- an album is a container the user opened on purpose, and the server draws the
+      // same line (AssetSurface.timeline maps to Surface.Timeline only, never Surface.AlbumTimeline).
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final visible = await ctx.newRemoteAsset(ownerId: user.id);
+      final hidden = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline]);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: visible.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: hidden.id);
+
+      final timeline = await sut.main([user.id], .day).assetSource(0, 10);
+      expect(timeline.map((asset) => (asset as RemoteAsset).id), [visible.id]);
+
+      final timelineBuckets = await sut.main([user.id], .day).bucketSource().first;
+      expect(timelineBuckets.fold<int>(0, (sum, bucket) => sum + bucket.assetCount), 1);
+
+      final albumAssets = await sut.remoteAlbum(album.id, .day).assetSource(0, 10);
+      expect(albumAssets.map((asset) => (asset as RemoteAsset).id), unorderedEquals([visible.id, hidden.id]));
+    });
+
+    test('withholding from another surface leaves the timeline alone', () async {
+      // If the six surfaces shared a bit, or the timeline query read the wrong one, this would fail.
+      final user = await ctx.newUser();
+      final asset = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.people]);
+
+      final timeline = await sut.main([user.id], .day).assetSource(0, 10);
+      expect(timeline.map((item) => (item as RemoteAsset).id), [asset.id]);
+    });
+
+    test('a null mask changes nothing', () async {
+      // Every row that existed before this column did holds null. The clause has to be a no-op there.
+      final user = await ctx.newUser();
+      final asset = await ctx.newRemoteAsset(ownerId: user.id);
+
+      final timeline = await sut.main([user.id], .day).assetSource(0, 10);
+      expect(timeline.map((item) => (item as RemoteAsset).id), [asset.id]);
+
+      final person = await ctx.newPerson(ownerId: user.id, name: 'Someone');
+      await ctx.newFace(assetId: asset.id, personId: person.id);
+      final personAssets = await sut.person(user.id, person.id, .day).assetSource(0, 10);
+      expect(personAssets.map((item) => (item as RemoteAsset).id), [asset.id]);
+    });
+
+    test('withholds an asset from the person grid it shares with the timeline surface', () async {
+      // The server routes a person's photo grid through Surface.Timeline, not Surface.People; People is
+      // the people *list* and its counts. Mobile mirrors that split, so the timeline bit is the one that
+      // empties this grid.
+      final user = await ctx.newUser();
+      final visible = await ctx.newRemoteAsset(ownerId: user.id);
+      final hidden = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline]);
+      final person = await ctx.newPerson(ownerId: user.id, name: 'Someone');
+      await ctx.newFace(assetId: visible.id, personId: person.id);
+      await ctx.newFace(assetId: hidden.id, personId: person.id);
+
+      final assets = await sut.person(user.id, person.id, .day).assetSource(0, 10);
+      expect(assets.map((item) => (item as RemoteAsset).id), [visible.id]);
+    });
+  });
+
   group('person assets', () {
     test('does not duplicate an asset that has multiple face records for the same person', () async {
       // Regression check for #26723: an INNER JOIN between remote_asset_entity and asset_face_entity

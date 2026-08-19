@@ -79,6 +79,7 @@ describe(SyncRequestType.AlbumAssetsV2, () => {
           localDateTime: asset.localDateTime,
           type: asset.type,
           visibility: asset.visibility,
+          hiddenFrom: [],
           duration: asset.duration,
           livePhotoVideoId: asset.livePhotoVideoId,
           stackId: asset.stackId,

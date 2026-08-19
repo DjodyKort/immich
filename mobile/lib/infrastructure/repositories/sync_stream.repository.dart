@@ -30,9 +30,12 @@ import 'package:immich_mobile/infrastructure/entities/user.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/user_metadata.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
 import 'package:immich_mobile/infrastructure/utils/exif.converter.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 import 'package:logging/logging.dart';
-import 'package:openapi/api.dart' as api show AlbumUserRole, AssetEditAction, AssetVisibility, UserMetadataKey;
-import 'package:openapi/api.dart' hide AlbumUserRole, AssetEditAction, AssetVisibility, UserMetadataKey;
+import 'package:openapi/api.dart'
+    as api
+    show AlbumUserRole, AssetEditAction, AssetSurface, AssetVisibility, UserMetadataKey;
+import 'package:openapi/api.dart' hide AlbumUserRole, AssetEditAction, AssetSurface, AssetVisibility, UserMetadataKey;
 
 class SyncStreamRepository extends DriftDatabaseRepository {
   final Logger _logger = Logger('DriftSyncStreamRepository');
@@ -252,6 +255,8 @@ class SyncStreamRepository extends DriftDatabaseRepository {
             thumbHash: Value(asset.thumbhash),
             deletedAt: Value(asset.deletedAt),
             visibility: Value(asset.visibility.toAssetVisibility()),
+            // Sync speaks surface names; the mask is mobile's own encoding, assigned in one place.
+            hiddenFrom: Value(VisibilityPolicy.maskFor(asset.hiddenFrom.map((s) => s.toAssetSurface()))),
             livePhotoVideoId: Value(asset.livePhotoVideoId),
             stackId: Value(asset.stackId),
             libraryId: Value(asset.libraryId),
@@ -968,6 +973,21 @@ extension on api.AssetVisibility {
     api.AssetVisibility.hidden => AssetVisibility.hidden,
     api.AssetVisibility.archive => AssetVisibility.archive,
     api.AssetVisibility.locked => AssetVisibility.locked,
+  };
+}
+
+/// The wire vocabulary for per-surface hiding, translated into mobile's own.
+///
+/// Exhaustive by construction: a surface added on the server fails to compile here rather than being
+/// silently dropped on the floor, which for a *hiding* rule would mean showing what should be hidden.
+extension on api.AssetSurface {
+  AssetSurface toAssetSurface() => switch (this) {
+    api.AssetSurface.timeline => AssetSurface.timeline,
+    api.AssetSurface.search => AssetSurface.search,
+    api.AssetSurface.map => AssetSurface.map,
+    api.AssetSurface.people => AssetSurface.people,
+    api.AssetSurface.memories => AssetSurface.memories,
+    api.AssetSurface.folders => AssetSurface.folders,
   };
 }
 

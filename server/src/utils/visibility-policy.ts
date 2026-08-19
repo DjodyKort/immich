@@ -42,6 +42,15 @@ export enum Surface {
   GlobalMap = 'globalMap',
   /** "Download everything I own". */
   TimelineDownload = 'timelineDownload',
+  /**
+   * The trash view.
+   *
+   * Same visibility rule as the main timeline, but deliberately **absent from `SURFACE_BIT`**, so a
+   * per-asset exclusion can never reach it. Trash is the recovery route: hiding a photo from the timeline
+   * must not make it unrecoverable. The web trash view asks the bucket queries with `isTrashed` and no
+   * explicit visibility, so without its own surface it would inherit the timeline's mask.
+   */
+  Trash = 'trash',
   /** The people list, a person's asset count, and the "how many people do I have" badge. */
   People = 'people',
   /** A memory's assets, and the memory list's inline asset previews. */
@@ -84,6 +93,7 @@ const { Archive, Timeline, Locked } = AssetVisibility;
  */
 const POLICY: Record<Surface, SurfaceRule> = {
   [Surface.Timeline]: { base: [Archive, Timeline], elevatedAdds: [] },
+  [Surface.Trash]: { base: [Archive, Timeline], elevatedAdds: [] },
   [Surface.AlbumTimeline]: { base: [Archive, Timeline], elevatedAdds: [Locked] },
   [Surface.Search]: { base: [Archive, Timeline], elevatedAdds: [Locked] },
   [Surface.Statistics]: { base: [Archive, Timeline], elevatedAdds: [Locked] },

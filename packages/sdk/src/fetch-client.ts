@@ -3193,6 +3193,8 @@ export type SyncAssetV2 = {
     fileModifiedAt: string | null;
     /** Asset height */
     height: number | null;
+    /** Surfaces this asset is withheld from. Carried as surface names rather than as the internal bitmask, so a client may store the set however it likes without pinning itself to the bit numbering. */
+    hiddenFrom: AssetSurface[];
     /** Asset ID */
     id: string;
     /** Is edited */

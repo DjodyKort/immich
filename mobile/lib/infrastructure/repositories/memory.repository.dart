@@ -4,6 +4,7 @@ import 'package:immich_mobile/domain/models/memory.model.dart';
 import 'package:immich_mobile/infrastructure/entities/memory.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
 class DriftMemoryRepository extends DriftDatabaseRepository {
   final Drift _db;
@@ -20,7 +21,8 @@ class DriftMemoryRepository extends DriftDatabaseRepository {
               _db.remoteAssetEntity,
               _db.remoteAssetEntity.id.equalsExp(_db.memoryAssetEntity.assetId) &
                   _db.remoteAssetEntity.deletedAt.isNull() &
-                  _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline),
+                  _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) &
+                  VisibilityPolicy.notHiddenFrom(_db.remoteAssetEntity, AssetSurface.memories),
             ),
           ])
           ..where(_db.memoryEntity.ownerId.equals(ownerId))
@@ -60,7 +62,8 @@ class DriftMemoryRepository extends DriftDatabaseRepository {
               _db.remoteAssetEntity,
               _db.remoteAssetEntity.id.equalsExp(_db.memoryAssetEntity.assetId) &
                   _db.remoteAssetEntity.deletedAt.isNull() &
-                  _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline),
+                  _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) &
+                  VisibilityPolicy.notHiddenFrom(_db.remoteAssetEntity, AssetSurface.memories),
             ),
           ])
           ..where(_db.memoryEntity.id.equals(memoryId))

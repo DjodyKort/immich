@@ -10,6 +10,7 @@ import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.dart';
 import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/stack.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 import 'package:immich_mobile/utils/option.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
@@ -105,7 +106,10 @@ class RemoteAssetRepository extends DriftDatabaseRepository {
           ..where(
             _db.remoteExifEntity.city.isNotNull() &
                 asset.ref(_db.remoteAssetEntity.deletedAt).isNull() &
-                asset.ref(_db.remoteAssetEntity.visibility).equals(AssetVisibility.timeline.index),
+                asset.ref(_db.remoteAssetEntity.visibility).equals(AssetVisibility.timeline.index) &
+                // The server folds its search-suggestion surface into AssetSurface.search, so a city only
+                // reachable through a withheld asset stops being offered here too.
+                VisibilityPolicy.notHiddenFromMask(asset.ref(_db.remoteAssetEntity.hiddenFrom), AssetSurface.search),
           )
           ..groupBy([_db.remoteExifEntity.city])
           ..orderBy([OrderingTerm.asc(_db.remoteExifEntity.city)]);
