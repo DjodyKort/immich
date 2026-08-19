@@ -151,19 +151,23 @@ jobs:
             exit 0
           fi
 
-          # Push through SYNC_TOKEN when present. The URL carries the token, so it is never echoed;
-          # GitHub also masks registered secrets in logs.
+          # Pushing as SYNC_TOKEN takes more than putting it in the URL, and this took three attempts to
+          # get right, so the reasoning is worth keeping:
           #
-          # The unset is the part that is easy to miss. actions/checkout stores the job's App token in
-          # `http.https://github.com/.extraheader`, and an Authorization header wins over userinfo in the
-          # URL, so a push to a token-bearing URL still goes out as the GitHub App and is refused for
-          # workflow files with a message that looks like the token was never applied. It was applied and
-          # then overridden. Fetches afterwards are anonymous, which is fine on a public repository.
+          # 1. A token in the URL loses. actions/checkout leaves an Authorization header configured, and a
+          #    header beats userinfo, so the push still goes out as the job's GitHub App and is refused
+          #    for workflow files - with a message that looks like the secret was never read.
+          # 2. Unsetting `http.https://github.com/.extraheader` does not find it either. checkout@v6
+          #    stores credentials in a separate file wired in through `includeIf`, so there is no
+          #    extraheader key in the local config to remove.
+          # 3. What does work is overriding the header on the command line, which outranks any config
+          #    file. The App credential stays intact for the no-token path, where it is the only one
+          #    available and is sufficient for anything outside .github/workflows.
           if [ -n "${SYNC_TOKEN:-}" ]; then
-            git config --local --unset-all http.https://github.com/.extraheader || true
-            remote="https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$SYNC_TOKEN" | base64 -w0)"
+            push() { git -c http.https://github.com/.extraheader="$auth_header" push "$@"; }
           else
-            remote=origin
+            push() { git push "$@"; }
           fi
 
           # The branch may already exist from an earlier run at this same upstream sha, with a different
@@ -177,9 +181,9 @@ jobs:
             git fetch -q origin "$branch"
             remote_sha=$(git rev-parse FETCH_HEAD)
             echo "branch exists remotely at $remote_sha; replacing it"
-            git push --force-with-lease="refs/heads/$branch:$remote_sha" "$remote" "$branch"
+            push --force-with-lease="refs/heads/$branch:$remote_sha" origin "$branch"
           else
-            git push "$remote" "$branch"
+            push origin "$branch"
           fi
           echo "status=merged" >> "$GITHUB_OUTPUT"
 
