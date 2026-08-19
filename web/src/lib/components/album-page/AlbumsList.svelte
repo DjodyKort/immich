@@ -7,11 +7,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import AlbumEditModal from '$lib/modals/AlbumEditModal.svelte';
   import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
-  import {
-    handleDeleteAlbum,
-    handleDownloadAlbum,
-    redirectIfLockedAndNotElevated,
-  } from '$lib/services/album.service';
+  import { handleDeleteAlbum, handleDownloadAlbum, redirectIfLockedAndNotElevated } from '$lib/services/album.service';
   import {
     AlbumFilter,
     AlbumGroupBy,
