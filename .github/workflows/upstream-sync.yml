@@ -47,6 +47,7 @@ jobs:
       base: ${{ steps.drift.outputs.base }}
       replayed: ${{ steps.merge.outputs.replayed }}
       conflicts: ${{ steps.merge.outputs.conflicts }}
+      blocked_files: ${{ steps.merge.outputs.blocked_files }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -78,6 +79,10 @@ jobs:
 
       - name: Merge, replaying recorded resolutions
         id: merge
+        env:
+          # Optional. Needed only to push a merge that touches .github/workflows, which GITHUB_TOKEN is
+          # not allowed to do. Contents: write and Workflows: write, scoped to this repo.
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           set -uo pipefail
           if [ "${{ steps.drift.outputs.behind }}" = "0" ]; then
@@ -92,6 +97,7 @@ jobs:
           branch="sync/upstream-$(date -u +%Y-%m-%d)-$(git rev-parse --short upstream/main)"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           git switch -c "$branch"
+          pre_merge=$(git rev-parse HEAD)
 
           # rerere replays the resolutions this fork has already made. The cache is tracked in the
           # repo because $GIT_DIR/rr-cache does not survive a fresh clone; see _fork/rr-cache.sh.
@@ -130,20 +136,43 @@ jobs:
           fi
           git checkout -- _fork/rr-cache 2>/dev/null || true
 
+          # GITHUB_TOKEN cannot push a change under .github/workflows: the remote rejects it with
+          # "refusing to allow a GitHub App to create or update workflow ... without `workflows`
+          # permission", and there is no `workflows` permission a workflow can grant itself, so no
+          # permissions block fixes it. Upstream edits its workflows often, so this is the common case
+          # rather than an edge one. A PAT or app token with Workflows: write is the only way through.
+          workflow_changes=$(git diff --name-only "$pre_merge"..HEAD -- .github/workflows | head -20)
+          if [ -n "$workflow_changes" ] && [ -z "${SYNC_TOKEN:-}" ]; then
+            echo "::error ::This merge changes .github/workflows, which GITHUB_TOKEN may not push. Add a SYNC_TOKEN secret with Contents: write and Workflows: write."
+            echo "files:"
+            echo "$workflow_changes"
+            echo "status=blocked" >> "$GITHUB_OUTPUT"
+            echo "blocked_files=$(echo "$workflow_changes" | paste -sd, -)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Push through SYNC_TOKEN when present. The URL carries the token, so it is never echoed;
+          # GitHub also masks registered secrets in logs.
+          if [ -n "${SYNC_TOKEN:-}" ]; then
+            remote="https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          else
+            remote=origin
+          fi
+
           # The branch may already exist from an earlier run at this same upstream sha, with a different
           # history, because integration moved in between. A plain push is then rejected as a
-          # non-fast-forward and the whole sync fails for a reason that has nothing to do with the merge.
+          # non-fast-forward and the whole sync fails for a reason unrelated to the merge.
           #
           # This branch is owned solely by this workflow and is disposable, so replacing it is correct.
-          # --force-with-lease rather than --force, anchored to the state actually observed a moment ago,
-          # so a branch someone else advanced in the meantime is refused instead of clobbered.
+          # --force-with-lease rather than --force, anchored to the state observed a moment ago, so a
+          # branch someone else advanced in the meantime is refused instead of clobbered.
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
             git fetch -q origin "$branch"
             remote_sha=$(git rev-parse FETCH_HEAD)
             echo "branch exists remotely at $remote_sha; replacing it"
-            git push --force-with-lease="refs/heads/$branch:$remote_sha" origin "$branch"
+            git push --force-with-lease="refs/heads/$branch:$remote_sha" "$remote" "$branch"
           else
-            git push origin "$branch"
+            git push "$remote" "$branch"
           fi
           echo "status=merged" >> "$GITHUB_OUTPUT"
 
@@ -259,6 +288,56 @@ jobs:
       sink: ${{ needs.pull-request.outputs.number != '' && 'pr-comment' || 'artifact' }}
       pr_number: ${{ needs.pull-request.outputs.number }}
     secrets: inherit
+
+  report-blocked:
+    name: Report a push blocked by workflow permissions
+    needs: merge
+    if: ${{ github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'blocked' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BEHIND: ${{ needs.merge.outputs.behind }}
+      FILES: ${{ needs.merge.outputs.blocked_files }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Ensure labels exist
+        run: |
+          gh label create sync --color 1D76DB --description "Upstream sync" --force
+          gh label create automation --color 0E8A16 --description "Opened by an automated workflow" --force
+
+      - name: Open an issue
+        run: |
+          set -euo pipefail
+          {
+            echo "The merge itself was fine. The **push** was refused, because this sync changes files"
+            echo "under \`.github/workflows\` and \`GITHUB_TOKEN\` is not permitted to create or update a"
+            echo "workflow file. There is no \`workflows\` permission a workflow can grant itself, so this"
+            echo "cannot be fixed with a \`permissions:\` block."
+            echo
+            echo "$BEHIND upstream commit(s) are waiting. Workflow files in this batch:"
+            echo
+            echo "$FILES" | tr ',' '\n' | sed 's/^/- /'
+            echo
+            echo "To unblock it, add a repository secret \`SYNC_TOKEN\`: a fine-grained PAT scoped to this"
+            echo "repository with **Contents: write** and **Workflows: write**. The workflow picks it up"
+            echo "automatically and pushes with it. Until then, this sync can be done by hand:"
+            echo
+            echo '```'
+            echo 'git switch integration && git pull'
+            echo 'git switch -c sync/upstream-$(date -u +%Y-%m-%d)'
+            echo 'bash ./_fork/rr-cache.sh import'
+            echo 'git merge upstream/main'
+            echo '```'
+            echo
+            echo "Run: $RUN_URL"
+          } > issue.md
+          gh issue create \
+            --title "Upstream sync blocked: the merge touches .github/workflows" \
+            --body-file issue.md \
+            --label sync \
+            --label automation
 
   report-conflicts:
     name: Report unresolved conflicts
