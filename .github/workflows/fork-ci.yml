@@ -1,0 +1,197 @@
+# [FORK] Gate suite for this fork's own branches.
+#
+# Upstream's workflows cannot run here: 18 of the 23 obtain a token through
+# immich-app/devtools/actions/create-workflow-token, using PUSH_O_MATIC_APP_CLIENT_ID and
+# PUSH_O_MATIC_APP_KEY, which are immich-app org secrets. They fail at the first step on a fork.
+# So this is an added file rather than an edit to theirs, which also keeps .github/ from becoming a
+# recurring merge conflict. Same approach as fork-build.yml in DjodyKort/cloudstream.
+#
+# Task names and setup mirror upstream's test.yml so the gates stay equivalent:
+#   //server:ci-unit    install, plugins, format, lint, check, test
+#   //server:ci-medium  install, plugins, plugin-core build, test-medium (Testcontainers)
+#   //web:ci-unit       sdk install and build, install, format, check, test  (no lint, see below)
+# The only substitution is the mise setup action, which has to be the public one.
+#
+# Deliberately omitted: machine-learning (this fork does not touch it, upstream covers it) and the
+# e2e suites (they need a full docker compose stack; add later if the fork starts changing e2e).
+
+name: Fork CI
+
+on:
+  push:
+    branches: [integration]
+  pull_request:
+    branches: [integration]
+  workflow_dispatch:
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Every job carries `if: github.repository != 'immich-app/immich'` so this file is inert if it ever
+# reaches upstream. It is repeated per job rather than hoisted into `env`, because a job-level `if`
+# cannot read the `env` context.
+jobs:
+  server:
+    name: Server (unit, lint, format, check)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./server
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v3
+      - run: mise run ci-unit
+
+  server-medium:
+    name: Server (medium)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ./server
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          # e2e/test-assets holds the video fixtures. Without it three medium tests fail on missing
+          # files, which reads as a regression rather than a missing submodule.
+          submodules: recursive
+      - uses: jdx/mise-action@v3
+      - run: mise run ci-medium
+
+  web:
+    name: Web (unit, format, check)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./web
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v3
+      - run: mise run ci-unit
+
+  web-lint:
+    name: Web (lint)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./web
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v3
+      # Its own job on purpose. //web:ci-unit deliberately excludes lint, and upstream runs Lint Web
+      # on their beefy self-hosted runner. It is the most resource-hungry gate here: under CPU
+      # contention it dies with "Atomics.wait() failed: timed-out" inside synckit on the
+      # better-tailwindcss rule, which is a load failure wearing a lint failure's clothes. Giving it
+      # a dedicated runner is what keeps that from being misread.
+      - run: mise run //:sdk:install && mise run //:sdk:build
+      - run: mise run install
+      - run: mise run lint
+
+  i18n:
+    name: i18n (format)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v3
+      - run: mise run //:i18n:format
+
+  openapi:
+    name: OpenAPI (generated client is current)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v3
+      - run: mise run open-api
+      # Mirrors upstream's check-openapi.yml: regenerating must be a no-op. A diff here means a DTO
+      # or controller changed without the client being regenerated.
+      - name: Fail if regeneration produced a diff
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error ::mise run open-api produced a diff. Run it locally and commit the result."
+            exit 1
+          fi
+
+  mobile:
+    name: Mobile (analyze, format, test)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ./mobile
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v3
+      # install:ci is install with --enforce-lockfile. It depends on //:open-api-dart, so the
+      # generated client is produced here rather than being committed (gitignored since #30287).
+      # Its install:ios step is a no-op off macOS, so this is safe on a Linux runner.
+      - run: mise run install:ci
+      # checklist runs codegen:pigeon, codegen:dart, codegen:translation, analyze, format, test.
+      # The drift schema is not part of it and the migration-test matrix needs it, so it runs first.
+      # Skipping codegen entirely is what produces thousands of phantom analyzer errors.
+      - run: mise run codegen:drift:schema
+      - run: mise run checklist
+
+  upstream-drift:
+    name: Upstream drift (informational)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          # merge-base needs real history; on a shallow clone it exits non-zero.
+          fetch-depth: 0
+      - name: Report divergence and staleness separately
+        run: |
+          set -euo pipefail
+          if ! git remote get-url upstream > /dev/null 2>&1; then
+            git remote add upstream https://github.com/immich-app/immich.git
+          fi
+          git fetch -q upstream main
+          # Measured from the merge-base, never from upstream HEAD: diffing against a moving HEAD
+          # counts upstream's own progress as our divergence, which is a false alarm. Two numbers,
+          # because they mean different things and have different fixes.
+          base=$(git merge-base HEAD upstream/main 2>/dev/null || true)
+          if [ -z "$base" ]; then
+            echo "::notice ::No merge-base with upstream/main (shallow clone?) - skipping drift report."
+            exit 0
+          fi
+          ours=$(git rev-list --count "$base"..HEAD)
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "fork commits since the merge-base: $ours"
+          echo "upstream commits not yet merged here: $behind"
+          if [ "$behind" -gt 200 ]; then
+            echo "::warning ::$behind upstream commits behind. Conflict cost grows faster than linearly with drift; sync sooner."
+          elif [ "$behind" -gt 0 ]; then
+            echo "::notice ::$behind upstream commits not yet merged."
+          fi
