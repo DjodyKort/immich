@@ -23,9 +23,23 @@ on:
   pull_request:
     branches: [integration]
   workflow_dispatch:
+  # Callable so upstream-sync.yml can run these exact gates against its merge branch. A push made
+  # with GITHUB_TOKEN does not trigger workflows, so a sync PR would otherwise sit ungated, which is
+  # the one thing that must not happen. Calling the gates explicitly avoids both that gap and having
+  # to keep a long-lived PAT around.
+  workflow_call:
+    inputs:
+      ref:
+        description: Ref to check out. Empty means the triggering ref, the default for push and pull_request.
+        type: string
+        required: false
+        default: ''
 
 concurrency:
-  group: fork-ci-${{ github.ref }}
+  # The called ref is part of the group. Without it, a run invoked by upstream-sync would share a
+  # group with the push-triggered run on integration, and cancel-in-progress would have the two
+  # killing each other.
+  group: fork-ci-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -47,6 +61,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
       - uses: jdx/mise-action@v3
       - run: mise run ci-unit
 
@@ -55,6 +71,10 @@ jobs:
     if: ${{ github.repository != 'immich-app/immich' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      # For the ghcr.io login below.
+      packages: read
     defaults:
       run:
         working-directory: ./server
@@ -62,10 +82,19 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
           # e2e/test-assets holds the video fixtures. Without it three medium tests fail on missing
           # files, which reads as a regression rather than a missing submodule.
           submodules: recursive
       - uses: jdx/mise-action@v3
+      # Testcontainers otherwise pulls ghcr.io/immich-app/postgres anonymously, and anonymous pulls
+      # are rate limited per IP across shared runners. Seen as a 404 "No such image", which then
+      # cascades into a misleading "No test files found, exiting with code 1" once global setup dies.
+      # It passed on the previous run with identical server code, so this is a pull limit rather than
+      # a test problem. Authenticating with the run's own token raises the limit and costs nothing.
+      - name: Log in to ghcr.io
+        run: echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
       - run: mise run ci-medium
 
   web:
@@ -80,6 +109,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
       - uses: jdx/mise-action@v3
       - run: mise run ci-unit
 
@@ -95,6 +126,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
       - uses: jdx/mise-action@v3
       # Its own job on purpose. //web:ci-unit deliberately excludes lint, and upstream runs Lint Web
       # on their beefy self-hosted runner. It is the most resource-hungry gate here: under CPU
@@ -114,6 +147,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
       - uses: jdx/mise-action@v3
       - run: mise run //:i18n:format
 
@@ -126,6 +161,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
       - uses: jdx/mise-action@v3
       - run: mise run open-api
       # Regenerating must be a no-op: a diff here means a DTO or controller changed without the
@@ -155,6 +192,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
       - uses: jdx/mise-action@v3
       # install:ci is install with --enforce-lockfile. It depends on //:open-api-dart, so the
       # generated client is produced here rather than being committed (gitignored since #30287).
@@ -188,6 +227,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
           # merge-base needs real history; on a shallow clone it exits non-zero.
           fetch-depth: 0
       - name: Report divergence and staleness separately

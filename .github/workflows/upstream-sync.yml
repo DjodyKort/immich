@@ -1,0 +1,247 @@
+# [FORK] Weekly merge of upstream/main into integration, gated and turned into a PR.
+#
+# Tier 1 of the design in _docs/fork-sync-and-versioning.md: no model in the loop. Most weeks the
+# merge is either clean or resolvable from recorded rerere resolutions, and paying an LLM to run a
+# clean `git merge` would be waste. Conflicts that rerere cannot replay are reported as an issue
+# instead, which is where tier 2 will later hook in.
+#
+# Weekly rather than per-release on purpose. Upstream runs 44 to 76 commits a week and releases every
+# one to three weeks, and conflict cost grows faster than linearly with drift: four days of drift, 30
+# commits, produced eight conflicts and one break that produced no conflict at all.
+#
+# Success is the gate suite, never the merge exit code. That same break, upstream deleting
+# remoteAssetRepositoryProvider from under a file of ours, conflicted with nothing.
+
+name: Upstream sync
+
+on:
+  schedule:
+    # Sundays 05:17 UTC. Deliberately off the :00 mark, which is where every scheduled job piles up.
+    - cron: '17 5 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-sync
+  # Not cancel-in-progress: killing a run halfway through a merge and push leaves a partial branch.
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  merge:
+    name: Merge upstream
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      status: ${{ steps.merge.outputs.status }}
+      branch: ${{ steps.merge.outputs.branch }}
+      behind: ${{ steps.drift.outputs.behind }}
+      replayed: ${{ steps.merge.outputs.replayed }}
+      conflicts: ${{ steps.merge.outputs.conflicts }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Credentials are kept here, unlike the gate workflow, because this job pushes a branch.
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream and measure drift
+        id: drift
+        run: |
+          set -euo pipefail
+          git remote get-url upstream >/dev/null 2>&1 || \
+            git remote add upstream https://github.com/immich-app/immich.git
+          git fetch -q upstream main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "upstream commits not yet merged: $behind"
+
+      - name: Merge, replaying recorded resolutions
+        id: merge
+        run: |
+          set -uo pipefail
+          if [ "${{ steps.drift.outputs.behind }}" = "0" ]; then
+            echo "already up to date"
+            echo "status=uptodate" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          branch="sync/upstream-$(date -u +%Y-%m-%d)"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          git switch -c "$branch"
+
+          # rerere replays the resolutions this fork has already made. The cache is tracked in the
+          # repo because $GIT_DIR/rr-cache does not survive a fresh clone; see _fork/rr-cache.sh.
+          # Invoked through bash so a missing exec bit cannot break it.
+          git config rerere.enabled true
+          git config rerere.autoupdate true
+          bash ./_fork/rr-cache.sh import
+
+          git merge --no-edit upstream/main > merge.log 2>&1 || true
+          cat merge.log
+
+          replayed=$(grep -oE "Resolved '[^']+'" merge.log | sed "s/Resolved '//; s/'$//" | paste -sd, - || true)
+          conflicts=$(git diff --name-only --diff-filter=U | paste -sd, - || true)
+          echo "replayed=$replayed" >> "$GITHUB_OUTPUT"
+          echo "conflicts=$conflicts" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$conflicts" ]; then
+            # Nothing useful to push: a branch cannot carry an unresolved merge. Reported as an issue.
+            echo "::warning ::Unresolved conflicts: $conflicts"
+            echo "status=conflicted" >> "$GITHUB_OUTPUT"
+            git merge --abort || true
+            exit 0
+          fi
+
+          # A clean merge commits itself. One that conflicted and was fully resolved by rerere does
+          # not, because rerere.autoupdate stages the resolution without completing the merge.
+          if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+            git commit --no-edit
+          fi
+
+          # Any resolution rerere learned during this run is worth keeping, but this job cannot commit
+          # to the cache safely from CI, so it is surfaced rather than written.
+          bash ./_fork/rr-cache.sh export >/dev/null || true
+          if ! git diff --quiet -- _fork/rr-cache; then
+            echo "::notice ::rerere learned something new this run. Run _fork/rr-cache.sh export locally and commit it."
+          fi
+          git checkout -- _fork/rr-cache 2>/dev/null || true
+
+          git push origin "$branch"
+          echo "status=merged" >> "$GITHUB_OUTPUT"
+
+  gates:
+    name: Gates
+    needs: merge
+    if: ${{ github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'merged' }}
+    # The same gate suite the branch would get from a pull_request event. Called explicitly because a
+    # push made with GITHUB_TOKEN does not trigger workflows.
+    uses: ./.github/workflows/fork-ci.yml
+    with:
+      ref: ${{ needs.merge.outputs.branch }}
+
+  pull-request:
+    name: Open the pull request
+    needs: [merge, gates]
+    if: ${{ always() && github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'merged' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ needs.merge.outputs.branch }}
+      BEHIND: ${{ needs.merge.outputs.behind }}
+      REPLAYED: ${{ needs.merge.outputs.replayed }}
+      GATES: ${{ needs.gates.result }}
+    steps:
+      # gh pr create --label hard-fails on a label that does not exist yet, which is easy to hit on a
+      # fresh fork. --force updates an existing label rather than erroring.
+      - name: Ensure labels exist
+        run: |
+          gh label create sync --color 1D76DB --description "Upstream sync" --force
+          gh label create automation --color 0E8A16 --description "Opened by an automated workflow" --force
+
+      - name: Create or update the pull request
+        run: |
+          set -euo pipefail
+
+          if [ "$GATES" = "success" ]; then
+            gates_line="All gates passed."
+            draft=""
+          else
+            gates_line="Gates finished as **$GATES**. Opened as a draft; do not merge until they are green."
+            draft="--draft"
+          fi
+
+          {
+            echo "Merges \`upstream/main\` into \`integration\`. Opened by \`upstream-sync.yml\`."
+            echo
+            echo "- Upstream commits merged: **$BEHIND**"
+            echo "- $gates_line"
+            echo
+            if [ -n "$REPLAYED" ]; then
+              echo "rerere replayed a recorded resolution for these files. A matching conflict hunk does"
+              echo "not guarantee the right answer once the surrounding code has moved, so read these"
+              echo "before merging:"
+              echo
+              echo "$REPLAYED" | tr ',' '\n' | sed 's/^/- /'
+            else
+              echo "No conflicts: the merge was clean."
+            fi
+            echo
+            echo "A clean merge is not evidence of a working one. Upstream changes that touch none of our"
+            echo "files can still break them, so the gate suite is the thing to trust here, not the"
+            echo "absence of conflicts."
+          } > body.md
+
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --body-file body.md
+            echo "updated PR #$existing"
+          else
+            gh pr create \
+              --base integration \
+              --head "$BRANCH" \
+              --title "chore: sync upstream/main ($BEHIND commits)" \
+              --body-file body.md \
+              --label sync \
+              --label automation \
+              $draft
+          fi
+
+  report-conflicts:
+    name: Report unresolved conflicts
+    needs: merge
+    if: ${{ github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'conflicted' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BEHIND: ${{ needs.merge.outputs.behind }}
+      CONFLICTS: ${{ needs.merge.outputs.conflicts }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Ensure labels exist
+        run: |
+          gh label create sync --color 1D76DB --description "Upstream sync" --force
+          gh label create automation --color 0E8A16 --description "Opened by an automated workflow" --force
+
+      - name: Open an issue
+        run: |
+          set -euo pipefail
+          {
+            echo "\`upstream-sync.yml\` could not merge \`upstream/main\` without help. **$BEHIND** upstream"
+            echo "commits are waiting. No branch was pushed, because a branch cannot carry an unresolved merge."
+            echo
+            echo "Conflicts rerere had no recorded resolution for:"
+            echo
+            echo "$CONFLICTS" | tr ',' '\n' | sed 's/^/- /'
+            echo
+            echo "To resolve locally, and teach rerere so the next sync replays it:"
+            echo
+            echo '```'
+            echo 'git switch integration && git pull'
+            echo 'git switch -c sync/upstream-$(date -u +%Y-%m-%d)'
+            echo 'bash ./_fork/rr-cache.sh import'
+            echo 'git merge upstream/main'
+            echo '# resolve the conflicts, finish the merge, then:'
+            echo 'bash ./_fork/rr-cache.sh export'
+            echo 'git add _fork/rr-cache && git commit'
+            echo '```'
+            echo
+            echo "Run: $RUN_URL"
+          } > issue.md
+          gh issue create \
+            --title "Upstream sync needs manual conflict resolution" \
+            --body-file issue.md \
+            --label sync \
+            --label automation
