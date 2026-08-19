@@ -29,6 +29,10 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  # Needed because this workflow calls fork-ci.yml, whose medium job logs in to ghcr.io. A called
+  # workflow cannot request a permission the caller does not hold, and the mismatch fails the run at
+  # startup with only "likely a workflow file issue" to go on.
+  packages: read
 
 jobs:
   merge:
