@@ -71,14 +71,17 @@
     "reassignFaces": { "surface": "n/a", "why": "Face mutation, returns person metadata." },
     "reassignFacesById": { "surface": "n/a", "why": "Face mutation, returns person metadata." },
     "createSharedLink": {
-      "surface": null,
-      "why": "UNREVIEWED. Shared links read through forSharing(), which is never elevated, so locked assets should be excluded by context rather than by a surface. That reasoning has not been verified against the matrix, and sharing is exactly where a mistake is worst, so this is deliberately left open rather than marked safe."
+      "surface": "n/a",
+      "why": "Reviewed. The read queries carry no visibility predicate at all - neither withSharedAssets nor the album-asset subquery in SharedLinkRepository.get filters on anything but deletedAt - so the protection is entirely on the write path: create and addAssets both go through Permission.AssetShare, which resolves to checkOwnerAccess(userId, ids, forSharing()), and forSharing() is never elevated, so excludeLockedUnlessElevated drops locked assets before they can be attached. Proven by server/test/medium/specs/services/shared-link-visibility.spec.ts, and mutation-checked: removing that guard fails two of its four tests. hiddenFrom is deliberately not applied, because it hides an asset from the owner's own browsing surfaces and a shared link is an act of publishing, not one of those surfaces."
     },
-    "getAllSharedLinks": { "surface": null, "why": "UNREVIEWED. See createSharedLink." },
-    "getMySharedLink": { "surface": null, "why": "UNREVIEWED. See createSharedLink." },
-    "getSharedLinkById": { "surface": null, "why": "UNREVIEWED. See createSharedLink." },
-    "updateSharedLink": { "surface": null, "why": "UNREVIEWED. See createSharedLink." },
-    "sharedLinkLogin": { "surface": null, "why": "UNREVIEWED. See createSharedLink." }
+    "getAllSharedLinks": { "surface": "n/a", "why": "Reviewed. See createSharedLink." },
+    "getMySharedLink": { "surface": "n/a", "why": "Reviewed. See createSharedLink." },
+    "getSharedLinkById": { "surface": "n/a", "why": "Reviewed. See createSharedLink." },
+    "updateSharedLink": { "surface": "n/a", "why": "Reviewed. See createSharedLink." },
+    "sharedLinkLogin": {
+      "surface": "n/a",
+      "why": "Reviewed. See createSharedLink. Note this one authenticates into a link rather than listing assets, so it is doubly not a surface."
+    }
   },
   "manual": {
     "getSyncStream": {
