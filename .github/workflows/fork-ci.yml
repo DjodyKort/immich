@@ -180,6 +180,26 @@ jobs:
             exit 1
           fi
 
+  asset-surfaces:
+    name: Asset surfaces (new read paths are classified)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          # Empty for push and pull_request, so checkout keeps its default behaviour there.
+          ref: ${{ inputs.ref }}
+      # Deliberately not gated behind a regeneration: it reads the committed spec, which the openapi
+      # job already proves is current, so this stays a seconds-long job rather than a 20 minute one.
+      #
+      # This is the gate for the failure mode neither a conflict nor a compile error catches: upstream
+      # adding an endpoint that returns assets. The visibility matrix only knows the endpoints it was
+      # told about, so a new read path silently bypasses the whole policy. Node only, no install.
+      - name: Check for unclassified asset-bearing operations
+        run: node _fork/asset-surfaces.mjs check
+
   mobile:
     name: Mobile (analyze, format, test)
     if: ${{ github.repository != 'immich-app/immich' }}
