@@ -71,6 +71,7 @@ export class AssetFactory {
       thumbhash: null,
       type: AssetType.Image,
       visibility: AssetVisibility.Timeline,
+      hiddenFrom: null,
       width: null,
       height: null,
       isEdited: false,

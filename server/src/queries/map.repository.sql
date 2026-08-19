@@ -18,6 +18,10 @@ where
   "asset"."deletedAt" is null
   and "album_asset"."albumId" = $1
   and "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 64 = 0
+  )
 order by
   "fileCreatedAt" desc
 
@@ -37,6 +41,10 @@ from
 where
   "asset"."deletedAt" is null
   and "asset"."visibility" in ('timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 128 = 0
+  )
   and (
     "ownerId" in ($1)
     or exists (

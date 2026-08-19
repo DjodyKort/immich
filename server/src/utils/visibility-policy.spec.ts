@@ -5,6 +5,7 @@ import {
   forSystem,
   forViewer,
   getAdmittedVisibility,
+  getSurfaceBit,
   Surface,
 } from 'src/utils/visibility-policy';
 import { factory } from 'test/small.factory';
@@ -94,6 +95,45 @@ describe('visibility policy', () => {
       for (const surface of Object.values(Surface)) {
         expect(getAdmittedVisibility(surface, elevated)).not.toContain(AssetVisibility.Hidden);
       }
+    });
+  });
+
+  describe('per-asset exclusion bits', () => {
+    it('should give every surface a distinct bit', () => {
+      const bits = Object.values(Surface)
+        .map((surface) => getSurfaceBit(surface))
+        .filter((bit): bit is number => bit !== undefined);
+
+      expect(new Set(bits).size).toBe(bits.length);
+    });
+
+    it('should use single-bit values, so masks compose', () => {
+      for (const surface of Object.values(Surface)) {
+        const bit = getSurfaceBit(surface);
+        if (bit === undefined) {
+          continue;
+        }
+
+        expect(bit).toBeGreaterThan(0);
+        expect(bit & (bit - 1)).toBe(0);
+      }
+    });
+
+    it('should fit in a postgres integer', () => {
+      for (const surface of Object.values(Surface)) {
+        expect(getSurfaceBit(surface) ?? 0).toBeLessThanOrEqual(2 ** 30);
+      }
+    });
+
+    it('should keep the bit each surface has always had', () => {
+      // These values are persisted in asset.hiddenFrom. Renumbering silently reinterprets stored masks,
+      // so this test exists to make that impossible to do by accident. Add rows; never edit them.
+      expect(getSurfaceBit(Surface.Timeline)).toBe(1);
+      expect(getSurfaceBit(Surface.AlbumTimeline)).toBe(2);
+      expect(getSurfaceBit(Surface.Search)).toBe(4);
+      expect(getSurfaceBit(Surface.People)).toBe(512);
+      expect(getSurfaceBit(Surface.Memories)).toBe(1024);
+      expect(getSurfaceBit(Surface.StackContents)).toBe(32_768);
     });
   });
 

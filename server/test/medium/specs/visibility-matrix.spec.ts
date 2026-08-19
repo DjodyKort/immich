@@ -37,6 +37,7 @@ import { StackService } from 'src/services/stack.service';
 import { TimelineService } from 'src/services/timeline.service';
 import { UserService } from 'src/services/user.service';
 import { ViewService } from 'src/services/view.service';
+import { getSurfaceBit, Surface as PolicySurface } from 'src/utils/visibility-policy';
 import { MediumTestContext, newMediumService } from 'test/medium.factory';
 import { factory } from 'test/small.factory';
 import { getKyselyDB } from 'test/utils';
@@ -575,4 +576,44 @@ describe('visibility matrix', () => {
       });
     }
   }
+});
+
+describe('per-asset exclusions', () => {
+  // The justification for asset.hiddenFrom. POLICY gives per-*surface* rules, but one exclusive enum can
+  // never express "hide this single photo from one surface and leave it on the others". If these two ever
+  // pass trivially, the column is dead weight.
+  it('should hide an asset from only the surface its mask names', async () => {
+    const { sut: timeline, ctx } = setupTimeline(defaultDatabase);
+    const { user } = await ctx.newUser();
+    const { asset: kept } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    const { asset: excluded } = await ctx.newAsset({
+      ownerId: user.id,
+      visibility: AssetVisibility.Timeline,
+      hiddenFrom: getSurfaceBit(PolicySurface.Timeline),
+    });
+    const auth = factory.auth({ user: { id: user.id } });
+
+    const buckets = await timeline.getTimeBuckets(auth, {});
+    expect(buckets.reduce((total, bucket) => total + bucket.count, 0)).toBe(1);
+
+    const { sut: search } = setupSearch(defaultDatabase);
+    const found = await search.searchMetadata(auth, {});
+    const ids = found.assets.items.map((item) => item.id);
+
+    // Off the timeline, still findable in search. This is the capability the enum could not carry.
+    expect(ids).toContain(excluded.id);
+    expect(ids).toContain(kept.id);
+  });
+
+  it('should leave a null mask behaving exactly as before', async () => {
+    // Every row upstream writes has hiddenFrom null, so this guards "additive means additive".
+    const { sut, ctx } = setupTimeline(defaultDatabase);
+    const { user } = await ctx.newUser();
+    await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+    const auth = factory.auth({ user: { id: user.id } });
+
+    const buckets = await sut.getTimeBuckets(auth, {});
+    expect(buckets.reduce((total, bucket) => total + bucket.count, 0)).toBe(2);
+  });
 });

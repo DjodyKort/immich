@@ -35,6 +35,10 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
   "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 4 = 0
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -56,6 +60,10 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
   "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 4 = 0
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -97,6 +105,10 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
   "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 4 = 0
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -143,6 +155,10 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
   "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 4 = 0
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -193,6 +209,10 @@ from
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
   "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 4 = 0
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -205,7 +225,7 @@ limit
   $6
 offset
   $7
-commit
+rollback
 
 -- SearchRepository.getEmbedding
 select
@@ -282,7 +302,13 @@ with recursive
         inner join "asset" on "asset"."id" = "asset_exif"."assetId"
       where
         "asset"."ownerId" = any ($1::uuid[])
-        and "asset"."visibility" in ('timeline')
+        and (
+          "asset"."visibility" in ('timeline')
+          and (
+            "asset"."hiddenFrom" is null
+            or "asset"."hiddenFrom" & 4096 = 0
+          )
+        )
         and "asset"."type" = $2
         and "asset"."deletedAt" is null
       order by
@@ -306,7 +332,13 @@ with recursive
             inner join "asset" on "asset"."id" = "asset_exif"."assetId"
           where
             "asset"."ownerId" = any ($4::uuid[])
-            and "asset"."visibility" in ('timeline')
+            and (
+              "asset"."visibility" in ('timeline')
+              and (
+                "asset"."hiddenFrom" is null
+                or "asset"."hiddenFrom" & 4096 = 0
+              )
+            )
             and "asset"."type" = $5
             and "asset"."deletedAt" is null
             and "asset_exif"."city" > "cte"."city"
@@ -362,7 +394,13 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "asset"."visibility" in ('timeline')
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      "asset"."hiddenFrom" is null
+      or "asset"."hiddenFrom" & 4096 = 0
+    )
+  )
   and "deletedAt" is null
   and "state" is not null
   and "state" != $2
@@ -375,7 +413,13 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "asset"."visibility" in ('timeline')
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      "asset"."hiddenFrom" is null
+      or "asset"."hiddenFrom" & 4096 = 0
+    )
+  )
   and "deletedAt" is null
   and "city" is not null
   and "city" != $2
@@ -388,7 +432,13 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "asset"."visibility" in ('timeline')
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      "asset"."hiddenFrom" is null
+      or "asset"."hiddenFrom" & 4096 = 0
+    )
+  )
   and "deletedAt" is null
   and "make" is not null
   and "make" != $2
@@ -401,7 +451,13 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "asset"."visibility" in ('timeline')
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      "asset"."hiddenFrom" is null
+      or "asset"."hiddenFrom" & 4096 = 0
+    )
+  )
   and "deletedAt" is null
   and "model" is not null
   and "model" != $2
@@ -414,7 +470,13 @@ from
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = any ($1::uuid[])
-  and "asset"."visibility" in ('timeline')
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      "asset"."hiddenFrom" is null
+      or "asset"."hiddenFrom" & 4096 = 0
+    )
+  )
   and "deletedAt" is null
   and "lensModel" is not null
   and "lensModel" != $2

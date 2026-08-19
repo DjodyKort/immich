@@ -42,6 +42,10 @@ with
       ) as "asset2" on true
     where
       "asset"."visibility" in ('archive', 'timeline')
+      and (
+        "asset"."hiddenFrom" is null
+        or "asset"."hiddenFrom" & 16384 = 0
+      )
       and "asset"."ownerId" = $1::uuid
       and "asset"."duplicateId" is not null
       and "asset"."deletedAt" is null
@@ -121,6 +125,10 @@ from
   ) as "asset2" on true
 where
   "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 16384 = 0
+  )
   and "asset"."duplicateId" = $1::uuid
   and "asset"."deletedAt" is null
   and "asset"."stackId" is null
