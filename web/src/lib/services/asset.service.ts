@@ -19,6 +19,7 @@ import {
   mdiDatabaseRefreshOutline,
   mdiDownload,
   mdiDownloadBox,
+  mdiEyeOffOutline,
   mdiFaceRecognition,
   mdiHeadSyncOutline,
   mdiHeart,
@@ -45,6 +46,7 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
+import AssetHiddenFromModal from '$lib/modals/AssetHiddenFromModal.svelte';
 import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
 import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
@@ -77,6 +79,24 @@ export const getAssetBulkActions = ($t: MessageFormatter) => {
     },
   };
 
+  const HideFromPlaces: ActionItem = {
+    title: $t('hide_from_places'),
+    icon: mdiEyeOffOutline,
+    onAction: async () => {
+      // A timeline asset carries no `hiddenFrom`, so the modal cannot prefill for a selection. It
+      // opens blank and says in its own copy that saving replaces each asset's current set.
+      const assetIds = assetMultiSelectManager.ownedAssets.map(({ id }) => id);
+      if (assetIds.length === 0) {
+        return;
+      }
+
+      const updated = await modalManager.show(AssetHiddenFromModal, { assetIds });
+      if (updated) {
+        assetMultiSelectManager.clear();
+      }
+    },
+  };
+
   const RefreshFacesJob: ActionItem = {
     title: $t('refresh_faces'),
     icon: mdiHeadSyncOutline,
@@ -102,7 +122,7 @@ export const getAssetBulkActions = ($t: MessageFormatter) => {
     $if: () => ownedAssets.every((asset) => asset.isVideo),
   };
 
-  return { AddToAlbum, RefreshFacesJob, RefreshMetadataJob, RegenerateThumbnailJob, TranscodeVideoJob };
+  return { AddToAlbum, HideFromPlaces, RefreshFacesJob, RefreshMetadataJob, RegenerateThumbnailJob, TranscodeVideoJob };
 };
 
 export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & { stackPrimaryAssetId?: string }) => {
@@ -282,6 +302,15 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
     onAction: () => goto(Route.search({ queryAssetId: asset.stackPrimaryAssetId ?? asset.id })),
   };
 
+  const HideFromPlaces: ActionItem = {
+    title: $t('hide_from_places'),
+    icon: mdiEyeOffOutline,
+    // A locked asset is already withheld from every one of these places by its visibility, so the
+    // toggles could only ever be a no-op there. A trashed asset is off them for the same reason.
+    $if: () => isOwner && !asset.isTrashed && asset.visibility !== AssetVisibility.Locked,
+    onAction: () => modalManager.show(AssetHiddenFromModal, { assetIds: [asset.id], hiddenFrom: asset.hiddenFrom }),
+  };
+
   const RefreshFacesJob: ActionItem = {
     title: $t('refresh_faces'),
     icon: mdiHeadSyncOutline,
@@ -329,6 +358,7 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
     SetProfilePicture,
     ViewInTimeline,
     ViewSimilar,
+    HideFromPlaces,
     RefreshFacesJob,
     RefreshMetadataJob,
     RegenerateThumbnailJob,

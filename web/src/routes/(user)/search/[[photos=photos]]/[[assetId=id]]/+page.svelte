@@ -34,6 +34,7 @@
   import {
     type AlbumResponseDto,
     type AssetResponseDto,
+    AssetSurface,
     AssetVisibility,
     getPerson,
     getTagById,
@@ -113,6 +114,14 @@
   const handleSetVisibility = (assetIds: string[]) => {
     assetMultiSelectManager.clear();
     onAssetDelete(assetIds);
+  };
+
+  // Search is the surface this page renders, so an asset newly hidden from it can no longer be a
+  // result. The other five surfaces are rendered elsewhere and change nothing here.
+  const handleHiddenFrom = ({ assetIds, hiddenFrom }: { assetIds: string[]; hiddenFrom: AssetSurface[] }) => {
+    if (hiddenFrom.includes(AssetSurface.Search)) {
+      onAssetDelete(assetIds);
+    }
   };
 
   const handleSelectAll = () => {
@@ -249,7 +258,7 @@
 
 <svelte:window bind:scrollY />
 
-<OnEvents {onAlbumAddAssets} />
+<OnEvents {onAlbumAddAssets} onAssetsHiddenFrom={handleHiddenFrom} />
 
 {#if searchTermKeys.length > 0}
   <section id="search-chips" class="mx-auto mt-24 w-full max-w-7xl px-4 sm:px-8 lg:px-12">
@@ -374,6 +383,7 @@
               <ChangeLocation menuItem />
               <ArchiveAction menuItem unarchive={assetMultiSelectManager.isAllArchived} />
               <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
+              <ActionMenuItem action={Actions.HideFromPlaces} />
               {#if authManager.preferences.tags.enabled}
                 <TagAction menuItem />
               {/if}

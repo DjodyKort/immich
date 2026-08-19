@@ -1,5 +1,6 @@
 <script lang="ts">
   import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import type { SelectionBBox } from '$lib/components/shared-components/map/types';
   import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
@@ -29,7 +30,7 @@
     type OnLink,
     type OnUnlink,
   } from '$lib/utils/actions';
-  import { AssetVisibility } from '@immich/sdk';
+  import { AssetSurface, AssetVisibility } from '@immich/sdk';
   import { ActionButton, CloseButton, CommandPaletteDefaultProvider, Icon } from '@immich/ui';
   import { mdiDotsVertical, mdiImageMultiple } from '@mdi/js';
   import { ceil, floor } from 'lodash-es';
@@ -72,6 +73,14 @@
     assetMultiSelectManager.clear();
   };
 
+  // This panel is a bbox-filtered main timeline whose rows come from the clicked map clusters, so
+  // hiding from either of those two surfaces takes the asset out of it. The other four do not.
+  const handleHiddenFrom = ({ assetIds, hiddenFrom }: { assetIds: string[]; hiddenFrom: AssetSurface[] }) => {
+    if (hiddenFrom.includes(AssetSurface.Timeline) || hiddenFrom.includes(AssetSurface.Map)) {
+      timelineManager.removeAssets(assetIds);
+    }
+  };
+
   const handleEscape = () => {
     assetMultiSelectManager.clear();
   };
@@ -93,6 +102,8 @@
     assetMultiSelectManager.clear();
   });
 </script>
+
+<OnEvents onAssetsHiddenFrom={handleHiddenFrom} />
 
 <aside class="flex size-full flex-col overflow-hidden bg-immich-bg contain-content dark:bg-immich-dark-bg">
   <div class="flex items-center justify-between border-b border-gray-200 pe-1 pb-1 dark:border-immich-dark-gray">
@@ -167,6 +178,7 @@
             onUndoDelete={(assets) => timelineManager.upsertAssets(assets)}
           />
           <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
+          <ActionMenuItem action={Actions.HideFromPlaces} />
           <hr />
           <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
           <ActionMenuItem action={Actions.RefreshMetadataJob} />

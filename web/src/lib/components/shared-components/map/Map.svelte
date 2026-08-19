@@ -15,7 +15,7 @@
   import MapSettingsModal from '$lib/modals/MapSettingsModal.svelte';
   import { mapSettings } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
-  import { getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
+  import { AssetSurface, getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
   import { Icon, modalManager, Theme, themeManager } from '@immich/ui';
   import { mdiCog, mdiMap, mdiMapMarker } from '@mdi/js';
   import type { Feature, GeoJsonProperties, Geometry, Point } from 'geojson';
@@ -319,9 +319,22 @@
   const onAssetsChanged = async () => {
     mapMarkers = await loadMapMarkers();
   };
+
+  // Only the map surface moves a pin. The other five are rendered elsewhere, so reloading the
+  // markers for them would be a wasted request on every hide.
+  const onAssetsHiddenFrom = async ({ hiddenFrom }: { hiddenFrom: AssetSurface[] }) => {
+    if (hiddenFrom.includes(AssetSurface.Map)) {
+      await onAssetsChanged();
+    }
+  };
 </script>
 
-<OnEvents onAssetsDelete={onAssetsChanged} onAssetsArchive={onAssetsChanged} onAssetsUnarchive={onAssetsChanged} />
+<OnEvents
+  onAssetsDelete={onAssetsChanged}
+  onAssetsArchive={onAssetsChanged}
+  onAssetsUnarchive={onAssetsChanged}
+  {onAssetsHiddenFrom}
+/>
 
 <!--  We handle style loading ourselves so we set style blank here -->
 <MapLibre

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
   import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/stores';
   import { clickOutside } from '$lib/actions/click-outside';
@@ -37,7 +38,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isExternalUrl } from '$lib/utils/navigation';
   import { normalizeSearchString } from '$lib/utils/string-utils';
-  import { AssetVisibility, searchPerson, updatePerson, type PersonResponseDto } from '@immich/sdk';
+  import { AssetSurface, AssetVisibility, searchPerson, updatePerson, type PersonResponseDto } from '@immich/sdk';
   import {
     ActionButton,
     CommandPaletteDefaultProvider,
@@ -287,6 +288,17 @@
     assetMultiSelectManager.clear();
   };
 
+  // The people surface is what this page renders, so an asset newly hidden from it leaves this
+  // person's timeline and stops counting towards their total. The other five change nothing here.
+  const handleHiddenFrom = async ({ assetIds, hiddenFrom }: { assetIds: string[]; hiddenFrom: AssetSurface[] }) => {
+    if (!hiddenFrom.includes(AssetSurface.People)) {
+      return;
+    }
+
+    timelineManager.removeAssets(assetIds);
+    await updateAssetCount();
+  };
+
   const onPersonUpdate = async (response: PersonResponseDto) => {
     if (response.id !== person.id) {
       return;
@@ -332,6 +344,7 @@
   onAssetsDelete={updateAssetCount}
   onAssetsArchive={updateAssetCount}
   onAssetsUnarchive={updateAssetCount}
+  onAssetsHiddenFrom={handleHiddenFrom}
 />
 
 <main
@@ -490,6 +503,7 @@
           <TagAction menuItem />
         {/if}
         <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
+        <ActionMenuItem action={Actions.HideFromPlaces} />
         <DeleteAssets
           menuItem
           onAssetDelete={(assetIds) => handleDeleteAssets(assetIds)}

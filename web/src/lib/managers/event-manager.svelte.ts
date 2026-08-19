@@ -3,6 +3,7 @@ import type {
   AlbumUserRole,
   ApiKeyResponseDto,
   AssetResponseDto,
+  AssetSurface,
   IntegrityReport,
   JobCreateDto,
   LibraryResponseDto,
@@ -41,6 +42,7 @@ export type Events = {
   AssetsDelete: [string[]];
   AssetEditsApplied: [string];
   AssetsTag: [string[]];
+  AssetsHiddenFrom: [{ assetIds: string[]; hiddenFrom: AssetSurface[] }];
 
   AlbumAddAssets: [{ assetIds: string[]; albumIds: string[] }];
   AlbumCreate: [AlbumResponseDto];

@@ -29,6 +29,7 @@
   import { foldersStore } from '$lib/stores/folders.svelte';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { joinPaths } from '$lib/utils/tree-utils';
+  import { AssetSurface } from '@immich/sdk';
   import { ActionButton, CommandPaletteDefaultProvider, IconButton, Text } from '@immich/ui';
   import { mdiDotsVertical, mdiFolder, mdiFolderHome, mdiFolderOutline, mdiSelectAll } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -66,6 +67,14 @@
     void triggerAssetUpdate();
   };
 
+  // The folder view is the surface this page renders, so an asset newly hidden from it has to leave
+  // the listing. The other five surfaces are rendered elsewhere and change nothing here.
+  const handleHiddenFrom = ({ hiddenFrom }: { hiddenFrom: AssetSurface[] }) => {
+    if (hiddenFrom.includes(AssetSurface.Folders)) {
+      void triggerAssetUpdate();
+    }
+  };
+
   const handleSelectAllAssets = () => {
     if (!data.pathAssets) {
       return;
@@ -93,7 +102,7 @@
     </Sidebar>
   {/snippet}
 
-  <OnEvents onAssetsDelete={invalidateAll} />
+  <OnEvents onAssetsDelete={invalidateAll} onAssetsHiddenFrom={handleHiddenFrom} />
 
   <Breadcrumbs node={data.tree} icon={mdiFolderHome} title={$t('folders')} getLink={getLinkForPath} />
 
@@ -152,6 +161,7 @@
         <ChangeLocation menuItem />
         <ArchiveAction menuItem unarchive={assetMultiSelectManager.isAllArchived} onArchive={triggerAssetUpdate} />
         <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
+        <ActionMenuItem action={Actions.HideFromPlaces} />
         {#if authManager.preferences.tags.enabled && assetMultiSelectManager.isAllUserOwned}
           <TagAction menuItem />
         {/if}
