@@ -128,11 +128,17 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@v3
       - run: mise run open-api
-      # Mirrors upstream's check-openapi.yml: regenerating must be a no-op. A diff here means a DTO
-      # or controller changed without the client being regenerated.
-      - name: Fail if regeneration produced a diff
+      # Regenerating must be a no-op: a diff here means a DTO or controller changed without the
+      # client being regenerated. Note this is NOT what upstream's check-openapi.yml does - that one
+      # diffs the spec against main for breaking changes and runs a Flutter patch-coverage test. This
+      # gate is ours.
+      #
+      # Scoped to the generated artifacts on purpose. An unscoped `git diff` fails here for an
+      # unrelated reason: running mise on Linux rewrites mise.lock and drops the macos-arm64 entries,
+      # so the tree is dirty on every run regardless of the client. mobile/generated is gitignored.
+      - name: Fail if the generated client is out of date
         run: |
-          if ! git diff --exit-code; then
+          if ! git diff --exit-code -- open-api packages/sdk/src/fetch-client.ts; then
             echo "::error ::mise run open-api produced a diff. Run it locally and commit the result."
             exit 1
           fi
@@ -154,11 +160,24 @@ jobs:
       # generated client is produced here rather than being committed (gitignored since #30287).
       # Its install:ios step is a no-op off macOS, so this is safe on a Linux runner.
       - run: mise run install:ci
-      # checklist runs codegen:pigeon, codegen:dart, codegen:translation, analyze, format, test.
-      # The drift schema is not part of it and the migration-test matrix needs it, so it runs first.
-      # Skipping codegen entirely is what produces thousands of phantom analyzer errors.
+      # The steps of `checklist`, spelled out, minus DCM.
+      #
+      # `mise run checklist` cannot be used here: it calls `analyze`, which is analyze:dart plus
+      # analyze:dcm, and `dcm analyze` on a CI server needs a paid licence key (DCM_CI_KEY). Without
+      # one it prints its usage and exits 64. Upstream does not run DCM in CI either - no step and no
+      # such secret anywhere in their workflows - so DCM stays a local-only gate here, matching them.
+      # `mise run //mobile:analyze` locally still covers it.
+      #
+      # Codegen must run before analysis. Skipping it produces thousands of phantom analyzer errors,
+      # and the drift schema in particular is not part of checklist while the migration tests need it.
+      - run: mise run codegen:pigeon
+      - run: mise run codegen:dart
+      - run: mise run codegen:translation
       - run: mise run codegen:drift:schema
-      - run: mise run checklist
+      - run: mise run analyze:dart
+      # dart format with --set-exit-if-changed, so this is a real gate rather than a rewrite.
+      - run: mise run format
+      - run: mise run test
 
   upstream-drift:
     name: Upstream drift (informational)
