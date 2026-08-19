@@ -3,11 +3,14 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/person.model.dart';
 import 'package:immich_mobile/infrastructure/entities/person.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/people.repository.drift.dart';
 import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
-class DriftPeopleRepository extends DriftDatabaseRepository {
-  final Drift _db;
-  const DriftPeopleRepository(this._db) : super(_db);
+@DriftAccessor()
+class PeopleRepository extends DatabaseAccessor<Drift> with $PeopleRepositoryMixin {
+  PeopleRepository(super.attachedDatabase);
+
+  Drift get _db => attachedDatabase;
 
   Future<Person?> get(String personId) async {
     final query = _db.select(_db.personEntity)..where((row) => row.id.equals(personId));

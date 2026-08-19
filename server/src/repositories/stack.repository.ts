@@ -42,7 +42,8 @@ const withAssets = (eb: ExpressionBuilder<DB, 'stack'>, ctx: PolicyContext, with
       .select((eb) => eb.fn.toJson('exifInfo').as('exifInfo'))
       .where('asset.deletedAt', 'is', null)
       .whereRef('asset.stackId', '=', 'stack.id')
-      .where((eb) => surfacePredicate(eb, Surface.StackContents, ctx)),
+      .where((eb) => surfacePredicate(eb, Surface.StackContents, ctx))
+      .orderBy('asset.fileCreatedAt', 'asc'),
   ).as('assets');
 };
 

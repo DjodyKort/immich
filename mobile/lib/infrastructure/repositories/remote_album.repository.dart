@@ -12,13 +12,16 @@ import 'package:immich_mobile/infrastructure/entities/remote_album_user.entity.d
 import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.dart';
 import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/remote_album.repository.drift.dart';
 import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
 enum SortRemoteAlbumsBy { id, updatedAt }
 
-class DriftRemoteAlbumRepository extends DriftDatabaseRepository {
-  final Drift _db;
-  const DriftRemoteAlbumRepository(this._db) : super(_db);
+@DriftAccessor()
+class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRepositoryMixin {
+  RemoteAlbumRepository(super.attachedDatabase);
+
+  Drift get _db => attachedDatabase;
 
   /// Lists albums for the UI.
   ///
@@ -206,7 +209,7 @@ class DriftRemoteAlbumRepository extends DriftDatabaseRepository {
     });
   }
 
-  Future<void> update(RemoteAlbum album) async {
+  Future<void> updateAlbum(RemoteAlbum album) async {
     await _db.remoteAlbumEntity.update().replace(
       RemoteAlbumEntityCompanion(
         id: Value(album.id),
