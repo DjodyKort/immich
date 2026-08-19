@@ -153,7 +153,14 @@ jobs:
 
           # Push through SYNC_TOKEN when present. The URL carries the token, so it is never echoed;
           # GitHub also masks registered secrets in logs.
+          #
+          # The unset is the part that is easy to miss. actions/checkout stores the job's App token in
+          # `http.https://github.com/.extraheader`, and an Authorization header wins over userinfo in the
+          # URL, so a push to a token-bearing URL still goes out as the GitHub App and is refused for
+          # workflow files with a message that looks like the token was never applied. It was applied and
+          # then overridden. Fetches afterwards are anonymous, which is fine on a public repository.
           if [ -n "${SYNC_TOKEN:-}" ]; then
+            git config --local --unset-all http.https://github.com/.extraheader || true
             remote="https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           else
             remote=origin
