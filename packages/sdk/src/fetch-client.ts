@@ -693,6 +693,8 @@ export type AssetBulkUpdateDto = {
     description?: string;
     /** Duplicate ID */
     duplicateId?: string | null;
+    /** Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. */
+    hiddenFrom?: AssetSurface[] | null;
     /** Asset IDs to update */
     ids: string[];
     /** Mark as favorite */
@@ -894,6 +896,8 @@ export type AssetResponseDto = {
     hasMetadata: boolean;
     /** Asset height */
     height: number | null;
+    /** Surfaces this asset is withheld from. Empty when the asset appears everywhere its visibility allows. */
+    hiddenFrom: AssetSurface[];
     /** Asset ID */
     id: string;
     /** Is archived */
@@ -940,6 +944,8 @@ export type UpdateAssetDto = {
     dateTimeOriginal?: string;
     /** Asset description */
     description?: string;
+    /** Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. */
+    hiddenFrom?: AssetSurface[] | null;
     /** Mark as favorite */
     isFavorite?: boolean;
     /** Latitude coordinate */
@@ -7372,6 +7378,14 @@ export enum Permission {
 export enum AssetMediaStatus {
     Created = "created",
     Duplicate = "duplicate"
+}
+export enum AssetSurface {
+    Timeline = "timeline",
+    Search = "search",
+    Map = "map",
+    People = "people",
+    Memories = "memories",
+    Folders = "folders"
 }
 export enum AssetUploadAction {
     Accept = "accept",

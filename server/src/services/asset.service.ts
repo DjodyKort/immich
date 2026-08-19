@@ -47,7 +47,7 @@ import { updateLockedColumns } from 'src/utils/database';
 import { extractTimeZone } from 'src/utils/date';
 import { batched, findOrFail } from 'src/utils/misc';
 import { transformOcrBoundingBox } from 'src/utils/transform';
-import { forSystem, forViewer } from 'src/utils/visibility-policy';
+import { forSystem, forViewer, toHiddenFromMask } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class AssetService extends BaseService {
@@ -96,7 +96,7 @@ export class AssetService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
-    const { description, dateTimeOriginal, latitude, longitude, rating, ...rest } = dto;
+    const { description, dateTimeOriginal, latitude, longitude, rating, hiddenFrom, ...rest } = dto;
     const repos = { asset: this.assetRepository, event: this.eventRepository };
 
     let previousMotion: { id: string } | null = null;
@@ -111,7 +111,13 @@ export class AssetService extends BaseService {
 
     await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating });
 
-    const asset = await this.assetRepository.update({ id, ...rest });
+    const asset = await this.assetRepository.update({
+      id,
+      ...rest,
+      // Absent means "leave the exclusions alone"; a list (or null, or []) replaces the whole set. The
+      // wire format is surface names, so the mask is only ever computed here and in updateAll.
+      ...(hiddenFrom !== undefined && { hiddenFrom: toHiddenFromMask(hiddenFrom ?? []) }),
+    });
 
     if (previousMotion && asset) {
       await onAfterUnlink(repos, {
@@ -141,6 +147,7 @@ export class AssetService extends BaseService {
       duplicateId,
       dateTimeRelative,
       timeZone,
+      hiddenFrom,
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
@@ -154,7 +161,15 @@ export class AssetService extends BaseService {
         ? await this.assetRepository.getLockedAssetIds(ids)
         : new Set<string>();
 
-    const assetDto = _.omitBy({ isFavorite, visibility, duplicateId }, _.isUndefined);
+    const assetDto = _.omitBy(
+      {
+        isFavorite,
+        visibility,
+        duplicateId,
+        hiddenFrom: hiddenFrom === undefined ? undefined : toHiddenFromMask(hiddenFrom ?? []),
+      },
+      _.isUndefined,
+    );
     const exifDto = _.omitBy(
       {
         latitude,

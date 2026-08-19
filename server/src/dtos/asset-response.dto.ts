@@ -10,6 +10,7 @@ import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto';
 import {
   AssetStatus,
+  AssetSurfaceSchema,
   AssetType,
   AssetTypeSchema,
   AssetVisibility,
@@ -20,6 +21,7 @@ import { MaybeDehydrated } from 'src/types';
 import { hexOrBufferToBase64 } from 'src/utils/bytes';
 import { asDateTimeString } from 'src/utils/date';
 import { mimeTypes } from 'src/utils/mime-types';
+import { fromHiddenFromMask } from 'src/utils/visibility-policy';
 import z from 'zod';
 
 const SanitizedAssetResponseSchema = z
@@ -98,6 +100,9 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     isTrashed: z.boolean().describe('Is trashed'),
     isOffline: z.boolean().describe('Is offline'),
     visibility: AssetVisibilitySchema,
+    hiddenFrom: z
+      .array(AssetSurfaceSchema)
+      .describe('Surfaces this asset is withheld from. Empty when the asset appears everywhere its visibility allows.'),
     exifInfo: ExifResponseSchema.optional(),
     tags: z.array(TagResponseSchema).optional(),
     people: z.array(PersonResponseSchema).optional(),
@@ -139,6 +144,8 @@ export type MapAsset = {
   isFavorite: boolean;
   isOffline: boolean;
   visibility: AssetVisibility;
+  /** The raw per-asset exclusion bitmask. Translated to `AssetSurface[]` on the way out; never exposed. */
+  hiddenFrom: number | null;
   libraryId: string | null;
   livePhotoVideoId: string | null;
   localDateTime: Date;
@@ -228,6 +235,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     isArchived: entity.visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility: entity.visibility,
+    hiddenFrom: fromHiddenFromMask(entity.hiddenFrom),
     duration: entity.duration,
     exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
     livePhotoVideoId: entity.livePhotoVideoId,

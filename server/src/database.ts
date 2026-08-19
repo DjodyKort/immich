@@ -322,6 +322,8 @@ export const columns = {
     'asset.isOffline',
     'asset.isEdited',
     'asset.visibility',
+    // Needed by mapAsset, which reports the per-asset exclusions as AssetSurface[] on every response.
+    'asset.hiddenFrom',
     'asset.libraryId',
     'asset.livePhotoVideoId',
     'asset.localDateTime',
