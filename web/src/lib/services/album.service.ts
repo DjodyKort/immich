@@ -54,7 +54,7 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
       if (await redirectIfLockedAndNotElevated(album)) {
         return;
       }
-      modalManager.show(AlbumOptionsModal, { album });
+      await modalManager.show(AlbumOptionsModal, { album });
     },
   };
 
@@ -66,7 +66,7 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
       if (await redirectIfLockedAndNotElevated(album)) {
         return;
       }
-      modalManager.show(AlbumAddUsersModal, { album });
+      await modalManager.show(AlbumAddUsersModal, { album });
     },
   };
 
@@ -78,7 +78,7 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
       if (await redirectIfLockedAndNotElevated(album)) {
         return;
       }
-      modalManager.show(SharedLinkCreateModal, { albumId: album.id });
+      await modalManager.show(SharedLinkCreateModal, { albumId: album.id });
     },
   };
 
@@ -156,22 +156,49 @@ const notifyAddToAlbum = ($t: MessageFormatter, albumId: string, assetIds: strin
   const alreadyInLockedAlbumCount = results.filter(
     ({ error }) => error === BulkIdErrorReason.AlreadyInLockedAlbum,
   ).length;
-  let description = $t('assets_cannot_be_added_to_album_count', { values: { count: assetIds.length } });
-  let severity: 'primary' | 'info' | 'warning' = 'warning';
+  // Guard clauses rather than an else-if chain: the branches test three different counts against one
+  // total, so a `switch` on that total would put variables in its `case` labels and still need an `if`
+  // in `default` for the partial-success branch.
+  const describe = (): { description: string; severity: 'primary' | 'info' | 'warning' } => {
+    if (duplicateCount === assetIds.length) {
+      return {
+        description: $t('assets_were_part_of_album_count', { values: { count: duplicateCount } }),
+        severity: 'info',
+      };
+    }
 
-  if (duplicateCount === assetIds.length) {
-    description = $t('assets_were_part_of_album_count', { values: { count: duplicateCount } });
-    severity = 'info';
-  } else if (alreadyInLockedAlbumCount === assetIds.length) {
-    description = $t('assets_already_in_another_locked_album_count', { values: { count: alreadyInLockedAlbumCount } });
-    severity = 'warning';
-  } else if (successCount === assetIds.length) {
-    description = $t('assets_added_to_album_count', { values: { count: successCount } });
-    severity = 'primary';
-  } else if (successCount > 0) {
-    description = $t('assets_added_to_album_partial_count', { values: { successCount, totalCount: assetIds.length } });
-    severity = 'primary';
-  }
+    if (alreadyInLockedAlbumCount === assetIds.length) {
+      return {
+        description: $t('assets_already_in_another_locked_album_count', {
+          values: { count: alreadyInLockedAlbumCount },
+        }),
+        severity: 'warning',
+      };
+    }
+
+    if (successCount === assetIds.length) {
+      return {
+        description: $t('assets_added_to_album_count', { values: { count: successCount } }),
+        severity: 'primary',
+      };
+    }
+
+    if (successCount > 0) {
+      return {
+        description: $t('assets_added_to_album_partial_count', {
+          values: { successCount, totalCount: assetIds.length },
+        }),
+        severity: 'primary',
+      };
+    }
+
+    return {
+      description: $t('assets_cannot_be_added_to_album_count', { values: { count: assetIds.length } }),
+      severity: 'warning',
+    };
+  };
+
+  const { description, severity } = describe();
 
   toastManager[severity](
     { description, button: { label: $t('view_album'), onclick: () => goto(Route.viewAlbum({ id: albumId })) } },
