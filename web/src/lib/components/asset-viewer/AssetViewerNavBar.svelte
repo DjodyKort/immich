@@ -195,6 +195,8 @@
           <SetVisibilityAction asset={toTimelineAsset(asset)} {onAction} {preAction} />
         {/if}
 
+        <ActionMenuItem action={Actions.HideFromPlaces} />
+
         <ActionMenuItem action={PlayOriginalVideo} />
 
         {#if isOwner}

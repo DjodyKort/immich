@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
   import { goto } from '$app/navigation';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import UserPageLayout, { headerId } from '$lib/components/layouts/UserPageLayout.svelte';
@@ -141,6 +142,7 @@
             onUndoDelete={(assets) => timelineManager.upsertAssets(assets)}
           />
           <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
+          <ActionMenuItem action={Actions.HideFromPlaces} />
         </ButtonContextMenu>
       </AssetSelectControlBar>
     </div>

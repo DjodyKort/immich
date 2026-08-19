@@ -1,5 +1,6 @@
 <script lang="ts">
   import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
@@ -36,7 +37,7 @@
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { AssetVisibility } from '@immich/sdk';
+  import { AssetSurface, AssetVisibility } from '@immich/sdk';
   import { ActionButton, CommandPaletteDefaultProvider, ImageCarousel } from '@immich/ui';
   import { mdiDotsVertical } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -81,6 +82,14 @@
     assetMultiSelectManager.clear();
   };
 
+  // The main timeline is the surface this page renders, so an asset newly hidden from it has to
+  // leave the view. The other five surfaces are rendered elsewhere and change nothing here.
+  const handleHiddenFrom = ({ assetIds, hiddenFrom }: { assetIds: string[]; hiddenFrom: AssetSurface[] }) => {
+    if (hiddenFrom.includes(AssetSurface.Timeline)) {
+      timelineManager.removeAssets(assetIds);
+    }
+  };
+
   const items = $derived(
     memoryManager.memories.map((memory) => ({
       id: memory.id,
@@ -91,6 +100,8 @@
     })),
   );
 </script>
+
+<OnEvents onAssetsHiddenFrom={handleHiddenFrom} />
 
 <UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} scrollbar={false}>
   <Timeline
@@ -159,6 +170,7 @@
           onUndoDelete={(assets) => timelineManager.upsertAssets(assets)}
         />
         <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
+        <ActionMenuItem action={Actions.HideFromPlaces} />
         <hr />
         <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
         <ActionMenuItem action={Actions.RefreshMetadataJob} />

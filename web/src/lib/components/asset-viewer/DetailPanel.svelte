@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
+  import DetailPanelHiddenFrom from '$lib/components/asset-viewer/DetailPanelHiddenFrom.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
@@ -374,6 +375,10 @@
       </section>
     {/if}
   {/await}
+
+  <section class="relative px-2 dark:bg-immich-dark-bg dark:text-immich-dark-fg">
+    <DetailPanelHiddenFrom {asset} {isOwner} />
+  </section>
 
   {#if authManager.authenticated && authManager.preferences.tags.enabled}
     <section class="relative px-2 pb-12 dark:bg-immich-dark-bg dark:text-immich-dark-fg">

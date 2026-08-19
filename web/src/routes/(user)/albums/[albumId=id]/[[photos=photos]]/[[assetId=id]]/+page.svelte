@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
   import { goto, invalidate, onNavigate, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
@@ -489,6 +490,7 @@
               onArchive={(ids, visibility) => timelineManager.update(ids, (asset) => (asset.visibility = visibility))}
             />
             <SetVisibilityAction menuItem unlock={album.isLocked} onVisibilitySet={handleSetVisibility} />
+            <ActionMenuItem action={Actions.HideFromPlaces} />
           {/if}
           {#if assetMultiSelectManager.assets.length === 1}
             <MenuOption

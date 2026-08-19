@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
@@ -86,6 +87,7 @@
         <TagAction menuItem />
       {/if}
       <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
+      <ActionMenuItem action={Actions.HideFromPlaces} />
       <DeleteAssets
         menuItem
         onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)}
