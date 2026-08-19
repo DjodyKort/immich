@@ -5,6 +5,7 @@ import {
   AlbumUserRole,
   AlbumUserRoleSchema,
   AssetOrderSchema,
+  AssetSurfaceSchema,
   AssetTypeSchema,
   AssetVisibilitySchema,
   MemoryTypeSchema,
@@ -98,6 +99,11 @@ const SyncAssetV2Schema = z
     deletedAt: isoDatetimeToDate.nullable().describe('Deleted at'),
     isFavorite: z.boolean().describe('Is favorite'),
     visibility: AssetVisibilitySchema,
+    hiddenFrom: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        'Surfaces this asset is withheld from. Carried as surface names rather than as the internal bitmask, so a client may store the set however it likes without pinning itself to the bit numbering.',
+      ),
     livePhotoVideoId: z.string().nullable().describe('Live photo video ID'),
     stackId: z.string().nullable().describe('Stack ID'),
     libraryId: z.string().nullable().describe('Library ID'),

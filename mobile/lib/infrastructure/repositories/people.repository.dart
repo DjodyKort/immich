@@ -3,6 +3,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/person.model.dart';
 import 'package:immich_mobile/infrastructure/entities/person.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
 class DriftPeopleRepository extends DriftDatabaseRepository {
   final Drift _db;
@@ -47,6 +48,9 @@ class DriftPeopleRepository extends DriftDatabaseRepository {
             people.isHidden.equals(false) &
                 assets.deletedAt.isNull() &
                 assets.visibility.equalsValue(AssetVisibility.timeline) &
+                // Matches the server's People surface: an asset withheld from it stops contributing to
+                // the people list and to the face counts that decide who appears in it.
+                VisibilityPolicy.notHiddenFrom(assets, AssetSurface.people) &
                 faces.isVisible.equals(true) &
                 faces.deletedAt.isNull(),
           )

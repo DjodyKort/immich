@@ -95,6 +95,19 @@ interface AssetBuilderOptions {
   bbox?: BoundingBox;
 }
 
+/**
+ * Which surface a bucket query is asking as. Trash has its own so a per-asset exclusion cannot make an
+ * asset unrecoverable: the trash view asks with `isTrashed` and no explicit visibility, so it would
+ * otherwise inherit the timeline's mask.
+ */
+const timelineSurfaceFor = (options: { isTrashed?: boolean; albumId?: string }): Surface => {
+  if (options.isTrashed) {
+    return Surface.Trash;
+  }
+
+  return options.albumId ? Surface.AlbumTimeline : Surface.Timeline;
+};
+
 export interface TimeBucketOptions extends AssetBuilderOptions {
   order?: AssetOrder;
   orderBy?: AssetOrderBy;
@@ -811,9 +824,7 @@ export class AssetRepository {
           // An album-scoped bucket widens to the locked folder once the session is elevated, because a
           // locked album is by construction made only of locked assets; the plain timeline never does.
           // An explicitly requested visibility above still wins over the surface default.
-          .$if(options.visibility === undefined, (qb) =>
-            withSurface(qb, options.albumId ? Surface.AlbumTimeline : Surface.Timeline, options.ctx),
-          )
+          .$if(options.visibility === undefined, (qb) => withSurface(qb, timelineSurfaceFor(options), options.ctx))
           .$if(!!options.albumId, (qb) =>
             qb
               .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
@@ -895,9 +906,7 @@ export class AssetRepository {
           // An album-scoped bucket widens to the locked folder once the session is elevated, because a
           // locked album is by construction made only of locked assets; the plain timeline never does.
           // An explicitly requested visibility above still wins over the surface default.
-          .$if(options.visibility === undefined, (qb) =>
-            withSurface(qb, options.albumId ? Surface.AlbumTimeline : Surface.Timeline, options.ctx),
-          )
+          .$if(options.visibility === undefined, (qb) => withSurface(qb, timelineSurfaceFor(options), options.ctx))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
             const circle = getBoundingCircle(bbox);

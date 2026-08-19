@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/infrastructure/repositories/people.repository.dart';
 
 import '../repository_context.dart';
@@ -72,6 +73,28 @@ void main() {
       final people = await sut.getAssetPeople(asset.id);
 
       expect(people, isEmpty);
+    });
+  });
+
+  group('watch', () {
+    test('drops a person whose only assets are withheld from the people surface', () async {
+      final user = await ctx.newUser();
+      final asset = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.people]);
+      final person = await ctx.newPerson(ownerId: user.id, name: 'Someone');
+      await ctx.newFace(assetId: asset.id, personId: person.id);
+
+      expect(await sut.watch().first, isEmpty);
+    });
+
+    test('keeps a person whose assets are withheld from a different surface', () async {
+      // People is its own bit. Hiding from the timeline must not empty the people list, which is what
+      // the server does too: Surface.People is a separate row in its policy table.
+      final user = await ctx.newUser();
+      final asset = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline]);
+      final person = await ctx.newPerson(ownerId: user.id, name: 'Someone');
+      await ctx.newFace(assetId: asset.id, personId: person.id);
+
+      expect((await sut.watch().first).map((item) => item.id), [person.id]);
     });
   });
 }

@@ -54,6 +54,7 @@ describe('visibility policy', () => {
   describe('rules', () => {
     const RULES: Array<[Surface, AssetVisibility[], AssetVisibility[]]> = [
       [Surface.Timeline, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
+      [Surface.Trash, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
       [Surface.AlbumTimeline, [AssetVisibility.Archive, AssetVisibility.Timeline], [AssetVisibility.Locked]],
       [Surface.Search, [AssetVisibility.Archive, AssetVisibility.Timeline], [AssetVisibility.Locked]],
       [Surface.Statistics, [AssetVisibility.Archive, AssetVisibility.Timeline], [AssetVisibility.Locked]],
@@ -126,6 +127,13 @@ describe('visibility policy', () => {
       for (const surface of Object.values(Surface)) {
         expect(getSurfaceBit(surface) ?? 0).toBeLessThanOrEqual(2 ** 30);
       }
+    });
+
+    it('should give trash no bit, so a per-asset exclusion can never hide a recovery route', () => {
+      // Trash exists as its own surface precisely so the mask cannot reach it. The web trash view asks
+      // the bucket queries with isTrashed and no explicit visibility, so before this it inherited the
+      // timeline's rule and hiding a photo from the timeline made it unrecoverable.
+      expect(getSurfaceBit(Surface.Trash)).toBeUndefined();
     });
 
     it('should keep the bit each surface has always had', () => {

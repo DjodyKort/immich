@@ -2,6 +2,14 @@ part of 'base_asset.model.dart';
 
 enum AssetVisibility { timeline, hidden, archive, locked }
 
+/// A place the server can withhold a single asset from, independently of its [AssetVisibility].
+///
+/// Mirrors the server's user-facing `AssetSurface` enum, which is what sync carries. The server's own
+/// internal surface numbering is deliberately not shipped, so this enum's declaration order is mobile's
+/// business alone; the local bit each member occupies is assigned in `VisibilityPolicy` and pinned by a
+/// test, because it is persisted.
+enum AssetSurface { timeline, search, map, people, memories, folders }
+
 // Model for an asset stored in the server
 class RemoteAsset extends BaseAsset {
   @override

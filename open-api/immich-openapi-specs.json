@@ -24967,6 +24967,13 @@
             "nullable": true,
             "type": "integer"
           },
+          "hiddenFrom": {
+            "description": "Surfaces this asset is withheld from. Carried as surface names rather than as the internal bitmask, so a client may store the set however it likes without pinning itself to the bit numbering.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
           "id": {
             "description": "Asset ID",
             "format": "uuid",
@@ -25041,6 +25048,7 @@
           "fileCreatedAt",
           "fileModifiedAt",
           "height",
+          "hiddenFrom",
           "id",
           "isEdited",
           "isFavorite",

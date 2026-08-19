@@ -64,6 +64,7 @@ describe(SyncRequestType.PartnerAssetsV2, () => {
           localDateTime: date,
           type: asset.type,
           visibility: asset.visibility,
+          hiddenFrom: [],
           duration: asset.duration,
           isEdited: asset.isEdited,
           stackId: null,

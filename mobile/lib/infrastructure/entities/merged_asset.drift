@@ -36,6 +36,9 @@ LEFT JOIN
 WHERE
 	rae.deleted_at IS NULL
 	AND rae.visibility = 0 -- timeline visibility
+	-- Withheld from the timeline per asset. Bit 1 is VisibilityPolicy.surfaceBit[AssetSurface.timeline];
+	-- a .drift file cannot read a Dart constant, so the literal is pinned by a test instead.
+	AND (rae.hidden_from IS NULL OR rae.hidden_from & 1 = 0)
 	AND rae.owner_id IN :user_ids
 	AND (
 		rae.stack_id IS NULL
@@ -110,6 +113,9 @@ FROM
 	WHERE
 		rae.deleted_at IS NULL
 		AND rae.visibility = 0 -- timeline visibility
+		-- Withheld from the timeline per asset. Bit 1 is VisibilityPolicy.surfaceBit[AssetSurface.timeline];
+		-- a .drift file cannot read a Dart constant, so the literal is pinned by a test instead.
+		AND (rae.hidden_from IS NULL OR rae.hidden_from & 1 = 0)
 		AND rae.owner_id in :user_ids
 		AND (
 			rae.stack_id IS NULL

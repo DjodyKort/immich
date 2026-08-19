@@ -6,6 +6,7 @@ import 'package:immich_mobile/infrastructure/entities/exif.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 class DriftMapRepository extends DriftDatabaseRepository {
@@ -21,7 +22,9 @@ class DriftMapRepository extends DriftDatabaseRepository {
           _db.remoteAssetEntity.visibility.isIn([
             AssetVisibility.timeline.index,
             if (options.includeArchived) AssetVisibility.archive.index,
-          ]);
+          ]) &
+          // The library-wide map is one of the six surfaces an asset can be withheld from.
+          VisibilityPolicy.notHiddenFrom(_db.remoteAssetEntity, AssetSurface.map);
 
       if (options.onlyFavorites) {
         condition = condition & _db.remoteAssetEntity.isFavorite.equals(true);
