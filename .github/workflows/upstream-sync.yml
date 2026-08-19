@@ -130,7 +130,21 @@ jobs:
           fi
           git checkout -- _fork/rr-cache 2>/dev/null || true
 
-          git push origin "$branch"
+          # The branch may already exist from an earlier run at this same upstream sha, with a different
+          # history, because integration moved in between. A plain push is then rejected as a
+          # non-fast-forward and the whole sync fails for a reason that has nothing to do with the merge.
+          #
+          # This branch is owned solely by this workflow and is disposable, so replacing it is correct.
+          # --force-with-lease rather than --force, anchored to the state actually observed a moment ago,
+          # so a branch someone else advanced in the meantime is refused instead of clobbered.
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git fetch -q origin "$branch"
+            remote_sha=$(git rev-parse FETCH_HEAD)
+            echo "branch exists remotely at $remote_sha; replacing it"
+            git push --force-with-lease="refs/heads/$branch:$remote_sha" origin "$branch"
+          else
+            git push origin "$branch"
+          fi
           echo "status=merged" >> "$GITHUB_OUTPUT"
 
   gates:
