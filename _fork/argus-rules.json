@@ -1,0 +1,77 @@
+{
+  "$comment": [
+    "Rule set for the argus merge-triage task, replacing the rules that were embedded in",
+    "_fork/merge-risk.mjs. The engine is generic and lives in DjodyKort/argus; these rules are not, and",
+    "stay here, because they encode what this fork guarantees.",
+    "",
+    "First match wins, so specific rules sit above general ones."
+  ],
+  "rules": [
+    {
+      "id": "visibility-policy",
+      "level": "high",
+      "match": "^server/src/utils/visibility-policy\\.ts$",
+      "why": "The entire visibility policy. Any change to POLICY, SURFACE_BIT, or a helper moves every surface at once. Run the visibility matrix before and after and diff which cells moved."
+    },
+    {
+      "id": "migrations",
+      "level": "high",
+      "match": "^server/src/schema/migrations/",
+      "why": "A migration. Check whether it touches asset.visibility, asset.hiddenFrom, or asset_id_timeline_notDeleted_idx: dropping or re-predicating that partial index degrades every timeline query without failing anything."
+    },
+    {
+      "id": "asset-table",
+      "level": "high",
+      "match": "^server/src/schema/tables/asset\\.table\\.ts$",
+      "why": "The asset table. hiddenFrom and visibility live here; a type or nullability change reinterprets stored masks."
+    },
+    {
+      "id": "mobile-policy",
+      "level": "high",
+      "match": "^mobile/lib/infrastructure/utils/visibility_policy\\.dart$",
+      "why": "Mobile's own mask. Its bit values are local and unrelated to the server's, because sync carries surface names rather than integers. A change here must not start depending on the server's numbering."
+    },
+    {
+      "id": "sync",
+      "level": "high",
+      "match": "^server/src/(services|repositories)/sync\\.",
+      "why": "Sync. This is the channel mobile builds its local visibility mask from, and it is invisible to the asset-surface detector because the stream response carries no schema."
+    },
+    {
+      "id": "openapi-spec",
+      "level": "medium",
+      "match": "^open-api/immich-openapi-specs\\.json$",
+      "why": "The API surface changed. _fork/asset-surfaces.mjs fails on a new asset-returning operation, so check that gate first; this entry covers removals and response-shape changes, which it only warns about."
+    },
+    {
+      "id": "server-repositories",
+      "level": "medium",
+      "match": "^server/src/repositories/.*\\.repository\\.ts$",
+      "why": "A repository. Check whether a query that returns assets gained or lost a surface predicate, and whether an existing predicate is still on the query it was written for."
+    },
+    {
+      "id": "mobile-repositories",
+      "level": "medium",
+      "match": "^mobile/lib/infrastructure/repositories/",
+      "why": "Mobile repositories carry our local filters. Upstream restructuring these has already moved a filter's call site once, which no conflict revealed."
+    },
+    {
+      "id": "controllers-dtos",
+      "level": "medium",
+      "match": "^server/src/(controllers|dtos)/",
+      "why": "A controller or DTO. New read endpoints are new surfaces; the asset-surface gate covers the asset-bearing ones."
+    },
+    {
+      "id": "plugin-surface",
+      "level": "medium",
+      "match": "^packages/plugin-(core|sdk)/",
+      "why": "Plugin surface. A new WorkflowTrigger or method changes what workflows can react to, and the trigger to type map in src/utils/workflow.ts must agree."
+    },
+    {
+      "id": "server-services",
+      "level": "low",
+      "match": "^server/src/services/",
+      "why": "A service. Usually benign, but this is where a read path can quietly start returning assets through a helper that has no surface."
+    }
+  ]
+}
