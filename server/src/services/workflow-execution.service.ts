@@ -36,6 +36,9 @@ import { TagService } from 'src/services/tag.service';
 import { JobOf } from 'src/types';
 import { withImpliedItems } from 'src/utils/workflow';
 
+/** Sorts below every generated uuid, so it is the starting point for a paging cursor over a uuid column. */
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
 const dummy = () => {
   throw new Error(
     `Calling host functions is not allowed without setting methods[].hostFunctions=true in the plugin manifest`,
@@ -56,6 +59,9 @@ type HostContext = {
 export class WorkflowExecutionService extends BaseService {
   private jwtSecret!: string;
   private scanning = false;
+  // Per-workflow, unlike `scanning`: the live scan is global and singular, but a backfill is requested
+  // per workflow and two different workflows must be able to backfill at the same time.
+  private backfilling = new Set<string>();
 
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.PluginSync, workers: [ImmichWorker.Microservices] })
   async onPluginSync() {
@@ -432,6 +438,59 @@ export class WorkflowExecutionService extends BaseService {
       // no-ops on an already-archived asset, so only workflow_queue showed it.
       checkpoint!.albumAssetUuid = albumAssets.at(-1)!.updateId;
       await this.systemMetadataRepository.set(SystemMetadataKey.WorkflowCheckpoint, checkpoint);
+    }
+
+    return JobStatus.Success;
+  }
+
+  @OnJob({ name: JobName.WorkflowBackfill, queue: QueueName.Workflow })
+  private async backfill({ workflowId }: JobOf<JobName.WorkflowBackfill>) {
+    if (this.backfilling.has(workflowId)) {
+      return JobStatus.Skipped;
+    }
+
+    // Claimed before the async work and released in a finally, for the same reason `scanning` is: an
+    // early return or a throw that skipped the release would leave this workflow permanently unable to
+    // backfill again for the life of the process.
+    this.backfilling.add(workflowId);
+    try {
+      return await this.backfillAlbumAssets(workflowId);
+    } finally {
+      this.backfilling.delete(workflowId);
+    }
+  }
+
+  private async backfillAlbumAssets(workflowId: string) {
+    const workflow = await this.workflowRepository.getForWorkflowRun(workflowId);
+    if (!workflow) {
+      // Deleted or disabled between enqueue and run. Nothing to backfill, and nothing to report as an
+      // error -- the API entry point already rejected a disabled workflow at request time.
+      return;
+    }
+
+    // `album_asset.updateId` is a uuid column, not text, so the starting cursor has to be a uuid that
+    // sorts below every real one -- an empty string fails the query outright with `invalid input syntax
+    // for type uuid: ""`, on the very first page of every backfill. TypeScript cannot see the difference
+    // (both are `string`) and a mocked repository cannot either, so only a real database catches this.
+    let cursor = NIL_UUID;
+    while (true) {
+      const albumAssets = await this.workflowRepository.getForAlbumAssetV1Backfill(workflow.ownerId, cursor);
+      if (albumAssets.length === 0) {
+        break;
+      }
+
+      const data: AlbumAssetV1[] = albumAssets.map((albumAsset) => ({
+        asset: albumAsset.asset as any,
+        album: { id: albumAsset.albumId },
+      }));
+
+      const queues = await this.workflowRepository.addToQueue([{ workflowId, data }]);
+      await this.jobRepository.queueAll(queues.map(({ id }) => ({ name: JobName.WorkflowRun, data: { queueId: id } })));
+
+      // Same reasoning as the comment in `scanAlbumAssets`: the batch's high-water mark is its LAST row
+      // because `getForAlbumAssetV1Backfill` orders ascending by updateId. Taking the first row here
+      // would reproduce the exact N + (N-1) + ... blowup that bug caused there.
+      cursor = albumAssets.at(-1)!.updateId;
     }
 
     return JobStatus.Success;

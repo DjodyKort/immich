@@ -13,7 +13,7 @@ import {
   WorkflowTriggerResponseDto,
   WorkflowUpdateDto,
 } from 'src/dtos/workflow.dto';
-import { Permission } from 'src/enum';
+import { JobName, Permission } from 'src/enum';
 import { PluginMethodSearchResponse } from 'src/repositories/plugin.repository';
 import { BaseService } from 'src/services/base.service';
 import { findOrFail } from 'src/utils/misc';
@@ -83,6 +83,21 @@ export class WorkflowService extends BaseService {
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.WorkflowDelete, ids: [id] });
     await this.workflowRepository.delete(id);
+  }
+
+  async backfill(auth: AuthDto, id: string): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.WorkflowUpdate, ids: [id] });
+    const workflow = await this.findOrFail(id);
+
+    if (workflow.trigger !== WorkflowTrigger.AlbumAssetAdded) {
+      throw new BadRequestException(`Cannot backfill a workflow with trigger "${workflow.trigger}"`);
+    }
+
+    if (!workflow.enabled) {
+      throw new BadRequestException('Cannot backfill a disabled workflow');
+    }
+
+    await this.jobRepository.queue({ name: JobName.WorkflowBackfill, data: { workflowId: id } });
   }
 
   async getLogs(auth: AuthDto, id: string, dto: WorkflowGetLogsDto): Promise<WorkflowLogEntryDto[]> {

@@ -7116,6 +7116,17 @@ export function updateWorkflow({ id, workflowUpdateDto }: {
     })));
 }
 /**
+ * Backfill a workflow
+ */
+export function backfillWorkflow({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/workflows/${encodeURIComponent(id)}/backfill`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve workflow logs
  */
 export function getWorkflowLogs({ before, id, limit, result }: {
@@ -7578,6 +7589,7 @@ export enum JobName {
     WorkflowScan = "WorkflowScan",
     WorkflowRun = "WorkflowRun",
     WorkflowAssetTrigger = "WorkflowAssetTrigger",
+    WorkflowBackfill = "WorkflowBackfill",
     IntegrityUntrackedFilesQueueAll = "IntegrityUntrackedFilesQueueAll",
     IntegrityUntrackedFiles = "IntegrityUntrackedFiles",
     IntegrityUntrackedRefresh = "IntegrityUntrackedRefresh",

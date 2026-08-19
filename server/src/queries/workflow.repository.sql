@@ -143,3 +143,125 @@ limit
 delete from "workflow"
 where
   "id" = $1
+
+-- WorkflowRepository.getForAlbumAssetV1Backfill
+select
+  "albumId",
+  "assetId",
+  "album_asset"."updateId",
+  (
+    select
+      to_json(obj)
+    from
+      (
+        select
+          "asset"."id",
+          "asset"."ownerId",
+          "asset"."stackId",
+          "asset"."livePhotoVideoId",
+          "asset"."libraryId",
+          "asset"."duplicateId",
+          "asset"."createdAt",
+          "asset"."updatedAt",
+          "asset"."deletedAt",
+          "asset"."fileCreatedAt",
+          "asset"."fileModifiedAt",
+          "asset"."localDateTime",
+          "asset"."type",
+          "asset"."status",
+          "asset"."visibility",
+          "asset"."duration",
+          "asset"."checksum",
+          "asset"."originalPath",
+          "asset"."originalFileName",
+          "asset"."isOffline",
+          "asset"."isFavorite",
+          "asset"."isExternal",
+          "asset"."isEdited",
+          "asset"."isFavorite",
+          (
+            select
+              coalesce(json_agg(agg), '[]')
+            from
+              (
+                select
+                  "tag"."id",
+                  "tag"."value",
+                  "tag"."createdAt",
+                  "tag"."updatedAt",
+                  "tag"."color",
+                  "tag"."parentId"
+                from
+                  "tag"
+                  inner join "tag_asset" on "tag"."id" = "tag_asset"."tagId"
+                where
+                  "asset"."id" = "tag_asset"."assetId"
+              ) as agg
+          ) as "tags",
+          (
+            select
+              to_json(obj)
+            from
+              (
+                select
+                  "asset_exif"."make",
+                  "asset_exif"."model",
+                  "asset_exif"."orientation",
+                  "asset_exif"."dateTimeOriginal",
+                  "asset_exif"."modifyDate",
+                  "asset_exif"."exifImageWidth",
+                  "asset_exif"."exifImageHeight",
+                  "asset_exif"."fileSizeInByte",
+                  "asset_exif"."lensModel",
+                  "asset_exif"."fNumber",
+                  "asset_exif"."focalLength",
+                  "asset_exif"."iso",
+                  "asset_exif"."latitude",
+                  "asset_exif"."longitude",
+                  "asset_exif"."city",
+                  "asset_exif"."state",
+                  "asset_exif"."country",
+                  "asset_exif"."description",
+                  "asset_exif"."fps",
+                  "asset_exif"."exposureTime",
+                  "asset_exif"."livePhotoCID",
+                  "asset_exif"."timeZone",
+                  "asset_exif"."projectionType",
+                  "asset_exif"."profileDescription",
+                  "asset_exif"."colorspace",
+                  "asset_exif"."bitsPerSample",
+                  "asset_exif"."autoStackId",
+                  "asset_exif"."rating",
+                  "asset_exif"."tags",
+                  "asset_exif"."updatedAt"
+                from
+                  "asset_exif"
+                where
+                  "asset_exif"."assetId" = "asset"."id"
+              ) as obj
+          ) as "exifInfo"
+        from
+          "asset"
+          left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+        where
+          "asset"."id" = "album_asset"."assetId"
+      ) as obj
+  ) as "asset"
+from
+  "album_asset"
+where
+  exists (
+    select
+    from
+      "asset"
+    where
+      "asset"."id" = "album_asset"."assetId"
+      and "asset"."ownerId" = $1
+      and "asset"."deletedAt" is null
+      and "asset"."visibility" != 'hidden'
+  )
+  and "album_asset"."updateId" > $2
+order by
+  "album_asset"."updateId" asc
+limit
+  $3

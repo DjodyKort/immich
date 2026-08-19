@@ -75,7 +75,7 @@
       {:else}
         <div class="my-6 flex flex-col gap-3">
           {#each workflows as workflow (workflow.id)}
-            {@const { ToggleEnabled, Duplicate, Logs, Edit, Delete } = getWorkflowActions($t, workflow)}
+            {@const { ToggleEnabled, Duplicate, Logs, Edit, Delete, Backfill } = getWorkflowActions($t, workflow)}
 
             <Card class="group shadow-none transition-colors hover:border-primary">
               <CardHeader>
@@ -121,6 +121,7 @@
                       Edit,
                       Duplicate,
                       Logs,
+                      Backfill,
                       getWorkflowShowSchemaAction($t, expandedIds.has(workflow.id), () => onToggleExpand(workflow.id)),
                       MenuItemType.Divider,
                       Delete,
