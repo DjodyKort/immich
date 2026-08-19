@@ -13,6 +13,7 @@ import 'package:immich_mobile/presentation/actions/asset_debug.action.dart';
 import 'package:immich_mobile/presentation/actions/cast.action.dart';
 import 'package:immich_mobile/presentation/actions/delete.action.dart';
 import 'package:immich_mobile/presentation/actions/download.action.dart';
+import 'package:immich_mobile/presentation/actions/hide_from_places.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
 import 'package:immich_mobile/presentation/actions/open_in_browser.action.dart';
 import 'package:immich_mobile/presentation/actions/remove_from_album.action.dart';
@@ -74,6 +75,7 @@ enum ActionButtonType {
   upload,
   openInBrowser,
   unstack,
+  hideFromPlaces,
   archive,
   unarchive,
   moveToLockFolder,
@@ -138,6 +140,18 @@ enum ActionButtonType {
             context.timelineOrigin != TimelineOrigin.trash &&
             !context.isInLockedView && //
             context.isStacked,
+      // Both guards on the asset itself are load-bearing, and neither is enough alone: a locked or trashed
+      // asset is already withheld from all six places so every switch would be a no-op, but a timeline-built
+      // asset reports neither until the viewer's watch on the stored row has fired, which is why the view it
+      // was opened from is checked as well.
+      ActionButtonType.hideFromPlaces => switch (context.asset) {
+        RemoteAsset(isLocked: false, isTrashed: false) =>
+          context.isOwner &&
+              !context.isInLockedView &&
+              context.timelineOrigin != TimelineOrigin.trash &&
+              context.selectedCount == 1,
+        _ => false,
+      },
       ActionButtonType.openInBrowser => context.asset.hasRemote && !context.isInLockedView,
       ActionButtonType.likeActivity =>
         !context.isInLockedView &&
@@ -195,6 +209,7 @@ enum ActionButtonType {
       ),
       ActionButtonType.likeActivity => LikeActivityActionButton(iconOnly: iconOnly, menuItem: menuItem),
       ActionButtonType.unstack => ActionMenuItem(action: StackAction(source: context.source)),
+      ActionButtonType.hideFromPlaces => ActionMenuItem(action: HideFromPlacesAction(source: context.source)),
       ActionButtonType.openInBrowser => ActionMenuItem(
         action: OpenInBrowserAction(remoteId: context.asset.remoteId!, origin: context.timelineOrigin),
       ),
@@ -234,6 +249,7 @@ enum ActionButtonType {
     ActionButtonType.removeFromLockFolder => 10,
     ActionButtonType.removeFromAlbum => 10,
     ActionButtonType.unstack => 10,
+    ActionButtonType.hideFromPlaces => 10,
     ActionButtonType.archive => 10,
     ActionButtonType.unarchive => 10,
     ActionButtonType.moveToLockFolder => 10,

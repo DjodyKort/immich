@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:immich_mobile/domain/models/exif.model.dart';
 
 part 'local_asset.model.dart';

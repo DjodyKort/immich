@@ -150,6 +150,18 @@ class AssetService {
     );
   }
 
+  /// Replaces the surfaces [remoteId] is withheld from, everywhere at once.
+  ///
+  /// The server's answer is written to the local row rather than the requested set, for two reasons: the
+  /// watching Drift queries then update immediately instead of at the next sync, and if the server stored
+  /// something other than what was asked - a surface this build does not know about, say - the server wins.
+  Future<Set<AssetSurface>> updateHiddenFrom(String remoteId, Set<AssetSurface> surfaces) async {
+    final stored = await _apiRepository.updateHiddenFrom(remoteId, surfaces);
+    await _remoteRepository.updateHiddenFrom([remoteId], stored);
+
+    return stored;
+  }
+
   Future<void> trash(List<String> remoteIds) async {
     if (remoteIds.isEmpty) {
       return;

@@ -71,6 +71,7 @@ class RepositoryMocks {
   void _stubRemoteAssetRepository() {
     when(remoteAsset.getExif).thenAnswer((_) async => null);
     when(remoteAsset.getAssetEdits).thenAnswer((_) async => const []);
+    when(remoteAsset.getById).thenAnswer((_) async => null);
     when(remoteAsset.update).thenAnswer((_) async {});
   }
 
@@ -171,6 +172,7 @@ class ServiceMocks {
 
   void _stubAssetService() {
     when(asset.update).thenAnswer((_) async {});
+    when(asset.updateHiddenFrom).thenAnswer((_) async => const {});
     when(asset.stack).thenAnswer((_) async {});
     when(asset.unstack).thenAnswer((_) async {});
     when(asset.restoreTrash).thenAnswer((_) async {});
@@ -226,6 +228,7 @@ void _registerFallbacks() {
   registerFallbackValue(<BaseAsset>[]);
   registerFallbackValue(<RemoteAsset>[]);
   registerFallbackValue(<LocalAsset>[]);
+  registerFallbackValue(<AssetSurface>{});
   registerFallbackValue(ShareAssetType.original);
   registerFallbackValue(const UploadCallbacks());
   registerFallbackValue(_FakeBuildContext());
@@ -263,6 +266,9 @@ extension type const RemoteAssetRepositoryStub(MockRemoteAssetRepository repo)
 
   Future<List<AssetEdit>> Function() get getAssetEdits =>
       () => repo.getAssetEdits(any());
+
+  Future<RemoteAsset?> Function() get getById =>
+      () => repo.get(any());
 
   Future<void> Function() get update =>
       () => repo.update(
@@ -358,6 +364,9 @@ extension type const AssetServiceStub(MockAssetService service) implements Stub<
 
   Future<int> Function() get deleteLocal =>
       () => service.deleteLocal(any());
+
+  Future<Set<AssetSurface>> Function() get updateHiddenFrom =>
+      () => service.updateHiddenFrom(any(), any());
 }
 
 extension type const RemoteAlbumServiceStub(MockRemoteAlbumService service) implements Stub<MockRemoteAlbumService> {

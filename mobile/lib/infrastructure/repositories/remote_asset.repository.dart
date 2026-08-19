@@ -133,6 +133,21 @@ class RemoteAssetRepository extends DriftDatabaseRepository {
     });
   }
 
+  /// Records which surfaces these assets are withheld from.
+  ///
+  /// Takes surface names, not a mask: [VisibilityPolicy] owns the bit assignment and is the only thing that
+  /// should know it. An empty set stores `null` rather than `0`, keeping "withheld from nothing" to a single
+  /// spelling in the column.
+  Future<void> updateHiddenFrom(List<String> ids, Set<AssetSurface> surfaces) {
+    final companion = RemoteAssetEntityCompanion(hiddenFrom: Value(VisibilityPolicy.maskFor(surfaces)));
+
+    return _db.batch((batch) {
+      for (final id in ids) {
+        batch.update(_db.remoteAssetEntity, companion, where: (e) => e.id.equals(id));
+      }
+    });
+  }
+
   Future<void> trash(List<String> ids) {
     return _db.batch((batch) async {
       for (final id in ids) {

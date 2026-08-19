@@ -4,6 +4,7 @@ import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.drift.
 import 'package:immich_mobile/infrastructure/entities/user.entity.dart';
 import 'package:immich_mobile/infrastructure/utils/asset.mixin.dart';
 import 'package:immich_mobile/infrastructure/utils/drift_default.mixin.dart';
+import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
 @TableIndex.sql('''
 CREATE UNIQUE INDEX IF NOT EXISTS UQ_remote_assets_owner_checksum
@@ -78,6 +79,8 @@ extension RemoteAssetEntityDataDomainEx on RemoteAssetEntityData {
     width: width,
     thumbHash: thumbHash,
     visibility: visibility,
+    // The stored bitmask is a local encoding; the domain layer only ever sees surface names.
+    hiddenFrom: VisibilityPolicy.namesFor(hiddenFrom).toSet(),
     livePhotoVideoId: livePhotoVideoId,
     localId: localId,
     stackId: stackId,
