@@ -14,6 +14,7 @@ extension DTOToAsset on api.AssetResponseDto {
       uploadedAt: createdAt,
       ownerId: ownerId,
       visibility: visibility.toAssetVisibility(),
+      hiddenFrom: hiddenFrom.map((surface) => surface.toAssetSurface()).toSet(),
       durationMs: duration,
       height: height,
       width: width,
@@ -37,6 +38,7 @@ extension DTOToAsset on api.AssetResponseDto {
       uploadedAt: createdAt,
       ownerId: ownerId,
       visibility: visibility.toAssetVisibility(),
+      hiddenFrom: hiddenFrom.map((surface) => surface.toAssetSurface()).toSet(),
       durationMs: duration,
       height: height,
       width: width,
@@ -58,6 +60,21 @@ extension on api.AssetVisibility {
     api.AssetVisibility.hidden => AssetVisibility.hidden,
     api.AssetVisibility.archive => AssetVisibility.archive,
     api.AssetVisibility.locked => AssetVisibility.locked,
+  };
+}
+
+/// The wire vocabulary for per-surface hiding, translated into mobile's own.
+///
+/// Exhaustive by construction: a surface added on the server fails to compile here rather than being
+/// silently dropped, which for a *hiding* rule would mean showing what should be hidden.
+extension on api.AssetSurface {
+  AssetSurface toAssetSurface() => switch (this) {
+    api.AssetSurface.timeline => AssetSurface.timeline,
+    api.AssetSurface.search => AssetSurface.search,
+    api.AssetSurface.map => AssetSurface.map,
+    api.AssetSurface.people => AssetSurface.people,
+    api.AssetSurface.memories => AssetSurface.memories,
+    api.AssetSurface.folders => AssetSurface.folders,
   };
 }
 

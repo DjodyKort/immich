@@ -7,8 +7,15 @@ import 'package:immich_mobile/providers/api.provider.dart';
 import 'package:immich_mobile/repositories/api.repository.dart';
 import 'package:immich_mobile/utils/option.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
-import 'package:openapi/api.dart' as api show AssetVisibility;
-import 'package:openapi/api.dart' hide AssetVisibility;
+import 'package:openapi/api.dart' as api show AssetSurface, AssetVisibility;
+import 'package:openapi/api.dart' hide AssetSurface, AssetVisibility;
+
+/// Every other field of `UpdateAssetDto` and `AssetBulkUpdateDto` defaults to absent; `hiddenFrom`, being
+/// an array, is generated with `Optional.present(const [])` instead - so a request that simply omits it
+/// asks the server to *clear* the asset's exclusions. Favouriting a photo from the phone would wipe what
+/// the web set. Every construction of those two DTOs therefore has to say `absent` out loud, and this names
+/// why. The generator quirk is not ours to fix here: it is in the Dart client templates.
+const _leaveHiddenFromAlone = Optional<List<api.AssetSurface>?>.absent();
 
 final assetApiRepositoryProvider = Provider(
   (ref) => AssetApiRepository(
@@ -45,7 +52,13 @@ class AssetApiRepository extends ApiRepository {
 
   // TODO(shenlong): remove after action migration
   Future<void> updateVisibility(List<String> ids, AssetVisibility visibility) async {
-    return _api.updateAssets(AssetBulkUpdateDto(ids: ids, visibility: Optional.present(_mapVisibility(visibility))));
+    return _api.updateAssets(
+      AssetBulkUpdateDto(
+        ids: ids,
+        visibility: Optional.present(_mapVisibility(visibility)),
+        hiddenFrom: _leaveHiddenFromAlone,
+      ),
+    );
   }
 
   Future<StackResponse> stack(List<String> ids) async {
@@ -62,6 +75,15 @@ class AssetApiRepository extends ApiRepository {
     return _api.downloadAssetWithHttpInfo(id, edited: edited);
   }
 
+  api.AssetSurface _mapSurface(AssetSurface surface) => switch (surface) {
+    AssetSurface.timeline => api.AssetSurface.timeline,
+    AssetSurface.search => api.AssetSurface.search,
+    AssetSurface.map => api.AssetSurface.map,
+    AssetSurface.people => api.AssetSurface.people,
+    AssetSurface.memories => api.AssetSurface.memories,
+    AssetSurface.folders => api.AssetSurface.folders,
+  };
+
   api.AssetVisibility _mapVisibility(AssetVisibility visibility) => switch (visibility) {
     AssetVisibility.timeline => api.AssetVisibility.timeline,
     AssetVisibility.hidden => api.AssetVisibility.hidden,
@@ -77,11 +99,17 @@ class AssetApiRepository extends ApiRepository {
   }
 
   Future<void> updateDescription(String assetId, String description) {
-    return _api.updateAsset(assetId, UpdateAssetDto(description: Optional.present(description)));
+    return _api.updateAsset(
+      assetId,
+      UpdateAssetDto(description: Optional.present(description), hiddenFrom: _leaveHiddenFromAlone),
+    );
   }
 
   Future<void> updateRating(String assetId, int? rating) {
-    return _api.updateAsset(assetId, UpdateAssetDto(rating: Optional.present(rating)));
+    return _api.updateAsset(
+      assetId,
+      UpdateAssetDto(rating: Optional.present(rating), hiddenFrom: _leaveHiddenFromAlone),
+    );
   }
 
   Future<AssetEditsResponseDto?> editAsset(String assetId, List<AssetEdit> edits) {
@@ -107,8 +135,26 @@ class AssetApiRepository extends ApiRepository {
         dateTimeOriginal: dateTimeOriginal.toOptional(),
         latitude: location.map((loc) => loc.latitude).toOptional(),
         longitude: location.map((loc) => loc.longitude).toOptional(),
+        hiddenFrom: _leaveHiddenFromAlone,
       ),
     );
+  }
+
+  /// Replaces the whole set of surfaces [assetId] is withheld from, and returns what the server stored.
+  ///
+  /// The single-asset route is deliberate. `PUT /assets` answers with nothing, while this answers with the
+  /// asset, so the local row can be written from what the server actually stored rather than from what was
+  /// asked for. An empty set is how "show it everywhere again" is expressed - the server treats `[]` and
+  /// `null` alike.
+  Future<Set<AssetSurface>> updateHiddenFrom(String assetId, Set<AssetSurface> surfaces) async {
+    final response = await checkNull(
+      _api.updateAsset(
+        assetId,
+        UpdateAssetDto(hiddenFrom: Optional.present(surfaces.map(_mapSurface).toList(growable: false))),
+      ),
+    );
+
+    return response.hiddenFrom.map((surface) => surface.toAssetSurface()).toSet();
   }
 
   Future<void> updateLocation(List<String> ids, LatLng location) async {
@@ -117,12 +163,15 @@ class AssetApiRepository extends ApiRepository {
         ids: ids,
         latitude: Optional.present(location.latitude),
         longitude: Optional.present(location.longitude),
+        hiddenFrom: _leaveHiddenFromAlone,
       ),
     );
   }
 
   Future<void> updateDateTime(List<String> ids, String dateTime) async {
-    return _api.updateAssets(AssetBulkUpdateDto(ids: ids, dateTimeOriginal: Optional.present(dateTime)));
+    return _api.updateAssets(
+      AssetBulkUpdateDto(ids: ids, dateTimeOriginal: Optional.present(dateTime), hiddenFrom: _leaveHiddenFromAlone),
+    );
   }
 }
 
@@ -149,4 +198,19 @@ extension on AssetEdit {
       ),
     };
   }
+}
+
+/// The wire vocabulary for per-surface hiding, translated into mobile's own.
+///
+/// Exhaustive by construction: a surface added on the server fails to compile here rather than being
+/// silently dropped, which for a *hiding* rule would mean showing what should be hidden.
+extension on api.AssetSurface {
+  AssetSurface toAssetSurface() => switch (this) {
+    api.AssetSurface.timeline => AssetSurface.timeline,
+    api.AssetSurface.search => AssetSurface.search,
+    api.AssetSurface.map => AssetSurface.map,
+    api.AssetSurface.people => AssetSurface.people,
+    api.AssetSurface.memories => AssetSurface.memories,
+    api.AssetSurface.folders => AssetSurface.folders,
+  };
 }

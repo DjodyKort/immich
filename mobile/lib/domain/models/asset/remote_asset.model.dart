@@ -10,6 +10,12 @@ enum AssetVisibility { timeline, hidden, archive, locked }
 /// test, because it is persisted.
 enum AssetSurface { timeline, search, map, people, memories, folders }
 
+/// [RemoteAsset.hiddenFrom] compares and hashes as a set, not as a list.
+///
+/// Dart's `Set ==` is identity, so without this two assets withheld from the same places would never be
+/// equal - and the viewer, which rebuilds on every asset change, would rebuild forever.
+const _surfaces = SetEquality<AssetSurface>();
+
 // Model for an asset stored in the server
 class RemoteAsset extends BaseAsset {
   @override
@@ -17,6 +23,19 @@ class RemoteAsset extends BaseAsset {
   final String? localAssetId;
   final String? thumbHash;
   final AssetVisibility visibility;
+
+  /// The surfaces this asset is withheld from, independently of [visibility].
+  ///
+  /// Empty for every asset nobody has touched, which is the stored `null` mask, so a screen that reads
+  /// this behaves exactly as it did before the field existed. Carried as a [Set] because that is what it
+  /// is - order is not information, and no surface can appear twice - even though the wire format and the
+  /// stored bitmask are both ordered.
+  ///
+  /// Only the paths that read the asset's own row populate this: the local `remote_asset_entity` row and
+  /// an `AssetResponseDto`. The timeline bucket queries select a narrower column set and leave it empty,
+  /// exactly as they leave [visibility] at its default, so anything that must act on the real value reads
+  /// the row rather than trusting a timeline asset.
+  final Set<AssetSurface> hiddenFrom;
   final String ownerId;
   final String? stackId;
   final String? livePhotoVideoId;
@@ -39,6 +58,7 @@ class RemoteAsset extends BaseAsset {
     super.isFavorite = false,
     this.thumbHash,
     this.visibility = AssetVisibility.timeline,
+    this.hiddenFrom = const {},
     this.livePhotoVideoId,
     this.stackId,
     required super.isEdited,
@@ -102,6 +122,7 @@ class RemoteAsset extends BaseAsset {
     isFavorite: $isFavorite,
     thumbHash: ${thumbHash ?? "<NA>"},
     visibility: $visibility,
+    hiddenFrom: $hiddenFrom,
     stackId: ${stackId ?? "<NA>"},
     checksum: $checksum,
     livePhotoVideoId: ${livePhotoVideoId ?? "<NA>"},
@@ -122,6 +143,7 @@ class RemoteAsset extends BaseAsset {
         ownerId == other.ownerId &&
         thumbHash == other.thumbHash &&
         visibility == other.visibility &&
+        _surfaces.equals(hiddenFrom, other.hiddenFrom) &&
         stackId == other.stackId &&
         livePhotoVideoId == other.livePhotoVideoId &&
         uploadedAt == other.uploadedAt &&
@@ -136,6 +158,7 @@ class RemoteAsset extends BaseAsset {
       localId.hashCode ^
       thumbHash.hashCode ^
       visibility.hashCode ^
+      _surfaces.hash(hiddenFrom) ^
       stackId.hashCode ^
       livePhotoVideoId.hashCode ^
       uploadedAt.hashCode ^
@@ -157,6 +180,7 @@ class RemoteAsset extends BaseAsset {
     bool? isFavorite,
     String? thumbHash,
     AssetVisibility? visibility,
+    Set<AssetSurface>? hiddenFrom,
     String? livePhotoVideoId,
     String? stackId,
     bool? isEdited,
@@ -178,6 +202,7 @@ class RemoteAsset extends BaseAsset {
       isFavorite: isFavorite ?? this.isFavorite,
       thumbHash: thumbHash ?? this.thumbHash,
       visibility: visibility ?? this.visibility,
+      hiddenFrom: hiddenFrom ?? this.hiddenFrom,
       livePhotoVideoId: livePhotoVideoId ?? this.livePhotoVideoId,
       stackId: stackId ?? this.stackId,
       isEdited: isEdited ?? this.isEdited,
@@ -206,6 +231,7 @@ class RemoteAssetExif extends RemoteAsset {
     super.isFavorite = false,
     super.thumbHash,
     super.visibility = AssetVisibility.timeline,
+    super.hiddenFrom = const {},
     super.livePhotoVideoId,
     super.stackId,
     super.isEdited = false,
@@ -244,6 +270,7 @@ class RemoteAssetExif extends RemoteAsset {
     bool? isFavorite,
     String? thumbHash,
     AssetVisibility? visibility,
+    Set<AssetSurface>? hiddenFrom,
     String? livePhotoVideoId,
     String? stackId,
     bool? isEdited,
@@ -266,6 +293,7 @@ class RemoteAssetExif extends RemoteAsset {
       isFavorite: isFavorite ?? this.isFavorite,
       thumbHash: thumbHash ?? this.thumbHash,
       visibility: visibility ?? this.visibility,
+      hiddenFrom: hiddenFrom ?? this.hiddenFrom,
       livePhotoVideoId: livePhotoVideoId ?? this.livePhotoVideoId,
       stackId: stackId ?? this.stackId,
       isEdited: isEdited ?? this.isEdited,
