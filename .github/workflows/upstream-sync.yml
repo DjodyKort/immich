@@ -186,6 +186,55 @@ jobs:
           fi
           echo "status=merged" >> "$GITHUB_OUTPUT"
 
+  prune:
+    name: Prune abandoned sync branches
+    needs: merge
+    if: ${{ always() && github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      KEEP: ${{ needs.merge.outputs.branch }}
+    steps:
+      # Merged branches are removed by the repository's delete-on-merge setting. What that misses is the
+      # abandoned ones: every run at a new upstream sha creates a new branch, so any sync that is
+      # superseded before being merged is left behind, one per week. Doing that by hand does not scale.
+      #
+      # Conservative on purpose: only `sync/upstream-*`, only with no open PR, only older than 14 days,
+      # and never the branch this run just created.
+      - name: Delete sync branches with no open PR, older than 14 days
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d '14 days ago' +%s)
+
+          gh api "repos/${GH_REPO}/branches?per_page=100" --paginate --jq '.[].name' \
+            | grep '^sync/upstream-' > candidates.txt || true
+
+          while read -r branch; do
+            [ -z "$branch" ] && continue
+            if [ "$branch" = "$KEEP" ]; then
+              echo "keeping $branch (created by this run)"
+              continue
+            fi
+
+            open_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+            if [ -n "$open_pr" ]; then
+              echo "keeping $branch (open PR #$open_pr)"
+              continue
+            fi
+
+            committed=$(gh api "repos/${GH_REPO}/commits/${branch}" --jq '.commit.committer.date')
+            age=$(date -u -d "$committed" +%s)
+            if [ "$age" -gt "$cutoff" ]; then
+              echo "keeping $branch (only $(( ( $(date -u +%s) - age ) / 86400 )) day(s) old)"
+              continue
+            fi
+
+            echo "deleting $branch (no open PR, last commit $committed)"
+            gh api -X DELETE "repos/${GH_REPO}/git/refs/heads/${branch}"
+          done < candidates.txt
+
   gates:
     name: Gates
     needs: merge
