@@ -1,0 +1,62 @@
+{
+  "$comment": [
+    "Per-repo argus config: the invariants a model must respect, and what the answer has to look like.",
+    "The engine and the workflows live in DjodyKort/argus; this file and argus-rules.json are the parts",
+    "that know about this fork.",
+    "",
+    "`enforcedBy` matters as much as `statement`. An invariant a test already proves does not need a model",
+    "turn spent re-deriving it; naming the gate keeps the model on the parts nothing mechanical covers."
+  ],
+  "invariants": [
+    {
+      "id": "surface-bits-persisted",
+      "statement": "SURFACE_BIT values are persisted in asset.hiddenFrom. They must never be renumbered and a retired bit must never be reused, because either silently reinterprets every stored mask.",
+      "enforcedBy": "server/src/utils/visibility-policy.spec.ts - the whole table is frozen by literal"
+    },
+    {
+      "id": "trash-unmaskable",
+      "statement": "Surface.Trash has no bit, so a per-asset exclusion can never reach the trash view. Hiding a photo from the timeline must not make it unrecoverable.",
+      "enforcedBy": "visibility-policy.spec.ts and the trash case in visibility-matrix.spec.ts"
+    },
+    {
+      "id": "new-read-surface",
+      "statement": "Any endpoint that can return asset-bearing data is a surface and must be classified, or the visibility policy does not cover it. Neither a conflict nor a compile error reveals a new one.",
+      "enforcedBy": "_fork/asset-surfaces.mjs, run by the asset-surfaces CI job"
+    },
+    {
+      "id": "partial-index",
+      "statement": "asset_id_timeline_notDeleted_idx stays predicated on visibility = 'timeline', and 'timeline' stays a label of asset_visibility_enum. Losing either degrades every timeline query without failing a test.",
+      "enforcedBy": "server/test/medium/specs/policy-index-invariants.spec.ts"
+    },
+    {
+      "id": "single-policy-home",
+      "statement": "Visibility rules live only in server/src/utils/visibility-policy.ts. No asset.visibility predicate is hand-written anywhere else; callers pick the helper that fits the shape.",
+      "enforcedBy": "nothing mechanical, by choice - this one needs eyes"
+    },
+    {
+      "id": "locked-write-guard",
+      "statement": "Locked assets are kept out of shared links by the write path (Permission.AssetShare, which checks as forSharing() and is never elevated), because the shared-link read queries carry no visibility predicate at all. There is no second line of defence.",
+      "enforcedBy": "server/test/medium/specs/services/shared-link-visibility.spec.ts"
+    },
+    {
+      "id": "mobile-bits-independent",
+      "statement": "Mobile's mask uses its own local bit values, unrelated to the server's numbering, because sync carries surface names rather than integers. Coupling them would make the server's assignment unchangeable.",
+      "enforcedBy": "nothing mechanical - mobile/lib/infrastructure/utils/visibility_policy.dart is the only place that knows mobile's mask"
+    }
+  ],
+  "budget": {
+    "maxFiles": 60,
+    "deepReadLevels": ["high"]
+  },
+  "output": {
+    "shape": "checklist",
+    "sink": "pr-comment",
+    "mustNot": [
+      "weaken, skip or delete a test or gate to make it pass",
+      "state a verdict; report what to check and what you could not verify",
+      "claim a result you did not observe",
+      "hand-write an asset.visibility predicate instead of using a visibility-policy helper",
+      "renumber or reuse a SURFACE_BIT value"
+    ]
+  }
+}
