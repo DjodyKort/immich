@@ -1,6 +1,6 @@
 import { Expression, ExpressionBuilder, SelectQueryBuilder, sql, SqlBool } from 'kysely';
 import { AuthDto } from 'src/dtos/auth.dto';
-import { AssetVisibility } from 'src/enum';
+import { AssetSurface, AssetVisibility } from 'src/enum';
 import { DB } from 'src/schema';
 
 /**
@@ -178,6 +178,77 @@ const SURFACE_BIT: Partial<Record<Surface, number>> = {
 
 /** The bit for a surface, for callers that set or clear an exclusion. */
 export const getSurfaceBit = (surface: Surface): number | undefined => SURFACE_BIT[surface];
+
+/**
+ * What a client means by each place it can hide an asset from.
+ *
+ * The wire format is `AssetSurface[]`, never the mask, so this table is the only translation between the
+ * two vocabularies. Two consequences are deliberate:
+ *
+ * - Hiding from `Timeline` does not touch {@link Surface.AlbumTimeline}, and hiding from `Map` does not
+ *   touch {@link Surface.AlbumMap}. An album is a context the user navigated into and asked for; an
+ *   asset they put there should still be in there. Hiding from the library-wide views is the request.
+ * - Hiding from `Search` also sets {@link Surface.SearchSuggestions}, because the suggestion lists are
+ *   built from the assets search can return. Leaving them alone would let a hidden photo's city, camera
+ *   make, or lens keep appearing in the filter pickers -- the asset itself unreachable, its metadata
+ *   still on screen.
+ *
+ * Surfaces absent from every row are not per-asset excludable by choice: statistics and the calendar
+ * heatmap are aggregates the owner uses to reason about their own library, `timelineDownload` is
+ * "give me everything I own", and `albumContents`, `duplicates` and `stackContents` are lists of a
+ * container the user opened deliberately.
+ */
+const ASSET_SURFACE_POLICY: Record<AssetSurface, readonly Surface[]> = {
+  [AssetSurface.Timeline]: [Surface.Timeline],
+  [AssetSurface.Search]: [Surface.Search, Surface.SearchSuggestions],
+  [AssetSurface.Map]: [Surface.GlobalMap],
+  [AssetSurface.People]: [Surface.People],
+  [AssetSurface.Memories]: [Surface.Memories],
+  [AssetSurface.Folders]: [Surface.FolderView],
+};
+
+/** Which internal surfaces one user-facing surface covers. Exposed so a test can assert the table. */
+export const getPolicySurfaces = (surface: AssetSurface): readonly Surface[] => ASSET_SURFACE_POLICY[surface];
+
+/**
+ * The `asset.hiddenFrom` value for a set of user-facing surfaces.
+ *
+ * Returns `null` rather than `0` for an empty set, so "no exclusions" has exactly one representation in
+ * the database: every row upstream writes is `null`, and a `0` would be a second spelling of the same
+ * thing that no query distinguishes but every comparison would.
+ */
+export const toHiddenFromMask = (surfaces: readonly AssetSurface[]): number | null => {
+  let mask = 0;
+  for (const surface of surfaces) {
+    for (const policySurface of ASSET_SURFACE_POLICY[surface]) {
+      mask |= SURFACE_BIT[policySurface] ?? 0;
+    }
+  }
+
+  return mask === 0 ? null : mask;
+};
+
+/**
+ * The user-facing surfaces a stored mask excludes.
+ *
+ * A user-facing surface is reported only when every internal surface it covers is set, so this is the
+ * exact inverse of {@link toHiddenFromMask} for any mask that helper produced. Bits belonging to no
+ * user-facing surface -- set by a future release, by a workflow, or by hand -- are ignored rather than
+ * throwing: this runs on every asset response, and a mask it cannot fully describe is not a reason to
+ * fail the read.
+ */
+export const fromHiddenFromMask = (mask: number | null): AssetSurface[] => {
+  if (!mask) {
+    return [];
+  }
+
+  return Object.values(AssetSurface).filter((surface) =>
+    ASSET_SURFACE_POLICY[surface].every((policySurface) => {
+      const bit = SURFACE_BIT[policySurface];
+      return bit !== undefined && (mask & bit) !== 0;
+    }),
+  );
+};
 
 /**
  * `asset.hiddenFrom` is a nullable bitmask of per-asset, per-surface exclusions, and this is the only

@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { HistoryBuilder } from 'src/decorators';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto';
-import { AssetType, AssetVisibilitySchema } from 'src/enum';
+import { AssetSurfaceSchema, AssetType, AssetVisibilitySchema } from 'src/enum';
 import { AssetStats } from 'src/repositories/asset.repository';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation';
 import z from 'zod';
@@ -30,6 +30,12 @@ const UpdateAssetBaseSchema = z
           .getExtensions(),
       }),
     description: z.string().optional().describe('Asset description'),
+    hiddenFrom: z
+      .array(AssetSurfaceSchema)
+      .nullish()
+      .describe(
+        'Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset.',
+      ),
   })
   .refine(
     (data) =>

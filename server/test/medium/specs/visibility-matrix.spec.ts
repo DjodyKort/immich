@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { AuthDto } from 'src/dtos/auth.dto';
 import { SearchSuggestionType } from 'src/dtos/search.dto';
-import { AssetVisibility, CalendarHeatmapType } from 'src/enum';
+import { AssetSurface, AssetVisibility, CalendarHeatmapType } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
@@ -304,6 +304,12 @@ const setupStack = (database: Kysely<DB>) =>
 const sumBucketCounts = (buckets: Array<{ count: number }>) =>
   buckets.reduce((total, bucket) => total + Number(bucket.count), 0);
 
+/** A person's asset count. A helper because lint forbids reading a member straight off an await. */
+const personAssetCount = async (sut: PersonService, auth: AuthDto, personId: string) => {
+  const { assets } = await sut.getStatistics(auth, personId);
+  return assets;
+};
+
 /**
  * The matrix. `notElevated` / `elevated` list exactly the visibilities the surface returns today.
  * Annotations mark the cells that look wrong; they are asserted as-is on purpose.
@@ -603,6 +609,107 @@ describe('per-asset exclusions', () => {
     // Off the timeline, still findable in search. This is the capability the enum could not carry.
     expect(ids).toContain(excluded.id);
     expect(ids).toContain(kept.id);
+  });
+
+  /**
+   * The same capability, driven through the API instead of a hand-written mask. `AssetService` is the only
+   * writer, `AssetSurface` is the only vocabulary on the wire, and `toHiddenFromMask` is the only
+   * translation -- so these assert that the enforcement above is actually reachable by a client.
+   */
+  it('should hide an asset from People only, when asked through AssetService.update', async () => {
+    const { sut: assetService, ctx } = setupAsset(defaultDatabase);
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const { asset: kept } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    const { asset: excluded } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    for (const asset of [kept, excluded]) {
+      await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
+      await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+    }
+    const auth = factory.auth({ user: { id: user.id } });
+
+    const { sut: personService } = setupPerson(defaultDatabase);
+    expect(await personAssetCount(personService, auth, person.id)).toBe(2);
+
+    const response = await assetService.update(auth, excluded.id, { hiddenFrom: [AssetSurface.People] });
+    // The wire format is surface names in both directions; the mask never leaves the server.
+    expect(response.hiddenFrom).toEqual([AssetSurface.People]);
+
+    expect(await personAssetCount(personService, auth, person.id)).toBe(1);
+
+    // Still on the timeline and still findable in search: only the surface named moved.
+    const { sut: timeline } = setupTimeline(defaultDatabase);
+    expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(2);
+
+    const { sut: search } = setupSearch(defaultDatabase);
+    const found = await search.searchMetadata(auth, {});
+    expect(found.assets.items.map((item) => item.id)).toContain(excluded.id);
+  });
+
+  it('should clear every exclusion when AssetService.update is given null', async () => {
+    const { sut: assetService, ctx } = setupAsset(defaultDatabase);
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
+    await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+    const auth = factory.auth({ user: { id: user.id } });
+
+    const { sut: personService } = setupPerson(defaultDatabase);
+    await assetService.update(auth, asset.id, { hiddenFrom: [AssetSurface.People] });
+    expect(await personAssetCount(personService, auth, person.id)).toBe(0);
+
+    const cleared = await assetService.update(auth, asset.id, { hiddenFrom: null });
+    expect(cleared.hiddenFrom).toEqual([]);
+    expect(await personAssetCount(personService, auth, person.id)).toBe(1);
+  });
+
+  it('should replace the whole set rather than merge into it', async () => {
+    const { sut: assetService, ctx } = setupAsset(defaultDatabase);
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
+    await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+    const auth = factory.auth({ user: { id: user.id } });
+
+    const { sut: personService } = setupPerson(defaultDatabase);
+    const { sut: timeline } = setupTimeline(defaultDatabase);
+
+    await assetService.update(auth, asset.id, { hiddenFrom: [AssetSurface.People, AssetSurface.Timeline] });
+    expect(await personAssetCount(personService, auth, person.id)).toBe(0);
+    expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(0);
+
+    // Timeline is absent from the second call, so it must come back -- a merge would leave it excluded.
+    const narrowed = await assetService.update(auth, asset.id, { hiddenFrom: [AssetSurface.People] });
+    expect(narrowed.hiddenFrom).toEqual([AssetSurface.People]);
+    expect(await personAssetCount(personService, auth, person.id)).toBe(0);
+    expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(1);
+  });
+
+  it('should apply to every asset named by AssetService.updateAll', async () => {
+    const { sut: assetService, ctx } = setupAsset(defaultDatabase);
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    const { asset: second } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    const { asset: untouched } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    for (const asset of [first, second, untouched]) {
+      await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
+      await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+    }
+    const auth = factory.auth({ user: { id: user.id } });
+
+    // updateAll queues a sidecar write per asset; the mocked JobRepository is strict.
+    ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+
+    await assetService.updateAll(auth, { ids: [first.id, second.id], hiddenFrom: [AssetSurface.People] });
+
+    const { sut: personService } = setupPerson(defaultDatabase);
+    expect(await personAssetCount(personService, auth, person.id)).toBe(1);
+
+    const { sut: timeline } = setupTimeline(defaultDatabase);
+    expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(3);
   });
 
   it('should leave a null mask behaving exactly as before', async () => {

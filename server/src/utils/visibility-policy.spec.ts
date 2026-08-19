@@ -1,12 +1,15 @@
-import { AssetVisibility } from 'src/enum';
+import { AssetSurface, AssetVisibility } from 'src/enum';
 import {
   forOtherUser,
   forSharing,
   forSystem,
   forViewer,
+  fromHiddenFromMask,
   getAdmittedVisibility,
+  getPolicySurfaces,
   getSurfaceBit,
   Surface,
+  toHiddenFromMask,
 } from 'src/utils/visibility-policy';
 import { factory } from 'test/small.factory';
 import { describe, expect, it } from 'vitest';
@@ -134,6 +137,128 @@ describe('visibility policy', () => {
       expect(getSurfaceBit(Surface.People)).toBe(512);
       expect(getSurfaceBit(Surface.Memories)).toBe(1024);
       expect(getSurfaceBit(Surface.StackContents)).toBe(32_768);
+    });
+  });
+
+  describe('the user-facing surface mapping', () => {
+    /** The reviewable copy of ASSET_SURFACE_POLICY, spelled as the documented internal surfaces. */
+    const MAPPING: Array<[AssetSurface, Surface[]]> = [
+      [AssetSurface.Timeline, [Surface.Timeline]],
+      [AssetSurface.Search, [Surface.Search, Surface.SearchSuggestions]],
+      [AssetSurface.Map, [Surface.GlobalMap]],
+      [AssetSurface.People, [Surface.People]],
+      [AssetSurface.Memories, [Surface.Memories]],
+      [AssetSurface.Folders, [Surface.FolderView]],
+    ];
+
+    it.each(MAPPING)('%s covers the documented internal surfaces', (surface, policySurfaces) => {
+      expect([...getPolicySurfaces(surface)]).toEqual(policySurfaces);
+    });
+
+    it('should map every AssetSurface, so a new one cannot be added without a row', () => {
+      expect(new Set(MAPPING.map(([surface]) => surface))).toEqual(new Set(Object.values(AssetSurface)));
+    });
+
+    it.each(MAPPING)('%s converts to exactly the bits of its internal surfaces', (surface, policySurfaces) => {
+      const expected = policySurfaces.reduce((mask, policySurface) => mask | getSurfaceBit(policySurface)!, 0);
+      expect(toHiddenFromMask([surface])).toBe(expected);
+    });
+
+    it('should not hide from an album timeline when hiding from the main timeline', () => {
+      // An album is a context the user navigated into and asked for. Deliberate; see ASSET_SURFACE_POLICY.
+      const mask = toHiddenFromMask([AssetSurface.Timeline])!;
+      expect(mask & getSurfaceBit(Surface.Timeline)!).not.toBe(0);
+      expect(mask & getSurfaceBit(Surface.AlbumTimeline)!).toBe(0);
+    });
+
+    it("should not hide from an album's map when hiding from the global map", () => {
+      const mask = toHiddenFromMask([AssetSurface.Map])!;
+      expect(mask & getSurfaceBit(Surface.GlobalMap)!).not.toBe(0);
+      expect(mask & getSurfaceBit(Surface.AlbumMap)!).toBe(0);
+    });
+
+    it('should suppress search suggestions when hiding from search', () => {
+      // Otherwise a hidden photo's city and camera keep populating the filter pickers.
+      const mask = toHiddenFromMask([AssetSurface.Search])!;
+      expect(mask & getSurfaceBit(Surface.Search)!).not.toBe(0);
+      expect(mask & getSurfaceBit(Surface.SearchSuggestions)!).not.toBe(0);
+    });
+
+    it('should never touch a surface no AssetSurface names', () => {
+      // Statistics, the calendar heatmap, the download-everything path, and the three container lists
+      // are excludable by no user-facing surface, on purpose.
+      const everything = toHiddenFromMask(Object.values(AssetSurface))!;
+      for (const surface of [
+        Surface.Statistics,
+        Surface.CalendarHeatmap,
+        Surface.AlbumMetadata,
+        Surface.TimelineDownload,
+        Surface.AlbumContents,
+        Surface.Duplicates,
+        Surface.StackContents,
+      ]) {
+        expect(everything & getSurfaceBit(surface)!).toBe(0);
+      }
+    });
+  });
+
+  describe('mask conversion', () => {
+    it('should map the empty set to null, not 0', () => {
+      // "No exclusions" must have exactly one representation in the database: every row upstream writes
+      // is null, and a 0 would be an indistinguishable second spelling that every comparison would see.
+      expect(toHiddenFromMask([])).toBeNull();
+    });
+
+    it('should map a null or zero mask to no surfaces', () => {
+      expect(fromHiddenFromMask(null)).toEqual([]);
+      expect(fromHiddenFromMask(0)).toEqual([]);
+    });
+
+    it.each([
+      [[AssetSurface.Timeline]],
+      [[AssetSurface.Search]],
+      [[AssetSurface.Map]],
+      [[AssetSurface.People]],
+      [[AssetSurface.Memories]],
+      [[AssetSurface.Folders]],
+      [[AssetSurface.Timeline, AssetSurface.People]],
+      [[AssetSurface.Search, AssetSurface.Map, AssetSurface.Memories]],
+      [Object.values(AssetSurface)],
+    ])('should round-trip %j', (surfaces) => {
+      expect(new Set(fromHiddenFromMask(toHiddenFromMask(surfaces)))).toEqual(new Set(surfaces));
+    });
+
+    it('should round-trip every subset of AssetSurface', () => {
+      const all = Object.values(AssetSurface);
+      for (let bits = 0; bits < 2 ** all.length; bits++) {
+        const subset = all.filter((_, index) => (bits & (1 << index)) !== 0);
+        expect(new Set(fromHiddenFromMask(toHiddenFromMask(subset)))).toEqual(new Set(subset));
+      }
+    });
+
+    it('should be idempotent when a surface is listed twice', () => {
+      expect(toHiddenFromMask([AssetSurface.People, AssetSurface.People])).toBe(
+        toHiddenFromMask([AssetSurface.People]),
+      );
+    });
+
+    it('should ignore a bit that belongs to no user-facing surface rather than throwing', () => {
+      // A mask written by a future release, a workflow, or by hand. This runs on every asset response, so
+      // a mask it cannot fully describe must not fail the read.
+      const unknownBit = 1 << 29;
+      expect(fromHiddenFromMask(unknownBit)).toEqual([]);
+      expect(fromHiddenFromMask(getSurfaceBit(Surface.People)! | unknownBit)).toEqual([AssetSurface.People]);
+      expect(fromHiddenFromMask(getSurfaceBit(Surface.AlbumContents)!)).toEqual([]);
+    });
+
+    it('should require every internal surface of a user-facing one before reporting it', () => {
+      // Search covers two bits. Half of it set -- reachable only by a hand-written mask -- is not "hidden
+      // from search", and claiming otherwise would let a round-trip through the API silently widen it.
+      expect(fromHiddenFromMask(getSurfaceBit(Surface.Search)!)).toEqual([]);
+      expect(fromHiddenFromMask(getSurfaceBit(Surface.SearchSuggestions)!)).toEqual([]);
+      expect(fromHiddenFromMask(getSurfaceBit(Surface.Search)! | getSurfaceBit(Surface.SearchSuggestions)!)).toEqual([
+        AssetSurface.Search,
+      ]);
     });
   });
 

@@ -1167,6 +1167,33 @@ export const AssetVisibilitySchema = z
   .describe('Asset visibility')
   .meta({ id: 'AssetVisibility' });
 
+/**
+ * A place an individual asset can be withheld from, in the vocabulary a client speaks.
+ *
+ * Deliberately *not* `Surface` from `src/utils/visibility-policy.ts`. That enum has sixteen members
+ * because it names every query the policy layer governs, several of which a user would not recognise as
+ * a place (`albumMetadata`, `searchSuggestions`, `timelineDownload`) and several of which are internal
+ * splits of one screen. Exposing it would freeze those sixteen names into the public API and publish the
+ * bitmask layout with them. This enum is the user-facing subset; the mapping from a member to the
+ * internal surfaces it covers lives next to the policy table, in `ASSET_SURFACE_POLICY`.
+ */
+export enum AssetSurface {
+  /** The main photo timeline. An album's own timeline is unaffected. */
+  Timeline = 'timeline',
+  /** Search results, and the asset's contribution to the search filter suggestion lists. */
+  Search = 'search',
+  /** The library-wide map. An album's own map is unaffected. */
+  Map = 'map',
+  /** The people list and a person's asset count. */
+  People = 'people',
+  /** Memories. */
+  Memories = 'memories',
+  /** The folder view. */
+  Folders = 'folders',
+}
+
+export const AssetSurfaceSchema = z.enum(AssetSurface).describe('Asset surface').meta({ id: 'AssetSurface' });
+
 export enum CronJob {
   LibraryScan = 'LibraryScan',
   NightlyJobs = 'NightlyJobs',
