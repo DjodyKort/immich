@@ -151,6 +151,64 @@ const admitted = (surface: Surface, ctx: PolicyContext): AssetVisibility[] => {
 };
 
 /**
+ * The bit each surface occupies in `asset.hiddenFrom`, the per-asset exclusion mask.
+ *
+ * **These values are persisted in the database. Never renumber them and never reuse a retired bit.**
+ * Adding a surface means taking the next free bit, not reordering. A `Surface` absent from this map simply
+ * cannot be excluded per asset, which is a legitimate choice where that would make no sense.
+ */
+const SURFACE_BIT: Partial<Record<Surface, number>> = {
+  [Surface.Timeline]: 1,
+  [Surface.AlbumTimeline]: 1 << 1,
+  [Surface.Search]: 1 << 2,
+  [Surface.Statistics]: 1 << 3,
+  [Surface.CalendarHeatmap]: 1 << 4,
+  [Surface.AlbumMetadata]: 1 << 5,
+  [Surface.AlbumMap]: 1 << 6,
+  [Surface.GlobalMap]: 1 << 7,
+  [Surface.TimelineDownload]: 1 << 8,
+  [Surface.People]: 1 << 9,
+  [Surface.Memories]: 1 << 10,
+  [Surface.FolderView]: 1 << 11,
+  [Surface.SearchSuggestions]: 1 << 12,
+  [Surface.AlbumContents]: 1 << 13,
+  [Surface.Duplicates]: 1 << 14,
+  [Surface.StackContents]: 1 << 15,
+};
+
+/** The bit for a surface, for callers that set or clear an exclusion. */
+export const getSurfaceBit = (surface: Surface): number | undefined => SURFACE_BIT[surface];
+
+/**
+ * `asset.hiddenFrom` is a nullable bitmask of per-asset, per-surface exclusions, and this is the only
+ * code that reads it.
+ *
+ * Deliberately a separate column rather than a change to `asset.visibility`. `null` means "no
+ * exclusions", which is what every row written by upstream code contains, so the enum keeps its exact
+ * meaning and the roughly 38 sites that exclude values implicitly keep working untouched. The migration is
+ * `ALTER TABLE asset ADD "hiddenFrom" integer` with no default: instant, no rewrite, no backfill.
+ *
+ * This is what finally makes per-*asset* per-surface control possible. The policy table above already
+ * gave per-*surface* rules; a single exclusive enum could never carry "hide this one photo from People
+ * but leave it in Search".
+ */
+const notExcludedPerAsset = <DBT, TB extends keyof DBT & string>(
+  eb: ExpressionBuilder<DBT, TB>,
+  surface: Surface,
+): Expression<SqlBool> => {
+  const bit = SURFACE_BIT[surface];
+  if (bit === undefined) {
+    return eb.lit(true);
+  }
+
+  const asset = asAssetBuilder(eb);
+  return asset.or([
+    asset('asset.hiddenFrom', 'is', null),
+    asset(sql`"asset"."hiddenFrom" & ${sql.lit(bit)}`, '=', sql.lit(0)),
+  ]);
+};
+
+/**
  * Restrict a query to the visibility values `surface` admits for `ctx`.
  *
  * Values are inlined with `sql.lit` rather than bound, matching the helper this replaces, so the
@@ -158,11 +216,13 @@ const admitted = (surface: Surface, ctx: PolicyContext): AssetVisibility[] => {
  * index `asset_id_timeline_notDeleted_idx`.
  */
 export function withSurface<O>(qb: SelectQueryBuilder<DB, 'asset', O>, surface: Surface, ctx: PolicyContext) {
-  return qb.where(
-    'asset.visibility',
-    'in',
-    admitted(surface, ctx).map((visibility) => sql.lit(visibility)),
-  );
+  return qb
+    .where(
+      'asset.visibility',
+      'in',
+      admitted(surface, ctx).map((visibility) => sql.lit(visibility)),
+    )
+    .where((eb) => notExcludedPerAsset(eb, surface));
 }
 
 /**
@@ -180,11 +240,14 @@ export function surfacePredicate<DBT, TB extends keyof DBT & string>(
   surface: Surface,
   ctx: PolicyContext,
 ): Expression<SqlBool> {
-  return asAssetBuilder(eb)(
-    'asset.visibility',
-    'in',
-    admitted(surface, ctx).map((visibility) => sql.lit(visibility)),
-  );
+  return asAssetBuilder(eb).and([
+    asAssetBuilder(eb)(
+      'asset.visibility',
+      'in',
+      admitted(surface, ctx).map((visibility) => sql.lit(visibility)),
+    ),
+    notExcludedPerAsset(eb, surface),
+  ]);
 }
 
 /**

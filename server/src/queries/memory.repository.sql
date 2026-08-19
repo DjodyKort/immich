@@ -40,7 +40,13 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" in ('timeline')
+          and (
+            "asset"."visibility" in ('timeline')
+            and (
+              "asset"."hiddenFrom" is null
+              or "asset"."hiddenFrom" & 1024 = 0
+            )
+          )
           and "asset"."deletedAt" is null
           and not exists (
             select
@@ -79,7 +85,13 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" in ('timeline')
+          and (
+            "asset"."visibility" in ('timeline')
+            and (
+              "asset"."hiddenFrom" is null
+              or "asset"."hiddenFrom" & 1024 = 0
+            )
+          )
           and "asset"."deletedAt" is null
           and not exists (
             select
@@ -127,7 +139,13 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" in ('timeline')
+          and (
+            "asset"."visibility" in ('timeline')
+            and (
+              "asset"."hiddenFrom" is null
+              or "asset"."hiddenFrom" & 1024 = 0
+            )
+          )
           and "asset"."deletedAt" is null
         order by
           "asset"."fileCreatedAt" asc
@@ -160,7 +178,13 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" in ('timeline')
+          and (
+            "asset"."visibility" in ('timeline')
+            and (
+              "asset"."hiddenFrom" is null
+              or "asset"."hiddenFrom" & 1024 = 0
+            )
+          )
           and "asset"."deletedAt" is null
         order by
           "asset"."fileCreatedAt" asc

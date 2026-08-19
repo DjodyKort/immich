@@ -7,7 +7,13 @@ from
   "asset"
 where
   "ownerId" = $2::uuid
-  and "asset"."visibility" in ('timeline')
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      "asset"."hiddenFrom" is null
+      or "asset"."hiddenFrom" & 2048 = 0
+    )
+  )
   and "deletedAt" is null
   and "fileCreatedAt" is not null
   and "fileModifiedAt" is not null
@@ -24,7 +30,13 @@ from
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
   "ownerId" = $1::uuid
-  and "asset"."visibility" in ('timeline')
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      "asset"."hiddenFrom" is null
+      or "asset"."hiddenFrom" & 2048 = 0
+    )
+  )
   and "deletedAt" is null
   and "fileCreatedAt" is not null
   and "fileModifiedAt" is not null

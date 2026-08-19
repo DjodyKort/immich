@@ -53,7 +53,13 @@ select
         where
           "asset"."deletedAt" is null
           and "asset"."stackId" = "stack"."id"
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and (
+              "asset"."hiddenFrom" is null
+              or "asset"."hiddenFrom" & 32768 = 0
+            )
+          )
       ) as agg
   ) as "assets"
 from
@@ -138,7 +144,13 @@ select
         where
           "asset"."deletedAt" is null
           and "asset"."stackId" = "stack"."id"
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and (
+              "asset"."hiddenFrom" is null
+              or "asset"."hiddenFrom" & 32768 = 0
+            )
+          )
       ) as agg
   ) as "assets"
 from

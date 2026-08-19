@@ -77,7 +77,13 @@ select
         where
           "album_asset"."albumId" = "album"."id"
           and "asset"."deletedAt" is null
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and (
+              "asset"."hiddenFrom" is null
+              or "asset"."hiddenFrom" & 8192 = 0
+            )
+          )
         order by
           "asset"."fileCreatedAt" desc
       ) as "asset"
@@ -180,6 +186,10 @@ from
   inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
 where
   "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."hiddenFrom" is null
+    or "asset"."hiddenFrom" & 32 = 0
+  )
   and "album_asset"."albumId" in ($1)
   and "asset"."deletedAt" is null
 group by
@@ -454,7 +464,13 @@ select
         where
           "album_asset"."albumId" = "album"."id"
           and "asset"."deletedAt" is null
-          and "asset"."visibility" in ('archive', 'timeline')
+          and (
+            "asset"."visibility" in ('archive', 'timeline')
+            and (
+              "asset"."hiddenFrom" is null
+              or "asset"."hiddenFrom" & 8192 = 0
+            )
+          )
         order by
           "asset"."fileCreatedAt" desc
       ) as "asset"

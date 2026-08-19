@@ -137,6 +137,18 @@ export class AssetTable {
   @Column({ enum: asset_visibility_enum, default: AssetVisibility.Timeline })
   visibility!: Generated<AssetVisibility>;
 
+  /**
+   * Per-asset, per-surface exclusions, as a bitmask of `Surface` bits. See
+   * `src/utils/visibility-policy.ts`, which is the only code that reads it.
+   *
+   * Deliberately nullable with no default and deliberately separate from `visibility`. `null` means "no
+   * per-asset exclusions", so every row written by upstream code behaves exactly as upstream intends and
+   * the enum keeps its meaning. That keeps the ~38 call sites that exclude values implicitly working
+   * untouched, and keeps upstream changes merging cleanly.
+   */
+  @Column({ type: 'integer', nullable: true })
+  hiddenFrom!: number | null;
+
   @Column({ type: 'integer', nullable: true })
   width!: number | null;
 
