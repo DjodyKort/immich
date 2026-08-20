@@ -218,16 +218,33 @@ export class AlbumRepository {
   @GenerateSql({ params: [DummyValue.UUID, { isOwned: true, isShared: true }] })
   getAll(
     ownerId: string,
-    options: { id?: string; isOwned?: boolean; isShared?: boolean; name?: string } = {},
+    options: {
+      id?: string;
+      isOwned?: boolean;
+      isShared?: boolean;
+      name?: string;
+      /** `true` lists only hidden albums, the review view. Otherwise they are left out. */
+      hidden?: boolean;
+      /** Whether the session has unlocked. Locked albums are invisible until it has. */
+      elevated?: boolean;
+    } = {},
   ): Promise<MapAlbumDto[]> {
-    return this.buildAlbumBaseQuery(ownerId, options)
-      .selectAll('album')
-      .select(withAlbumUsers(ownerId))
-      .select(withSharedLink)
-      .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
-      .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
-      .orderBy('album.createdAt', 'desc')
-      .execute();
+    return (
+      this.buildAlbumBaseQuery(ownerId, options)
+        .selectAll('album')
+        .select(withAlbumUsers(ownerId))
+        .select(withSharedLink)
+        .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
+        .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
+        // Hidden albums are either the whole point of the request or excluded from it, never mixed in.
+        .$if(options.hidden === true, (qb) => qb.where('album.isHidden', '=', true))
+        .$if(options.hidden !== true, (qb) => qb.where('album.isHidden', '=', false))
+        // A locked album is invisible, by name and all, until the session unlocks. Applied to the hidden
+        // listing too: "show me my hidden albums" must not become a way to enumerate the locked ones.
+        .$if(!options.elevated, (qb) => qb.where('album.isLocked', '=', false))
+        .orderBy('album.createdAt', 'desc')
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { isOwned: true, isShared: true }] })

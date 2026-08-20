@@ -97,6 +97,10 @@ const UpdateAlbumSchema = z
     albumThumbnailAssetId: z.uuidv4().optional().describe('Album thumbnail asset ID'),
     isActivityEnabled: z.boolean().optional().describe('Enable activity feed'),
     order: AssetOrderSchema.optional(),
+    // Toggleable after creation, unlike isLocked, which can only be set at creation time because a
+    // locked album may only ever contain already-locked assets. Hiding carries no such invariant: it
+    // is about the album list, not about confidentiality, so it can be turned on and off freely.
+    isHidden: z.boolean().optional().describe('Keep this album out of the album list'),
   })
   .meta({ id: 'UpdateAlbumDto' });
 
@@ -111,6 +115,10 @@ const GetAlbumsSchema = z
       .optional()
       .describe('Filter by shared status: true = only shared, false = not shared, undefined = no filter'),
     assetId: z.uuidv4().optional().describe('Filter albums containing this asset ID (ignores other parameters)'),
+    hidden: z
+      .boolean()
+      .optional()
+      .describe('true lists only hidden albums, the review view for album hiding. Omitted or false leaves them out.'),
   })
   .meta({ id: 'GetAlbumsDto' });
 
@@ -184,6 +192,7 @@ export const AlbumResponseSchema = z
     endDate: z.string().meta({ format: 'date-time' }).optional().describe('End date (latest asset)'),
     isActivityEnabled: z.boolean().describe('Activity feed enabled'),
     isLocked: z.boolean().describe('Album is locked and requires PIN elevation to view'),
+    isHidden: z.boolean().describe('Album is kept out of the album list, but remains reachable by URL'),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
   })
@@ -226,6 +235,7 @@ export type MapAlbumDto = {
   id: string;
   isActivityEnabled: boolean;
   isLocked: boolean;
+  isHidden: boolean;
   order: AssetOrder;
 };
 
@@ -270,6 +280,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     assetCount: entity.assets?.length || 0,
     isActivityEnabled: entity.isActivityEnabled,
     isLocked: entity.isLocked,
+    isHidden: entity.isHidden,
     order: entity.order,
   };
 };

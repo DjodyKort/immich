@@ -66,7 +66,11 @@ describe(AlbumService.name, () => {
       expect(result).toHaveLength(2);
       expect(result[0].id).toEqual(album.id);
       expect(result[1].id).toEqual(sharedWithUserAlbum.id);
-      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { isOwned: undefined, isShared: undefined });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, {
+        isOwned: undefined,
+        isShared: undefined,
+        elevated: false,
+      });
     });
 
     it('gets list of albums that have a specific asset', async () => {
@@ -170,7 +174,7 @@ describe(AlbumService.name, () => {
 
       const result = await sut.getAll(AuthFactory.create(owner), { isOwned: true, isShared: true });
       expect(result).toHaveLength(1);
-      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { isOwned: true, isShared: true });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { isOwned: true, isShared: true, elevated: false });
     });
 
     it('returns empty list when isOwned=false and isShared=false', async () => {
@@ -180,7 +184,7 @@ describe(AlbumService.name, () => {
 
       const result = await sut.getAll(AuthFactory.create(owner), { isOwned: false, isShared: false });
       expect(result).toHaveLength(0);
-      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { isOwned: false, isShared: false });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { isOwned: false, isShared: false, elevated: false });
     });
   });
 

@@ -2025,6 +2025,15 @@
             }
           },
           {
+            "name": "hidden",
+            "required": false,
+            "in": "query",
+            "description": "true lists only hidden albums, the review view for album hiding. Omitted or false leaves them out.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "id",
             "required": false,
             "in": "query",
@@ -16830,6 +16839,10 @@
             "description": "Activity feed enabled",
             "type": "boolean"
           },
+          "isHidden": {
+            "description": "Album is kept out of the album list, but remains reachable by URL",
+            "type": "boolean"
+          },
           "isLocked": {
             "description": "Album is locked and requires PIN elevation to view",
             "type": "boolean"
@@ -16867,6 +16880,7 @@
           "hasSharedLink",
           "id",
           "isActivityEnabled",
+          "isHidden",
           "isLocked",
           "shared",
           "updatedAt"
@@ -27423,6 +27437,10 @@
           },
           "isActivityEnabled": {
             "description": "Enable activity feed",
+            "type": "boolean"
+          },
+          "isHidden": {
+            "description": "Keep this album out of the album list",
             "type": "boolean"
           },
           "order": {

@@ -48,6 +48,16 @@ export class AlbumTable {
   @Column({ type: 'boolean', default: false })
   isLocked!: Generated<boolean>;
 
+  /**
+   * Kept out of the album list, without being locked.
+   *
+   * Separate from `isLocked` on purpose: locking is about confidentiality and costs a PIN to undo,
+   * while this is only about tidiness. A hidden album stays reachable by its own URL, from an asset's
+   * "in albums" list, and through the hidden-albums listing, so hiding one is never a way to lose it.
+   */
+  @Column({ type: 'boolean', default: false })
+  isHidden!: Generated<boolean>;
+
   @Column({ default: AssetOrder.Desc })
   order!: Generated<AssetOrder>;
 
