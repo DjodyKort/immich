@@ -2953,6 +2953,8 @@ export type SyncAlbumV2 = {
     id: string;
     /** Is activity enabled */
     isActivityEnabled: boolean;
+    /** Album is kept out of the album list, but remains reachable directly */
+    isHidden: boolean;
     /** Album is locked and requires PIN elevation to view */
     isLocked: boolean;
     /** Album name */

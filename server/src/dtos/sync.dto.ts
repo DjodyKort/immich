@@ -247,6 +247,7 @@ const SyncAlbumV2Schema = z
     thumbnailAssetId: z.string().nullable().describe('Thumbnail asset ID'),
     isActivityEnabled: z.boolean().describe('Is activity enabled'),
     isLocked: z.boolean().describe('Album is locked and requires PIN elevation to view'),
+    isHidden: z.boolean().describe('Album is kept out of the album list, but remains reachable directly'),
     order: AssetOrderSchema,
   })
   .meta({ id: 'SyncAlbumV2' });

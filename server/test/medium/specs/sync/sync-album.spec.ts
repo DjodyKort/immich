@@ -232,3 +232,52 @@ describe(SyncRequestType.AlbumsV1, () => {
     });
   });
 });
+
+describe(SyncRequestType.AlbumsV2, () => {
+  // The V1 assertions above all use `objectContaining`, so a field silently missing from the V2
+  // payload breaks nothing here and shows up only as a client that thinks every album is unlocked and
+  // unhidden. `isLocked` and `isHidden` are selected in the repository and declared in the DTO
+  // separately, so the two can drift apart; these pin the whole path from column to stream.
+  it('should carry isLocked and isHidden through to the stream', async () => {
+    const { auth, ctx } = await setup();
+    const { album: plain } = await ctx.newAlbum({ ownerId: auth.user.id });
+    const { album: locked } = await ctx.newAlbum({ ownerId: auth.user.id, isLocked: true });
+    const { album: hidden } = await ctx.newAlbum({ ownerId: auth.user.id, isHidden: true });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumsV2]);
+    const flags = Object.fromEntries(
+      response
+        .filter((item) => item.type === SyncEntityType.AlbumV2)
+        .map((item) => {
+          const data = item.data as { id: string; isLocked: boolean; isHidden: boolean };
+          return [data.id, { isLocked: data.isLocked, isHidden: data.isHidden }];
+        }),
+    );
+
+    expect(flags).toEqual({
+      [plain.id]: { isLocked: false, isHidden: false },
+      [locked.id]: { isLocked: true, isHidden: false },
+      [hidden.id]: { isLocked: false, isHidden: true },
+    });
+  });
+
+  it('should carry a change to isHidden through on a later sync', async () => {
+    const { auth, ctx } = await setup();
+    const albumRepo = ctx.get(AlbumRepository);
+    const { album } = await ctx.newAlbum({ ownerId: auth.user.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumsV2]);
+    expect(response).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ id: album.id, isHidden: false }) }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+    await ctx.syncAckAll(auth, response);
+
+    await albumRepo.update(album.id, { isHidden: true }, auth.user.id);
+    const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumsV2]);
+    expect(newResponse).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ id: album.id, isHidden: true }) }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+  });
+});
