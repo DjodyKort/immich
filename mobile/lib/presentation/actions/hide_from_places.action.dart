@@ -14,13 +14,14 @@ import 'package:immich_mobile/widgets/common/hide_from_places_picker.dart';
 
 /// Exactly one owned asset, and only when hiding it from somewhere could actually change anything.
 ///
-/// A locked or trashed asset is already withheld from all six places by its own state, so every switch would
-/// be a no-op; the web client withholds the action for the same reason. Restricted to a single asset because
-/// the set replaces rather than merges: applied to a mixed selection it would silently discard whatever the
-/// other assets are already withheld from.
+/// Locked assets are included: the locked folder is the timeline with visibility pinned to locked, so the
+/// timeline switch decides whether a locked photo shows up there while leaving it in its locked albums.
+/// Trashed assets are not, because trash is deliberately the one view no mask can reach. Restricted to a
+/// single asset because the set replaces rather than merges: applied to a mixed selection it would silently
+/// discard whatever the other assets are already withheld from.
 final _stateProvider = Provider.family.autoDispose<String?, ActionSource>((ref, source) {
   final asset = ref.watch(ownedAssetsActionProvider(source)).singleOrNull;
-  if (asset == null || asset.isLocked || asset.isTrashed) {
+  if (asset == null || asset.isTrashed) {
     return null;
   }
 

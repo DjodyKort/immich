@@ -397,9 +397,19 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     joinLocal: true,
   );
 
+  /// Takes the `timeline` bit, because the locked folder *is* the timeline with visibility pinned to
+  /// locked - the server's locked-folder buckets are `getTimeBuckets({visibility: locked})`, which
+  /// resolves to `Surface.Timeline` and applies the same mask. Leaving it unmasked here, as this used
+  /// to, meant a photo hidden from the locked folder on the web still showed up on the phone.
+  ///
+  /// Its locked *albums* stay unmasked, so "hidden from the locked folder, still in my locked album"
+  /// means the same thing on both clients.
   TimelineQuery locked(String userId, GroupAssetsBy groupBy) => _remoteQueryBuilder(
     filter: (row) =>
-        row.deletedAt.isNull() & row.visibility.equalsValue(AssetVisibility.locked) & row.ownerId.equals(userId),
+        row.deletedAt.isNull() &
+        row.visibility.equalsValue(AssetVisibility.locked) &
+        row.ownerId.equals(userId) &
+        VisibilityPolicy.notHiddenFrom(row, AssetSurface.timeline),
     origin: TimelineOrigin.lockedFolder,
     groupBy: groupBy,
   );
