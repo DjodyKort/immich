@@ -70,6 +70,7 @@ describe('visibility policy', () => {
       [Surface.AlbumContents, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
       [Surface.Duplicates, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
       [Surface.StackContents, [AssetVisibility.Archive, AssetVisibility.Timeline], []],
+      [Surface.HiddenReview, [AssetVisibility.Archive, AssetVisibility.Timeline], [AssetVisibility.Locked]],
     ];
 
     it.each(RULES)('%s admits the documented set', (surface, base, elevatedAdds) => {
@@ -163,6 +164,8 @@ describe('visibility policy', () => {
         [Surface.AlbumContents, 8192],
         [Surface.Duplicates, 16_384],
         [Surface.StackContents, 32_768],
+        // No bit, on purpose: this is the review view for hiding, so hiding must not reach it.
+        [Surface.HiddenReview, undefined],
       ]);
     });
   });

@@ -14366,6 +14366,15 @@
             }
           },
           {
+            "name": "hidden",
+            "required": false,
+            "in": "query",
+            "description": "Return only assets that are hidden from at least one surface. This is the review view for per-asset hiding, and the one list that cannot itself be hidden from, so hiding an asset everywhere else can never leave it unreachable.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "isFavorite",
             "required": false,
             "in": "query",
@@ -14562,6 +14571,15 @@
             "schema": {
               "example": "11.075683,49.416711,11.117589,49.454875",
               "type": "string"
+            }
+          },
+          {
+            "name": "hidden",
+            "required": false,
+            "in": "query",
+            "description": "Return only assets that are hidden from at least one surface. This is the review view for per-asset hiding, and the one list that cannot itself be hidden from, so hiding an asset everywhere else can never leave it unreachable.",
+            "schema": {
+              "type": "boolean"
             }
           },
           {

@@ -68,6 +68,19 @@ export enum Surface {
   Duplicates = 'duplicates',
   /** A stack's member assets, as returned by stack read, create, and update. */
   StackContents = 'stackContents',
+  /**
+   * The review view for per-asset hiding: everything with a `hiddenFrom` mask set, in one place.
+   *
+   * Deliberately **absent from `SURFACE_BIT`**, for the same reason as `Trash`. Every other surface can
+   * be hidden from, so hiding an asset from all six user-facing surfaces would otherwise leave it
+   * reachable only by knowing its id - the file is safe, but the person cannot find it. This surface is
+   * the one route that always applies, so hiding can never be a one-way door. If it ever gains a bit,
+   * that guarantee is gone.
+   *
+   * It admits locked assets only on elevation, like search and album surfaces do: a hidden locked photo
+   * must not surface here to a session that has not unlocked.
+   */
+  HiddenReview = 'hiddenReview',
 }
 
 type SurfaceRule = {
@@ -115,6 +128,9 @@ const POLICY: Record<Surface, SurfaceRule> = {
   [Surface.AlbumContents]: { base: [Archive, Timeline], elevatedAdds: [] },
   [Surface.Duplicates]: { base: [Archive, Timeline], elevatedAdds: [] },
   [Surface.StackContents]: { base: [Archive, Timeline], elevatedAdds: [] },
+  // Widens on elevation like search does: a hidden locked photo belongs in this list, but only once the
+  // session has unlocked, or the review view would become a way to enumerate the locked folder.
+  [Surface.HiddenReview]: { base: [Archive, Timeline], elevatedAdds: [Locked] },
 };
 
 /**
