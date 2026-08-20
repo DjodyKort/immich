@@ -141,6 +141,69 @@ void main() {
     });
   });
 
+  group('hidden assets view', () {
+    test('shows only assets withheld from at least one surface', () async {
+      final user = await ctx.newUser();
+      await ctx.newRemoteAsset(ownerId: user.id);
+      final hidden = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline]);
+
+      final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
+      expect(assets.map((asset) => (asset as RemoteAsset).id), [hidden.id]);
+
+      final buckets = await sut.hidden(user.id, .day).bucketSource().first;
+      expect(buckets.fold<int>(0, (sum, bucket) => sum + bucket.assetCount), 1);
+    });
+
+    test('is not itself filtered by the hiddenFrom mask', () async {
+      // Every other query subtracts an asset withheld from its own surface. This view must not, or a
+      // photo hidden from every surface would disappear from the one place that guarantees it stays
+      // findable.
+      final user = await ctx.newUser();
+      final hidden = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: AssetSurface.values);
+
+      final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
+      expect(assets.map((asset) => (asset as RemoteAsset).id), [hidden.id]);
+    });
+
+    test('excludes a locked asset even when it is also withheld from a surface', () async {
+      // This view has no PIN gate of its own, unlike the locked folder, so a locked asset must not
+      // surface here regardless of its hiddenFrom mask.
+      final user = await ctx.newUser();
+      await ctx.newRemoteAsset(
+        ownerId: user.id,
+        visibility: AssetVisibility.locked,
+        hiddenFrom: const [AssetSurface.timeline],
+      );
+
+      final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
+      expect(assets, isEmpty);
+    });
+
+    test('excludes a hidden-and-trashed asset, findable through trash instead', () async {
+      final user = await ctx.newUser();
+      await ctx.newRemoteAsset(
+        ownerId: user.id,
+        hiddenFrom: const [AssetSurface.timeline],
+        deletedAt: DateTime(2026),
+      );
+
+      final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
+      expect(assets, isEmpty);
+    });
+
+    test('admits an archived asset that is withheld from a surface', () async {
+      final user = await ctx.newUser();
+      final asset = await ctx.newRemoteAsset(
+        ownerId: user.id,
+        visibility: AssetVisibility.archive,
+        hiddenFrom: const [AssetSurface.folders],
+      );
+
+      final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
+      expect(assets.map((item) => (item as RemoteAsset).id), [asset.id]);
+    });
+  });
+
   group('person assets', () {
     test('does not duplicate an asset that has multiple face records for the same person', () async {
       // Regression check for #26723: an INNER JOIN between remote_asset_entity and asset_face_entity

@@ -173,6 +173,10 @@ enum ActionButtonType {
             context.timelineOrigin != TimelineOrigin.lockedFolder &&
             context.timelineOrigin != TimelineOrigin.archive &&
             context.timelineOrigin != TimelineOrigin.localAlbum &&
+            // A hidden asset can be withheld from the timeline surface itself, in which case jumping
+            // there would land on nothing; excluded here for the same reason archive and the locked
+            // folder are, rather than trying to special-case the subset that would actually resolve.
+            context.timelineOrigin != TimelineOrigin.hidden &&
             context.isOwner,
       ActionButtonType.cast => context.isCasting || context.asset.hasRemote,
       ActionButtonType.slideshow => true,

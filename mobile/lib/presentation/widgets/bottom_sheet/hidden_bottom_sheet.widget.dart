@@ -1,0 +1,92 @@
+import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/constants/enums.dart';
+import 'package:immich_mobile/domain/models/album/album.model.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
+import 'package:immich_mobile/presentation/actions/action.widget.dart';
+import 'package:immich_mobile/presentation/actions/asset_debug.action.dart';
+import 'package:immich_mobile/presentation/actions/delete.action.dart';
+import 'package:immich_mobile/presentation/actions/download.action.dart';
+import 'package:immich_mobile/presentation/actions/favorite.action.dart';
+import 'package:immich_mobile/presentation/actions/hide_from_places.action.dart';
+import 'package:immich_mobile/presentation/actions/share.action.dart';
+import 'package:immich_mobile/presentation/widgets/album/album_selector.widget.dart';
+import 'package:immich_mobile/presentation/widgets/bottom_sheet/base_bottom_sheet.widget.dart';
+import 'package:immich_mobile/providers/infrastructure/action.provider.dart';
+import 'package:immich_mobile/widgets/common/immich_toast.dart';
+
+/// The Hidden view's bottom sheet. Deliberately no Archive or Lock action here: either would move the
+/// asset to a visibility this view does not admit (`server/src/utils/visibility-policy.ts`'s
+/// `Surface.HiddenReview` excludes `locked` unless elevated, and this view has no elevation of its own),
+/// so the asset would vanish from the grid mid-selection without its `hiddenFrom` mask - the only thing
+/// that actually decides membership here - having changed. [HideFromPlacesAction] stays: it is the one
+/// action that edits the very mask this view is keyed on, so a photo can be un-hidden from the place you
+/// go to find it.
+class HiddenBottomSheet extends ConsumerStatefulWidget {
+  const HiddenBottomSheet({super.key});
+
+  @override
+  ConsumerState<HiddenBottomSheet> createState() => _HiddenBottomSheetState();
+}
+
+class _HiddenBottomSheetState extends ConsumerState<HiddenBottomSheet> {
+  late final DraggableScrollableController sheetController;
+
+  @override
+  void initState() {
+    super.initState();
+    sheetController = DraggableScrollableController();
+  }
+
+  @override
+  void dispose() {
+    sheetController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Future<void> addToAlbum(RemoteAlbum album) async {
+      final result = await ref.read(actionProvider.notifier).addToAlbum(ActionSource.timeline, album);
+
+      if (!context.mounted) {
+        return;
+      }
+
+      if (!result.success) {
+        ImmichToast.show(context: context, msg: context.t.scaffold_body_error_occurred, toastType: ToastType.error);
+        return;
+      }
+
+      ImmichToast.show(
+        context: context,
+        msg: result.count == 0
+            ? context.t.add_to_album_bottom_sheet_already_exists(album: album.name)
+            : context.t.add_to_album_bottom_sheet_added(album: album.name),
+      );
+    }
+
+    Future<void> onKeyboardExpand() {
+      return sheetController.animateTo(0.85, duration: const Duration(milliseconds: 200), curve: Curves.easeInOut);
+    }
+
+    return BaseBottomSheet(
+      controller: sheetController,
+      initialChildSize: 0.25,
+      maxChildSize: 0.85,
+      shouldCloseOnMinExtent: false,
+      actions: const <ActionColumnButton>[
+        .new(action: AssetDebugAction(source: .timeline)),
+        .new(action: ShareAction(source: .timeline)),
+        .new(action: HideFromPlacesAction(source: .timeline)),
+        .new(action: FavoriteAction(source: .timeline)),
+        .new(action: DownloadAction(source: .timeline)),
+        .new(action: DeleteAction(source: .timeline)),
+      ],
+      slivers: [
+        const AddToAlbumHeader(),
+        AlbumSelector(onAlbumSelected: addToAlbum, onKeyboardExpanded: onKeyboardExpand),
+      ],
+    );
+  }
+}
