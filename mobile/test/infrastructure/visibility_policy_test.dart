@@ -1,5 +1,10 @@
+import 'package:drift/drift.dart' hide isNull;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/infrastructure/entities/remote_album.entity.drift.dart';
+import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
 import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
 void main() {
@@ -75,6 +80,74 @@ void main() {
     test('ignores a bit it does not know, rather than throwing', () {
       // A newer build of the app writes a bit, the user downgrades. Reading must still work.
       expect(VisibilityPolicy.namesFor(1 | 1 << 20), [AssetSurface.timeline]);
+    });
+  });
+
+  group('albumListing', () {
+    late Drift db;
+
+    setUp(() {
+      db = Drift(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    Future<void> insertAlbum(String id, {bool isHidden = false, bool isLocked = false}) {
+      return db
+          .into(db.remoteAlbumEntity)
+          .insert(
+            RemoteAlbumEntityCompanion.insert(
+              id: id,
+              name: 'album_$id',
+              order: AlbumAssetOrder.asc,
+              isHidden: Value(isHidden),
+              isLocked: Value(isLocked),
+            ),
+          );
+    }
+
+    Future<Set<String>> idsMatching({required bool isElevated, bool hidden = false}) async {
+      final rows = await (db.remoteAlbumEntity.select()
+            ..where((album) => VisibilityPolicy.albumListing(album, isElevated: isElevated, hidden: hidden)))
+          .get();
+      return rows.map((row) => row.id).toSet();
+    }
+
+    // Mirrors the server's two-state `hidden` option in `album.repository.ts`: hidden albums are
+    // either the whole point of the request or excluded from it, never mixed in.
+    test('default listing (hidden: false) excludes hidden albums', () async {
+      await insertAlbum('shown');
+      await insertAlbum('hidden', isHidden: true);
+
+      expect(await idsMatching(isElevated: false), {'shown'});
+    });
+
+    test('hidden listing (hidden: true) includes only hidden albums', () async {
+      await insertAlbum('shown');
+      await insertAlbum('hidden', isHidden: true);
+
+      expect(await idsMatching(isElevated: false, hidden: true), {'hidden'});
+    });
+
+    // Locking still wins when elevation is absent, exactly like before this method also considered
+    // isHidden: the hidden review list must not become a way to enumerate locked albums.
+    test('excludes a hidden AND locked album from the hidden listing when not elevated', () async {
+      await insertAlbum('hidden-and-locked', isHidden: true, isLocked: true);
+
+      expect(await idsMatching(isElevated: false, hidden: true), isEmpty);
+      expect(await idsMatching(isElevated: true, hidden: true), {'hidden-and-locked'});
+    });
+
+    // The locked clause is only added when unelevated; an elevated hidden listing must still respect
+    // isHidden, since hidden and locked are unrelated, independent flags.
+    test('an elevated session still only sees hidden albums when hidden is requested', () async {
+      await insertAlbum('shown');
+      await insertAlbum('hidden', isHidden: true);
+
+      expect(await idsMatching(isElevated: true, hidden: true), {'hidden'});
+      expect(await idsMatching(isElevated: true, hidden: false), {'shown'});
     });
   });
 }

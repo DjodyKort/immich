@@ -26,6 +26,12 @@ class RemoteAlbumEntity extends Table with DriftDefaultsMixin {
   /// dropped on ingest and a locked album arrives looking ordinary.
   BoolColumn get isLocked => boolean().withDefault(const Constant(false))();
 
+  /// Mirrors `album.isHidden` from sync. A hidden album is kept out of the album list for tidiness,
+  /// not confidentiality — separate from locking, which is about confidentiality. It stays fully
+  /// reachable by its own route, from an asset's album list, and from the hidden albums section, so
+  /// hiding can never lose an album.
+  BoolColumn get isHidden => boolean().withDefault(const Constant(false))();
+
   IntColumn get order => intEnum<AlbumAssetOrder>()();
 
   @override

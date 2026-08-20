@@ -507,6 +507,7 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
             description: Value(album.description),
             isActivityEnabled: Value(album.isActivityEnabled),
             isLocked: Value(album.isLocked),
+            isHidden: Value(album.isHidden),
             order: Value(album.order.toAlbumAssetOrder()),
             thumbnailAssetId: Value(album.thumbnailAssetId),
             createdAt: Value(album.createdAt),

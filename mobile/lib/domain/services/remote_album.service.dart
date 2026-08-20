@@ -55,9 +55,9 @@ class RemoteAlbumService {
     return _repository.watchAlbum(albumId);
   }
 
-  /// See [DriftRemoteAlbumRepository.getAll] for what [isElevated] gates.
-  Future<List<RemoteAlbum>> getAll({bool isElevated = false}) {
-    return _repository.getAll(isElevated: isElevated);
+  /// See [DriftRemoteAlbumRepository.getAll] for what [isElevated] and [hidden] gate.
+  Future<List<RemoteAlbum>> getAll({bool isElevated = false, bool hidden = false}) {
+    return _repository.getAll(isElevated: isElevated, hidden: hidden);
   }
 
   Future<RemoteAlbum?> get(String albumId) {
@@ -307,6 +307,12 @@ class RemoteAlbumService {
     await _albumApiRepository.setActivityStatus(albumId, enabled);
 
     return _repository.setActivityStatus(albumId, enabled);
+  }
+
+  Future<void> setHidden(String albumId, bool isHidden) async {
+    await _albumApiRepository.setHidden(albumId, isHidden);
+
+    return _repository.setHidden(albumId, isHidden);
   }
 
   Future<int> getCount() {

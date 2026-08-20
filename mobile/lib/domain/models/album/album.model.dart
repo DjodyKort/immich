@@ -28,6 +28,10 @@ abstract class RemoteAlbum with _$RemoteAlbum {
     required DateTime updatedAt,
     String? thumbnailAssetId,
     required bool isActivityEnabled,
+    // Unlike `isLocked` — which is only ever a query filter and never displayed, so it stays off this
+    // model — `isHidden` is shown as a switch on the album options screen and needs its current value,
+    // the same reason `isActivityEnabled` is here. Follow that precedent, not `isLocked`'s.
+    required bool isHidden,
     required AlbumAssetOrder order,
     required int assetCount,
     required String ownerName,

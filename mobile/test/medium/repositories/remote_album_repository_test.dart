@@ -109,6 +109,54 @@ void main() {
       expect(albums.map((album) => album.id), containsAll([normal.id, locked.id]));
       expect(albums, hasLength(2));
     });
+
+    // Mirrors the server's two-state `hidden` filter: a listing either shows only hidden albums or
+    // only non-hidden ones, never a mix, so the default listing and the hidden listing are disjoint.
+    test('excludes hidden albums from the default listing', () async {
+      final user = await ctx.newUser();
+      final shown = await ctx.newRemoteAlbum(ownerId: user.id);
+      await ctx.newRemoteAlbum(ownerId: user.id, isHidden: true);
+
+      final albums = await sut.getAll();
+
+      expect(albums.map((album) => album.id), [shown.id]);
+    });
+
+    test('includes only hidden albums when hidden is requested', () async {
+      final user = await ctx.newUser();
+      await ctx.newRemoteAlbum(ownerId: user.id);
+      final hidden = await ctx.newRemoteAlbum(ownerId: user.id, isHidden: true);
+
+      final albums = await sut.getAll(hidden: true);
+
+      expect(albums.map((album) => album.id), [hidden.id]);
+    });
+
+    test('the default listing and the hidden listing are disjoint', () async {
+      final user = await ctx.newUser();
+      final shown = await ctx.newRemoteAlbum(ownerId: user.id);
+      final hidden = await ctx.newRemoteAlbum(ownerId: user.id, isHidden: true);
+
+      final defaultIds = (await sut.getAll()).map((album) => album.id).toSet();
+      final hiddenIds = (await sut.getAll(hidden: true)).map((album) => album.id).toSet();
+
+      expect(defaultIds, {shown.id});
+      expect(hiddenIds, {hidden.id});
+      expect(defaultIds.intersection(hiddenIds), isEmpty);
+    });
+
+    // Locking wins: asking for the hidden review list must not become a way to enumerate albums that
+    // are also locked, mirroring the server's `album.repository.ts` comment on the same query.
+    test('excludes a hidden AND locked album from the hidden listing when not elevated', () async {
+      final user = await ctx.newUser();
+      final hiddenAndLocked = await ctx.newRemoteAlbum(ownerId: user.id, isHidden: true, isLocked: true);
+
+      final unelevated = await sut.getAll(hidden: true);
+      final elevated = await sut.getAll(hidden: true, isElevated: true);
+
+      expect(unelevated.map((album) => album.id), isNot(contains(hiddenAndLocked.id)));
+      expect(elevated.map((album) => album.id), contains(hiddenAndLocked.id));
+    });
   });
 
   group('get', () {
