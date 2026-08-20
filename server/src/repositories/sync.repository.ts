@@ -183,6 +183,7 @@ class AlbumSync extends BaseSync {
         'album.albumThumbnailAssetId as thumbnailAssetId',
         'album.isActivityEnabled',
         'album.isLocked',
+        'album.isHidden',
         'album.order',
         'album.updateId',
       ])

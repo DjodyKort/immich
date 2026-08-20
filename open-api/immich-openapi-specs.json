@@ -24288,6 +24288,10 @@
             "description": "Is activity enabled",
             "type": "boolean"
           },
+          "isHidden": {
+            "description": "Album is kept out of the album list, but remains reachable directly",
+            "type": "boolean"
+          },
           "isLocked": {
             "description": "Album is locked and requires PIN elevation to view",
             "type": "boolean"
@@ -24317,6 +24321,7 @@
           "description",
           "id",
           "isActivityEnabled",
+          "isHidden",
           "isLocked",
           "name",
           "order",

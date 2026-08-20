@@ -34,11 +34,18 @@ final Map<String, Map<String, Object?>> openApiPatches = {
     'minFaces': 3,
   },
   'UserResponseDto': {'profileChangedAt': _now},
-  'AssetResponseDto': {'visibility': 'timeline', 'createdAt': _now, 'isEdited': false},
+  // hiddenFrom is fork-added and required, so a server that predates it sends nothing and the
+  // generated model's required-key assertion throws. An empty list is the correct default: it means
+  // "withheld from nowhere", which is exactly what a server without the feature implies.
+  'AssetResponseDto': {'visibility': 'timeline', 'createdAt': _now, 'isEdited': false, 'hiddenFrom': <String>[]},
   'UserAdminResponseDto': {'profileChangedAt': _now},
   'LoginResponseDto': {'isOnboarded': false},
+  'AlbumResponseDto': {'isLocked': false, 'isHidden': false},
   'SyncUserV1': {'profileChangedAt': _now, 'hasProfileImage': false},
   'SyncAssetV1': {'isEdited': false},
+  // The coverage check only walks DTOs reachable from a response body, so it never sees the sync
+  // entities even though `SyncAlbumV2.fromJson` deserializes them off the stream. Patch them by hand.
+  'SyncAlbumV2': {'isLocked': false, 'isHidden': false},
   'ServerFeaturesDto': {'ocr': false, 'realtimeTranscoding': false},
   'MemoriesResponse': {'duration': 5},
   'WorkflowResponseDto': {'logging': false},
