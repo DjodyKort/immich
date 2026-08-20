@@ -469,20 +469,16 @@
           "hide": {
             "title": "Hide from",
             "description": "Places the asset should be withheld from",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": ["timeline", "search", "map", "people", "memories", "folders"]
-            }
+            "type": "string",
+            "array": true,
+            "enum": ["timeline", "search", "map", "people", "memories", "folders"]
           },
           "show": {
             "title": "Show in",
             "description": "Places the asset should be shown in again, undoing an earlier exclusion",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": ["timeline", "search", "map", "people", "memories", "folders"]
-            }
+            "type": "string",
+            "array": true,
+            "enum": ["timeline", "search", "map", "people", "memories", "folders"]
           }
         }
       }
