@@ -20,6 +20,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -37,9 +39,10 @@ from
 where
   "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 4 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 4 = 0
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -62,9 +65,10 @@ from
 where
   "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 4 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 4 = 0
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -91,6 +95,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -108,9 +114,10 @@ from
 where
   "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 4 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 4 = 0
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -141,6 +148,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -159,9 +168,10 @@ from
 where
   "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 4 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 4 = 0
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -196,6 +206,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -214,9 +226,10 @@ from
 where
   "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 4 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 4 = 0
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -309,9 +322,10 @@ with recursive
         and (
           "asset"."visibility" in ('timeline')
           and (
-            "asset"."hiddenFrom" is null
-            or "asset"."hiddenFrom" & 4096 = 0
-          )
+            coalesce("asset"."hiddenFrom", 0) | (
+              coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+            )
+          ) & 4096 = 0
         )
         and "asset"."type" = $2
         and "asset"."deletedAt" is null
@@ -339,9 +353,10 @@ with recursive
             and (
               "asset"."visibility" in ('timeline')
               and (
-                "asset"."hiddenFrom" is null
-                or "asset"."hiddenFrom" & 4096 = 0
-              )
+                coalesce("asset"."hiddenFrom", 0) | (
+                  coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+                )
+              ) & 4096 = 0
             )
             and "asset"."type" = $5
             and "asset"."deletedAt" is null
@@ -372,6 +387,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -402,9 +419,10 @@ where
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 4096 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 4096 = 0
   )
   and "deletedAt" is null
   and "state" is not null
@@ -421,9 +439,10 @@ where
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 4096 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 4096 = 0
   )
   and "deletedAt" is null
   and "city" is not null
@@ -440,9 +459,10 @@ where
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 4096 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 4096 = 0
   )
   and "deletedAt" is null
   and "make" is not null
@@ -459,9 +479,10 @@ where
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 4096 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 4096 = 0
   )
   and "deletedAt" is null
   and "model" is not null
@@ -478,9 +499,10 @@ where
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 4096 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 4096 = 0
   )
   and "deletedAt" is null
   and "lensModel" is not null
@@ -506,6 +528,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -549,6 +573,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -591,6 +617,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -634,6 +662,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -677,6 +707,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -720,6 +752,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -763,6 +797,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -806,6 +842,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -856,6 +894,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -906,6 +946,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -963,6 +1005,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1013,6 +1057,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1064,6 +1110,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1120,6 +1168,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1169,6 +1219,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1219,6 +1271,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1265,6 +1319,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1308,6 +1364,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1354,6 +1412,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1398,6 +1458,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1441,6 +1503,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
@@ -1496,6 +1560,8 @@ select
   "asset"."isEdited",
   "asset"."visibility",
   "asset"."hiddenFrom",
+  "asset"."hiddenFromInherited",
+  "asset"."hiddenFromShown",
   "asset"."libraryId",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",

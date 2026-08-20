@@ -53,7 +53,13 @@ import {
   withTags,
 } from 'src/utils/database';
 import { globToSqlPattern } from 'src/utils/misc';
-import { excludeHiddenFromSurface, PolicyContext, Surface, withSurface } from 'src/utils/visibility-policy';
+import {
+  excludeHiddenFromSurface,
+  hasExclusions,
+  PolicyContext,
+  Surface,
+  withSurface,
+} from 'src/utils/visibility-policy';
 
 export type AssetStats = Record<AssetType, number>;
 
@@ -691,6 +697,31 @@ export class AssetRepository {
   }
 
   /**
+   * The same adjustment for `hiddenFromShown`, the per-album-rule override.
+   *
+   * A separate method rather than a column parameter on the one above: the two are edited by different
+   * controls and combining them would mean a caller could pass four masks, of which the only sensible
+   * combinations are the two this pair already expresses.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID], 1, 2] })
+  @Chunked()
+  async updateAllHiddenFromShown(ids: string[], addMask: number, removeMask: number): Promise<void> {
+    if (ids.length === 0 || (addMask === 0 && removeMask === 0)) {
+      return;
+    }
+
+    await this.db
+      .updateTable('asset')
+      .set({
+        hiddenFromShown: sql<number | null>`nullif((coalesce(${sql.ref('asset.hiddenFromShown')}, 0) | ${sql.lit(
+          addMask,
+        )}) & ~${sql.lit(removeMask)}, 0)`,
+      })
+      .where('id', '=', anyUuid(ids))
+      .execute();
+  }
+
+  /**
    * Which of the given asset IDs currently have Locked visibility -- used to detect a transition
    * *away* from Locked (e.g. via the single-asset "remove from locked folder" toggle) so callers
    * can decide whether album-membership cleanup is needed, without touching assets whose
@@ -868,7 +899,7 @@ export class AssetRepository {
 
             return withBoundingBox(withBoundingCircle, bbox);
           })
-          .$if(!!options.hidden, (qb) => qb.where('asset.hiddenFrom', 'is not', null))
+          .$if(!!options.hidden, (qb) => qb.where((eb) => hasExclusions(eb)))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           // A requested visibility overrides the surface's visibility set, but not its per-asset mask.
           // Without this, the locked folder and the archive view - the two grids that pin a visibility -
@@ -957,7 +988,7 @@ export class AssetRepository {
           )
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
-          .$if(!!options.hidden, (qb) => qb.where('asset.hiddenFrom', 'is not', null))
+          .$if(!!options.hidden, (qb) => qb.where((eb) => hasExclusions(eb)))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           // A requested visibility overrides the surface's visibility set, but not its per-asset mask.
           // Without this, the locked folder and the archive view - the two grids that pin a visibility -

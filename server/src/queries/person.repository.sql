@@ -33,9 +33,10 @@ from
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 512 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 512 = 0
   )
   and "asset"."deletedAt" is null
 where
@@ -251,9 +252,10 @@ from
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 512 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 512 = 0
   )
   and "asset"."deletedAt" is null
 where
@@ -291,9 +293,10 @@ where
           and (
             "asset"."visibility" in ('timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 512 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 512 = 0
           )
           and "asset"."deletedAt" is null
       )

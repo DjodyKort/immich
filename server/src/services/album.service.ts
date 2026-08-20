@@ -4,6 +4,7 @@ import {
   AlbumResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
+  AlbumSetHiddenFromDto,
   AlbumSetLockedDto,
   AlbumStatisticsResponseDto,
   CreateAlbumDto,
@@ -22,7 +23,7 @@ import { addAssets, removeAssets } from 'src/utils/asset.util';
 import { asDateTimeString } from 'src/utils/date';
 import { findOrFail } from 'src/utils/misc';
 import { getPreferences } from 'src/utils/preferences';
-import { forViewer, PolicyContext } from 'src/utils/visibility-policy';
+import { forViewer, PolicyContext, toHiddenFromMask } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class AlbumService extends BaseService {
@@ -292,6 +293,43 @@ export class AlbumService extends BaseService {
     await this.jobRepository.queueAll(
       assetIds.map((assetId) => ({ name: JobName.SidecarWrite, data: { id: assetId } })),
     );
+
+    return mapAlbum({ ...updated, assets: album.assets });
+  }
+
+  /**
+   * Sets the album's per-surface rule for its photos.
+   *
+   * Its own route rather than a field on `UpdateAlbumDto`, like `setLocked`, because it rewrites derived
+   * state on every member and must not half-apply alongside a rename. Unlike locking it needs **no
+   * elevation** and carries no invariant: it changes where photos appear, not whether they are
+   * confidential, and it is freely reversible.
+   *
+   * Owner-only for the same reason locking is. `Permission.AlbumUpdate` extends to editors, and an
+   * editor taking the owner's photos off their own timeline is not a power sharing should confer -
+   * the rule reaches assets the editor does not own.
+   *
+   * The inheritance itself is not written here. `album.hiddenFrom` is the only thing this touches; the
+   * database triggers installed by `AlbumVisibilityInheritance` recompute every member's
+   * `hiddenFromInherited`. That is deliberate - see `asset_sync_hidden_from_inherited` for why a derived
+   * column maintained by call sites is a column that eventually goes wrong.
+   */
+  async setHiddenFrom(auth: AuthDto, id: string, dto: AlbumSetHiddenFromDto): Promise<AlbumResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
+
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth));
+
+    const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
+    if (owner?.user.id !== auth.user.id) {
+      throw new BadRequestException("Only the album owner can change where an album's photos appear");
+    }
+
+    const hiddenFrom = toHiddenFromMask(dto.hiddenFrom);
+    if (album.hiddenFrom === hiddenFrom) {
+      return mapAlbum(album);
+    }
+
+    const updated = await this.albumRepository.update(album.id, { id: album.id, hiddenFrom }, auth.user.id);
 
     return mapAlbum({ ...updated, assets: album.assets });
   }

@@ -314,3 +314,105 @@ export const asset_ocr_delete_audit = registerFunction({
       RETURN NULL;
     END`,
 });
+
+/**
+ * Recomputes `asset.hiddenFromInherited` for the given assets: the OR of `hiddenFrom` across every album
+ * each asset currently belongs to.
+ *
+ * Recompute rather than adjust, always. There is no provenance on the asset saying which bit came from
+ * which album, so an incremental update could never undo one - which is exactly what has to work when a
+ * photo leaves a hidden album. Deriving from current membership sidesteps the question.
+ *
+ * `IS DISTINCT FROM` is load-bearing, not an optimisation. `asset` carries an `updatedAt`/`updateId`
+ * trigger, so writing an unchanged value would still bump `updateId` and push a sync change for that
+ * asset to every client. Adding one photo to an album must not look like every other photo in it changed.
+ *
+ * `nullif(..., 0)` keeps "inherits nothing" spelled exactly one way. A stored 0 would read as "has
+ * inherited exclusions" to anything testing for null, the same trap `updateAllHiddenFrom` avoids.
+ */
+export const asset_sync_hidden_from_inherited = registerFunction({
+  name: 'asset_sync_hidden_from_inherited',
+  arguments: ['p_asset_ids uuid[]'],
+  returnType: 'void',
+  // PLPGSQL rather than SQL, and not by preference. The migration generator emits every CREATE FUNCTION
+  // before the ALTER TABLE ADD COLUMN statements, and Postgres parse-analyses a SQL-language body at
+  // creation time - so a SQL version of this fails on a fresh database with `column album.hiddenFrom does
+  // not exist`, while working fine on any database that already had the columns. PLPGSQL defers that
+  // check to first execution, which makes the generated order irrelevant.
+  language: 'PLPGSQL',
+  behavior: 'volatile',
+  body: `
+    BEGIN
+    WITH target AS (
+      SELECT
+        asset.id,
+        nullif(coalesce((
+          SELECT bit_or(coalesce(album."hiddenFrom", 0))
+          FROM album_asset
+          INNER JOIN album ON album.id = album_asset."albumId"
+          WHERE album_asset."assetId" = asset.id AND album."deletedAt" IS NULL
+        ), 0), 0) AS mask
+      FROM asset
+      WHERE asset.id = ANY(p_asset_ids)
+    )
+    UPDATE asset
+    SET "hiddenFromInherited" = target.mask
+    FROM target
+    WHERE asset.id = target.id AND asset."hiddenFromInherited" IS DISTINCT FROM target.mask;
+    END`,
+});
+
+/**
+ * The three events that can change what an asset inherits, as statement-level triggers.
+ *
+ * Deliberately in the database rather than the service layer. Nine repository methods mutate
+ * `album_asset` today and upstream adds more; a derived column maintained by call sites is a column that
+ * is eventually wrong, and the failure is silent - a photo stays hidden after leaving the album, or never
+ * becomes hidden on joining. Here it cannot be forgotten, including by upstream code we do not touch.
+ *
+ * Statement-level with transition tables, so a 30,000-row album insert costs one recompute rather than
+ * 30,000.
+ */
+export const album_asset_hidden_from_insert = registerFunction({
+  name: 'album_asset_hidden_from_insert',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      PERFORM asset_sync_hidden_from_inherited(ARRAY(SELECT DISTINCT "assetId" FROM inserted_rows));
+      RETURN NULL;
+    END`,
+});
+
+export const album_asset_hidden_from_delete = registerFunction({
+  name: 'album_asset_hidden_from_delete',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      PERFORM asset_sync_hidden_from_inherited(ARRAY(SELECT DISTINCT "assetId" FROM deleted_rows));
+      RETURN NULL;
+    END`,
+});
+
+/**
+ * An album's rule changing, or the album being soft-deleted or restored, changes what all of its members
+ * inherit. Soft delete counts because the recompute above only counts albums with `deletedAt IS NULL`.
+ */
+export const album_hidden_from_update = registerFunction({
+  name: 'album_hidden_from_update',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      PERFORM asset_sync_hidden_from_inherited(ARRAY(
+        SELECT DISTINCT album_asset."assetId"
+        FROM album_asset
+        INNER JOIN new_rows ON new_rows.id = album_asset."albumId"
+        INNER JOIN old_rows ON old_rows.id = new_rows.id
+        WHERE new_rows."hiddenFrom" IS DISTINCT FROM old_rows."hiddenFrom"
+           OR (new_rows."deletedAt" IS NULL) IS DISTINCT FROM (old_rows."deletedAt" IS NULL)
+      ));
+      RETURN NULL;
+    END`,
+});

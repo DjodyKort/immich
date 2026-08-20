@@ -72,6 +72,8 @@ export class AssetFactory {
       type: AssetType.Image,
       visibility: AssetVisibility.Timeline,
       hiddenFrom: null,
+      hiddenFromInherited: null,
+      hiddenFromShown: null,
       width: null,
       height: null,
       isEdited: false,

@@ -34,6 +34,9 @@ const createAsset = (
   isEdited: false,
   visibility: AssetVisibility.Timeline,
   hiddenFrom: [],
+  hiddenFromInherited: [],
+  hiddenFromShown: [],
+  hiddenFromEffective: [],
   checksum: 'checksum',
   exifInfo:
     fileSizeInByte !== null || Object.keys(exifFields).length > 0

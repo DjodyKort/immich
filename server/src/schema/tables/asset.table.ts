@@ -149,6 +149,28 @@ export class AssetTable {
   @Column({ type: 'integer', nullable: true })
   hiddenFrom!: number | null;
 
+  /**
+   * The OR of `hiddenFrom` across every album this asset is currently in. **Derived: never write this
+   * by hand.**
+   *
+   * Recomputed - not adjusted - whenever the asset joins an album, leaves one, or a containing album's
+   * rule changes. Recomputing from the current memberships is what makes removal work: there is no
+   * provenance to guess, so taking a photo out of a hidden album restores it without having to know
+   * which bits came from where.
+   */
+  @Column({ type: 'integer', nullable: true })
+  hiddenFromInherited!: number | null;
+
+  /**
+   * Surfaces this asset is explicitly shown on, overriding {@link hiddenFromInherited}.
+   *
+   * The escape hatch for "this one photo, despite its album": album rules compose by union and can
+   * never reveal, so this is the only way back. Kept disjoint from `hiddenFrom` on write, since the two
+   * are opposite positions of one control and "explicitly hidden and explicitly shown" has no meaning.
+   */
+  @Column({ type: 'integer', nullable: true })
+  hiddenFromShown!: number | null;
+
   @Column({ type: 'integer', nullable: true })
   width!: number | null;
 

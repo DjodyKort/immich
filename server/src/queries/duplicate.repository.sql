@@ -43,9 +43,10 @@ with
     where
       "asset"."visibility" in ('archive', 'timeline')
       and (
-        "asset"."hiddenFrom" is null
-        or "asset"."hiddenFrom" & 16384 = 0
-      )
+        coalesce("asset"."hiddenFrom", 0) | (
+          coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+        )
+      ) & 16384 = 0
       and "asset"."ownerId" = $1::uuid
       and "asset"."duplicateId" is not null
       and "asset"."deletedAt" is null
@@ -126,9 +127,10 @@ from
 where
   "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 16384 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 16384 = 0
   and "asset"."duplicateId" = $1::uuid
   and "asset"."deletedAt" is null
   and "asset"."stackId" is null

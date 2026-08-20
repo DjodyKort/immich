@@ -306,7 +306,12 @@ describe(AssetMediaService.name, () => {
         size: 42,
       };
 
-      mocks.asset.create.mockResolvedValue({ ...assetEntity, hiddenFrom: null });
+      mocks.asset.create.mockResolvedValue({
+        ...assetEntity,
+        hiddenFrom: null,
+        hiddenFromInherited: null,
+        hiddenFromShown: null,
+      });
 
       await expect(
         sut.uploadAsset(
@@ -341,7 +346,12 @@ describe(AssetMediaService.name, () => {
         size: 42,
       };
 
-      mocks.asset.create.mockResolvedValue({ ...assetEntity, hiddenFrom: null });
+      mocks.asset.create.mockResolvedValue({
+        ...assetEntity,
+        hiddenFrom: null,
+        hiddenFromInherited: null,
+        hiddenFromShown: null,
+      });
 
       await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
         id: 'id_1',

@@ -5,9 +5,10 @@ import { HistoryBuilder } from 'src/decorators';
 import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto';
 import { MapAsset } from 'src/dtos/asset-response.dto';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto';
-import { AlbumUserRole, AlbumUserRoleSchema, AssetOrder, AssetOrderSchema } from 'src/enum';
+import { AlbumUserRole, AlbumUserRoleSchema, AssetOrder, AssetOrderSchema, AssetSurfaceSchema } from 'src/enum';
 import { MaybeDehydrated } from 'src/types';
 import { asDateTimeString } from 'src/utils/date';
+import { fromHiddenFromMask } from 'src/utils/visibility-policy';
 import { stringToBool } from 'src/validation';
 import z from 'zod';
 
@@ -124,6 +125,23 @@ const AlbumSetLockedSchema = z
   })
   .meta({ id: 'AlbumSetLockedDto' });
 
+/**
+ * The album's per-surface rule for its photos.
+ *
+ * Its own route for the same reason as `AlbumSetLockedDto`: it rewrites derived state on every member
+ * asset, so it must not be able to half-apply alongside a rename. Unlike locking it carries no
+ * invariant and needs no elevation - it is about where photos appear, not about confidentiality.
+ */
+const AlbumSetHiddenFromSchema = z
+  .object({
+    hiddenFrom: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        "Surfaces to withhold this album's photos from. Replaces the whole set; `[]` clears the rule. Photos inherit this on joining and stop inheriting it on leaving, and rules from several albums combine -- a photo hidden by any of its albums is hidden. A photo can opt back out individually with `hiddenFromShown`. Distinct from `isHidden`, which hides the album itself and touches no photo.",
+      ),
+  })
+  .meta({ id: 'AlbumSetHiddenFromDto' });
+
 const GetAlbumsSchema = z
   .object({
     id: z.uuidv4().optional().describe('Album ID'),
@@ -215,6 +233,11 @@ export const AlbumResponseSchema = z
     isActivityEnabled: z.boolean().describe('Activity feed enabled'),
     isLocked: z.boolean().describe('Album is locked and requires PIN elevation to view'),
     isHidden: z.boolean().describe('Album is kept out of the album list, but remains reachable by URL'),
+    hiddenFrom: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        "Surfaces this album's photos are withheld from. Empty means no rule. Distinct from `isHidden`, which hides the album itself.",
+      ),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
   })
@@ -240,6 +263,7 @@ export class AlbumsAddAssetsDto extends createZodDto(AlbumsAddAssetsSchema) {}
 export class AlbumsAddAssetsResponseDto extends createZodDto(AlbumsAddAssetsResponseSchema) {}
 export class UpdateAlbumDto extends createZodDto(UpdateAlbumSchema) {}
 export class AlbumSetLockedDto extends createZodDto(AlbumSetLockedSchema) {}
+export class AlbumSetHiddenFromDto extends createZodDto(AlbumSetHiddenFromSchema) {}
 export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}
@@ -259,6 +283,7 @@ export type MapAlbumDto = {
   isActivityEnabled: boolean;
   isLocked: boolean;
   isHidden: boolean;
+  hiddenFrom: number | null;
   order: AssetOrder;
 };
 
@@ -304,6 +329,9 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     isActivityEnabled: entity.isActivityEnabled,
     isLocked: entity.isLocked,
     isHidden: entity.isHidden,
+    // Clients speak in surface names; the bitmask never leaves the server, for the same reason the
+    // workflow payload converts. See `toHiddenFromMask` / `fromHiddenFromMask`.
+    hiddenFrom: fromHiddenFromMask(entity.hiddenFrom),
     order: entity.order,
   };
 };

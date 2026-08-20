@@ -80,9 +80,10 @@ select
           and (
             "asset"."visibility" in ('archive', 'timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 8192 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 8192 = 0
           )
         order by
           "asset"."fileCreatedAt" desc
@@ -209,9 +210,10 @@ from
 where
   "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 32 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 32 = 0
   and "album_asset"."albumId" in ($1)
   and "asset"."deletedAt" is null
 group by
@@ -508,9 +510,10 @@ select
           and (
             "asset"."visibility" in ('archive', 'timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 8192 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 8192 = 0
           )
         order by
           "asset"."fileCreatedAt" desc
