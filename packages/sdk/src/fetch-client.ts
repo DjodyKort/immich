@@ -513,6 +513,8 @@ export type AlbumResponseDto = {
     endDate?: string;
     /** Has shared link */
     hasSharedLink: boolean;
+    /** Surfaces this album's photos are withheld from. Empty means no rule. Distinct from `isHidden`, which hides the album itself. */
+    hiddenFrom: AssetSurface[];
     /** Album ID */
     id: string;
     /** Activity feed enabled */
@@ -591,6 +593,10 @@ export type BulkIdResponseDto = {
     id: string;
     /** Whether operation succeeded */
     success: boolean;
+};
+export type AlbumSetHiddenFromDto = {
+    /** Surfaces to withhold this album's photos from. Replaces the whole set; `[]` clears the rule. Photos inherit this on joining and stop inheriting it on leaving, and rules from several albums combine -- a photo hidden by any of its albums is hidden. A photo can opt back out individually with `hiddenFromShown`. Distinct from `isHidden`, which hides the album itself and touches no photo. */
+    hiddenFrom: AssetSurface[];
 };
 export type AlbumSetLockedDto = {
     /** Whether the album, and every asset in it, should live behind the locked folder. Locking requires an elevated session, an album you own, that is shared with nobody and has no shared links, and whose every asset you own; it sets those assets to Locked visibility and removes them from all other albums. Unlocking returns them to the timeline -- including any that were archived beforehand, since `visibility` is a single exclusive column -- and leaves them in this album. */
@@ -701,12 +707,18 @@ export type AssetBulkUpdateDto = {
     description?: string;
     /** Duplicate ID */
     duplicateId?: string | null;
-    /** Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. */
+    /** Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. Does not affect what the asset inherits from its albums; use `hiddenFromShown` to override that. */
     hiddenFrom?: AssetSurface[] | null;
     /** Surfaces to add to each asset's exclusions, leaving its other exclusions alone. Use this rather than `hiddenFrom` for a multi-asset selection: `hiddenFrom` replaces the whole set, so applying it to assets that are withheld from different places silently discards the difference. Mutually exclusive with `hiddenFrom`. */
     hiddenFromAdd?: AssetSurface[];
     /** Surfaces to remove from each asset's exclusions, leaving its other exclusions alone. The counterpart of `hiddenFromAdd`; a surface named in both is rejected. Mutually exclusive with `hiddenFrom`. */
     hiddenFromRemove?: AssetSurface[];
+    /** Surfaces to show this asset on despite an album rule withholding it. Replaces the whole set. Kept disjoint from `hiddenFrom` on write, since the two are opposite positions of one control: naming a surface here clears it there, and vice versa. Has no effect on a surface nothing withholds the asset from. */
+    hiddenFromShown?: AssetSurface[] | null;
+    /** Surfaces to add to each asset's overrides, leaving its other overrides alone. The adjusting counterpart of `hiddenFromShown`, for the same reason `hiddenFromAdd` exists: a selection can hold assets overriding different surfaces, and the replacing field would flatten them. */
+    hiddenFromShownAdd?: AssetSurface[];
+    /** Surfaces to remove from each asset's overrides, leaving its other overrides alone. The counterpart of `hiddenFromShownAdd`; a surface named in both is rejected. */
+    hiddenFromShownRemove?: AssetSurface[];
     /** Asset IDs to update */
     ids: string[];
     /** Mark as favorite */
@@ -908,8 +920,14 @@ export type AssetResponseDto = {
     hasMetadata: boolean;
     /** Asset height */
     height: number | null;
-    /** Surfaces this asset is withheld from. Empty when the asset appears everywhere its visibility allows. */
+    /** Surfaces this asset is withheld from by its own setting. Does not include what its albums impose -- see `hiddenFromInherited` -- so this is the set a per-asset edit replaces. Empty when the asset's own setting withholds it from nothing. */
     hiddenFrom: AssetSurface[];
+    /** Where the asset is actually withheld from, i.e. `(hiddenFrom | hiddenFromInherited) & ~hiddenFromShown`. Read-only, and the only one of the four a client should use to decide what to render: computing it client-side would mean knowing the rules of every album the asset is in. */
+    hiddenFromEffective: AssetSurface[];
+    /** Surfaces withheld by the albums this asset belongs to, before `hiddenFromShown` is applied. Read-only: it is derived from album membership and changes when the asset joins or leaves an album, or an album's rule changes. */
+    hiddenFromInherited: AssetSurface[];
+    /** Surfaces this asset is explicitly shown on despite an album rule. The per-photo override, and the only way back once an album withholds a photo, since album rules combine by union and can never reveal. */
+    hiddenFromShown: AssetSurface[];
     /** Asset ID */
     id: string;
     /** Is archived */
@@ -956,8 +974,10 @@ export type UpdateAssetDto = {
     dateTimeOriginal?: string;
     /** Asset description */
     description?: string;
-    /** Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. */
+    /** Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. Does not affect what the asset inherits from its albums; use `hiddenFromShown` to override that. */
     hiddenFrom?: AssetSurface[] | null;
+    /** Surfaces to show this asset on despite an album rule withholding it. Replaces the whole set. Kept disjoint from `hiddenFrom` on write, since the two are opposite positions of one control: naming a surface here clears it there, and vice versa. Has no effect on a surface nothing withholds the asset from. */
+    hiddenFromShown?: AssetSurface[] | null;
     /** Mark as favorite */
     isFavorite?: boolean;
     /** Latitude coordinate */
@@ -4003,6 +4023,22 @@ export function addAssetsToAlbum({ id, bulkIdsDto }: {
         ...opts,
         method: "PUT",
         body: bulkIdsDto
+    })));
+}
+/**
+ * Set where an album's photos appear
+ */
+export function setAlbumHiddenFrom({ id, albumSetHiddenFromDto }: {
+    id: string;
+    albumSetHiddenFromDto: AlbumSetHiddenFromDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/hidden-from`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumSetHiddenFromDto
     })));
 }
 /**
@@ -7272,6 +7308,14 @@ export enum AlbumUserRole {
     Owner = "owner",
     Viewer = "viewer"
 }
+export enum AssetSurface {
+    Timeline = "timeline",
+    Search = "search",
+    Map = "map",
+    People = "people",
+    Memories = "memories",
+    Folders = "folders"
+}
 export enum BulkIdErrorReason {
     Duplicate = "duplicate",
     NoPermission = "no_permission",
@@ -7442,14 +7486,6 @@ export enum Permission {
 export enum AssetMediaStatus {
     Created = "created",
     Duplicate = "duplicate"
-}
-export enum AssetSurface {
-    Timeline = "timeline",
-    Search = "search",
-    Map = "map",
-    People = "people",
-    Memories = "memories",
-    Folders = "folders"
 }
 export enum AssetUploadAction {
     Accept = "accept",

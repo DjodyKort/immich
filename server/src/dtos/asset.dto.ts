@@ -34,7 +34,13 @@ const UpdateAssetBaseSchema = z
       .array(AssetSurfaceSchema)
       .nullish()
       .describe(
-        'Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset.',
+        'Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. Does not affect what the asset inherits from its albums; use `hiddenFromShown` to override that.',
+      ),
+    hiddenFromShown: z
+      .array(AssetSurfaceSchema)
+      .nullish()
+      .describe(
+        'Surfaces to show this asset on despite an album rule withholding it. Replaces the whole set. Kept disjoint from `hiddenFrom` on write, since the two are opposite positions of one control: naming a surface here clears it there, and vice versa. Has no effect on a surface nothing withholds the asset from.',
       ),
   })
   .refine(
@@ -61,6 +67,18 @@ const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({
     .describe(
       "Surfaces to remove from each asset's exclusions, leaving its other exclusions alone. The counterpart of `hiddenFromAdd`; a surface named in both is rejected. Mutually exclusive with `hiddenFrom`.",
     ),
+  hiddenFromShownAdd: z
+    .array(AssetSurfaceSchema)
+    .optional()
+    .describe(
+      "Surfaces to add to each asset's overrides, leaving its other overrides alone. The adjusting counterpart of `hiddenFromShown`, for the same reason `hiddenFromAdd` exists: a selection can hold assets overriding different surfaces, and the replacing field would flatten them.",
+    ),
+  hiddenFromShownRemove: z
+    .array(AssetSurfaceSchema)
+    .optional()
+    .describe(
+      "Surfaces to remove from each asset's overrides, leaving its other overrides alone. The counterpart of `hiddenFromShownAdd`; a surface named in both is rejected.",
+    ),
 });
 
 const AssetBulkUpdateSchema = AssetBulkUpdateBaseSchema.pipe(
@@ -76,6 +94,18 @@ const AssetBulkUpdateSchema = AssetBulkUpdateBaseSchema.pipe(
   .refine((data) => !data.hiddenFromAdd?.some((surface) => data.hiddenFromRemove?.includes(surface)), {
     error: 'A surface cannot appear in both hiddenFromAdd and hiddenFromRemove',
   })
+  // The same three rules again for the override mask. Spelled out rather than shared because the error
+  // messages name the fields, and a caller told the wrong field name is worse off than one told nothing.
+  .refine((data) => data.hiddenFromShown === undefined || (!data.hiddenFromShownAdd && !data.hiddenFromShownRemove), {
+    error: 'hiddenFromShown replaces the whole set and cannot be combined with hiddenFromShownAdd or -Remove',
+  })
+  .refine((data) => !data.hiddenFromShownAdd?.some((surface) => data.hiddenFromShownRemove?.includes(surface)), {
+    error: 'A surface cannot appear in both hiddenFromShownAdd and hiddenFromShownRemove',
+  })
+  // No cross-check between the hide and show masks. The effective mask brackets the override as
+  // `hiddenFrom | (inherited & ~shown)`, so naming a surface in both is meaningless rather than
+  // contradictory: the show term only ever cancels what an album imposed. Rejecting it would be
+  // enforcing an invariant the read path does not need.
   .meta({ id: 'AssetBulkUpdateDto' });
 
 const UpdateAssetSchema = UpdateAssetBaseSchema.extend({

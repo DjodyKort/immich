@@ -311,6 +311,16 @@ set
 where
   "id" = any ($1::uuid[])
 
+-- AssetRepository.updateAllHiddenFromShown
+update "asset"
+set
+  "hiddenFromShown" = nullif(
+    (coalesce("asset"."hiddenFromShown", 0) | 1) & ~ 2,
+    0
+  )
+where
+  "id" = any ($1::uuid[])
+
 -- AssetRepository.getLockedAssetIds
 select
   "asset"."id"
@@ -368,9 +378,10 @@ where
   and "deletedAt" is null
   and "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 16 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 16 = 0
 group by
   date_trunc('DAY', "asset"."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
 order by
@@ -387,9 +398,10 @@ with
       "asset"."deletedAt" is null
       and "asset"."visibility" in ('archive', 'timeline')
       and (
-        "asset"."hiddenFrom" is null
-        or "asset"."hiddenFrom" & 1 = 0
-      )
+        coalesce("asset"."hiddenFrom", 0) | (
+          coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+        )
+      ) & 1 = 0
   )
 select
   ("timeBucket" AT TIME ZONE 'UTC')::date::text as "timeBucket",
@@ -459,9 +471,10 @@ with
       "asset"."deletedAt" is null
       and "asset"."visibility" in ('archive', 'timeline')
       and (
-        "asset"."hiddenFrom" is null
-        or "asset"."hiddenFrom" & 1 = 0
-      )
+        coalesce("asset"."hiddenFrom", 0) | (
+          coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+        )
+      ) & 1 = 0
       and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $3
       and not exists (
         select

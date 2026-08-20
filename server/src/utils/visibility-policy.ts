@@ -277,17 +277,64 @@ export const fromHiddenFromMask = (mask: number | null): AssetSurface[] => {
 };
 
 /**
- * `asset.hiddenFrom` is a nullable bitmask of per-asset, per-surface exclusions, and this is the only
- * code that reads it.
+ * The effective exclusion mask: the asset's own hiding, plus what its albums impose, minus what the
+ * asset explicitly opts back out of.
  *
- * Deliberately a separate column rather than a change to `asset.visibility`. `null` means "no
+ * ```
+ * hiddenFrom | (hiddenFromInherited & ~hiddenFromShown)
+ * ```
+ *
+ * Three columns rather than one because they answer three different questions, and collapsing them would
+ * lose the ability to undo. `hiddenFrom` is what the user chose for this photo; `hiddenFromInherited` is
+ * derived from album membership and is recomputed, never adjusted; `hiddenFromShown` is the per-photo
+ * override, which exists because album rules compose by **union** and so can never reveal a photo that
+ * another album hid.
+ *
+ * **The override cancels only the inherited term**, which is why it is bracketed that way rather than
+ * applied to the whole expression. The looser `(hiddenFrom | inherited) & ~shown` says the same thing
+ * for every state a UI can produce, but it also lets `hiddenFrom` and `hiddenFromShown` disagree about
+ * the same surface, and then silently resolves it as shown. Making that unrepresentable is worth more
+ * than the symmetry: there is no invariant to enforce on write, no ordering to document, and "I hid this
+ * photo" can never be overridden by a stale opposite bit.
+ *
+ * Precedence, i.e. the tiering: a photo's own hiding wins outright; its own showing beats its albums'
+ * rules. There is deliberately no album-vs-album priority - that would be a fourth concept, and the
+ * per-photo override already covers the case it would serve.
+ *
+ * `coalesce` rather than an `is null` disjunction: every column is nullable and null means "nothing", so
+ * one arithmetic expression covers all eight combinations. It stays a function of columns on `asset`
+ * alone, which is what keeps it index-compatible - notably the partial index
+ * `asset_id_timeline_notDeleted_idx`, which the helpers here use `sql.lit` to preserve.
+ */
+const EFFECTIVE_HIDDEN_FROM = sql`(coalesce("asset"."hiddenFrom", 0) | (coalesce("asset"."hiddenFromInherited", 0) & ~coalesce("asset"."hiddenFromShown", 0)))`;
+
+/**
+ * Whether an asset is withheld from anything at all, for the Hidden view's membership.
+ *
+ * Extracted because `asset.repository.ts` hand-wrote `hiddenFrom is not null` at two call sites, which
+ * was correct while there was one mask and silently wrong the moment inheritance existed. A photo hidden
+ * *only* by its album's rule belongs in that view: the Hidden view is the guarantee that hiding is never
+ * a one-way door, and an album rule is no less able to lose a photo than a manual exclusion is.
+ *
+ * Asks about the **effective** mask, deliberately - so a photo whose every inherited bit is overridden
+ * back on is not hidden by anything, and correctly drops out of the view.
+ */
+export const hasExclusions = <DBT, TB extends keyof DBT & string>(
+  eb: ExpressionBuilder<DBT, TB>,
+): Expression<SqlBool> => asAssetBuilder(eb)(sql`${EFFECTIVE_HIDDEN_FROM}`, '!=', sql.lit(0));
+
+/**
+ * The per-asset half of a surface's rule, read from the effective mask above. This is the only code that
+ * reads any of the three columns.
+ *
+ * They are deliberately separate columns rather than a change to `asset.visibility`. `null` means "no
  * exclusions", which is what every row written by upstream code contains, so the enum keeps its exact
- * meaning and the roughly 38 sites that exclude values implicitly keep working untouched. The migration is
- * `ALTER TABLE asset ADD "hiddenFrom" integer` with no default: instant, no rewrite, no backfill.
+ * meaning and the roughly 38 sites that exclude values implicitly keep working untouched. Each migration
+ * is `ALTER TABLE asset ADD "<col>" integer` with no default: instant, no rewrite, no backfill.
  *
- * This is what finally makes per-*asset* per-surface control possible. The policy table above already
- * gave per-*surface* rules; a single exclusive enum could never carry "hide this one photo from People
- * but leave it in Search".
+ * This is what makes per-*asset* per-surface control possible. The policy table above already gave
+ * per-*surface* rules; a single exclusive enum could never carry "hide this one photo from People but
+ * leave it in Search".
  */
 const notExcludedPerAsset = <DBT, TB extends keyof DBT & string>(
   eb: ExpressionBuilder<DBT, TB>,
@@ -299,10 +346,7 @@ const notExcludedPerAsset = <DBT, TB extends keyof DBT & string>(
   }
 
   const asset = asAssetBuilder(eb);
-  return asset.or([
-    asset('asset.hiddenFrom', 'is', null),
-    asset(sql`"asset"."hiddenFrom" & ${sql.lit(bit)}`, '=', sql.lit(0)),
-  ]);
+  return asset(sql`${EFFECTIVE_HIDDEN_FROM} & ${sql.lit(bit)}`, '=', sql.lit(0));
 };
 
 /**

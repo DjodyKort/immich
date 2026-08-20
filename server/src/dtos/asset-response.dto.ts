@@ -102,7 +102,24 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     visibility: AssetVisibilitySchema,
     hiddenFrom: z
       .array(AssetSurfaceSchema)
-      .describe('Surfaces this asset is withheld from. Empty when the asset appears everywhere its visibility allows.'),
+      .describe(
+        "Surfaces this asset is withheld from by its own setting. Does not include what its albums impose -- see `hiddenFromInherited` -- so this is the set a per-asset edit replaces. Empty when the asset's own setting withholds it from nothing.",
+      ),
+    hiddenFromInherited: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        "Surfaces withheld by the albums this asset belongs to, before `hiddenFromShown` is applied. Read-only: it is derived from album membership and changes when the asset joins or leaves an album, or an album's rule changes.",
+      ),
+    hiddenFromShown: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        'Surfaces this asset is explicitly shown on despite an album rule. The per-photo override, and the only way back once an album withholds a photo, since album rules combine by union and can never reveal.',
+      ),
+    hiddenFromEffective: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        'Where the asset is actually withheld from, i.e. `(hiddenFrom | hiddenFromInherited) & ~hiddenFromShown`. Read-only, and the only one of the four a client should use to decide what to render: computing it client-side would mean knowing the rules of every album the asset is in.',
+      ),
     exifInfo: ExifResponseSchema.optional(),
     tags: z.array(TagResponseSchema).optional(),
     people: z.array(PersonResponseSchema).optional(),
@@ -144,8 +161,10 @@ export type MapAsset = {
   isFavorite: boolean;
   isOffline: boolean;
   visibility: AssetVisibility;
-  /** The raw per-asset exclusion bitmask. Translated to `AssetSurface[]` on the way out; never exposed. */
+  /** The raw exclusion bitmasks. Translated to `AssetSurface[]` on the way out; never exposed. */
   hiddenFrom: number | null;
+  hiddenFromInherited: number | null;
+  hiddenFromShown: number | null;
   libraryId: string | null;
   livePhotoVideoId: string | null;
   localDateTime: Date;
@@ -236,6 +255,13 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     isTrashed: !!entity.deletedAt,
     visibility: entity.visibility,
     hiddenFrom: fromHiddenFromMask(entity.hiddenFrom),
+    hiddenFromInherited: fromHiddenFromMask(entity.hiddenFromInherited),
+    hiddenFromShown: fromHiddenFromMask(entity.hiddenFromShown),
+    // Computed here rather than left to clients: the arithmetic is trivial but the inputs are not, and a
+    // client that derived it from album rules would need every album the asset is in.
+    hiddenFromEffective: fromHiddenFromMask(
+      ((entity.hiddenFrom ?? 0) | (entity.hiddenFromInherited ?? 0)) & ~(entity.hiddenFromShown ?? 0),
+    ),
     duration: entity.duration,
     exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
     livePhotoVideoId: entity.livePhotoVideoId,

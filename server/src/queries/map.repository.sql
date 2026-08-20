@@ -19,9 +19,10 @@ where
   and "album_asset"."albumId" = $1
   and "asset"."visibility" in ('archive', 'timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 64 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 64 = 0
 order by
   "fileCreatedAt" desc
 
@@ -42,9 +43,10 @@ where
   "asset"."deletedAt" is null
   and "asset"."visibility" in ('timeline')
   and (
-    "asset"."hiddenFrom" is null
-    or "asset"."hiddenFrom" & 128 = 0
-  )
+    coalesce("asset"."hiddenFrom", 0) | (
+      coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+    )
+  ) & 128 = 0
   and (
     "ownerId" in ($1)
     or exists (

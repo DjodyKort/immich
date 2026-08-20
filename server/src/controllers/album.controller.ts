@@ -6,6 +6,7 @@ import {
   AlbumResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
+  AlbumSetHiddenFromDto,
   AlbumSetLockedDto,
   AlbumStatisticsResponseDto,
   AlbumUserParamDto,
@@ -101,6 +102,22 @@ export class AlbumController {
     @Body() dto: AlbumSetLockedDto,
   ): Promise<AlbumResponseDto> {
     return this.service.setLocked(auth, id, dto);
+  }
+
+  @Put(':id/hidden-from')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: "Set where an album's photos appear",
+    description:
+      "Withhold this album's photos from chosen surfaces. Owner only. Members inherit the rule on joining and stop inheriting it on leaving; rules from several albums combine, so a photo hidden by any of its albums is hidden, and a photo can opt back out individually. Distinct from `isHidden` on the update endpoint, which hides the album itself and touches no photo. Separate from that endpoint because it rewrites derived state on every member.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  setAlbumHiddenFrom(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AlbumSetHiddenFromDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.setHiddenFrom(auth, id, dto);
   }
 
   @Delete(':id')

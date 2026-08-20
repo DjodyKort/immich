@@ -43,9 +43,10 @@ select
           and (
             "asset"."visibility" in ('timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 1024 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 1024 = 0
           )
           and "asset"."deletedAt" is null
           and not exists (
@@ -88,9 +89,10 @@ select
           and (
             "asset"."visibility" in ('timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 1024 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 1024 = 0
           )
           and "asset"."deletedAt" is null
           and not exists (
@@ -142,9 +144,10 @@ select
           and (
             "asset"."visibility" in ('timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 1024 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 1024 = 0
           )
           and "asset"."deletedAt" is null
         order by
@@ -181,9 +184,10 @@ select
           and (
             "asset"."visibility" in ('timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 1024 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 1024 = 0
           )
           and "asset"."deletedAt" is null
         order by

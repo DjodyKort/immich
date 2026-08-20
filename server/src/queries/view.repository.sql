@@ -10,9 +10,10 @@ where
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 2048 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 2048 = 0
   )
   and "deletedAt" is null
   and "fileCreatedAt" is not null
@@ -33,9 +34,10 @@ where
   and (
     "asset"."visibility" in ('timeline')
     and (
-      "asset"."hiddenFrom" is null
-      or "asset"."hiddenFrom" & 2048 = 0
-    )
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 2048 = 0
   )
   and "deletedAt" is null
   and "fileCreatedAt" is not null

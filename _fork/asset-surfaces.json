@@ -57,6 +57,10 @@
       "surface": "albumContents",
       "why": "Its response is the album DTO, whose assets come from the same withAssets/AlbumContents path updateAlbumInfo uses, so it reads no wider than that. The member list the operation itself acts on is read separately via getMemberAssetsForLockChange, which is deliberately unfiltered and returns ids and owner ids only - never asset bodies - and is gated on album ownership plus an elevated session. Refusals and the eviction from other albums are pinned in album-locking.spec.ts."
     },
+    "setAlbumHiddenFrom": {
+      "surface": "albumContents",
+      "why": "Its response is the album DTO, whose assets come from the same withAssets/AlbumContents path updateAlbumInfo uses, so it reads no wider than that. The operation itself writes only album.hiddenFrom; the member assets' hiddenFromInherited is recomputed by database triggers rather than by any read here, so it enumerates nothing. Owner-gated, no elevation."
+    },
     "addUsersToAlbum": { "surface": "albumContents", "why": "Named by the AlbumContents doc comment: adding album users." },
     "getAllPeople": { "surface": "people", "why": "The people list and its counts. Asserted in the matrix via PersonService.getStatistics." },
     "searchPerson": { "surface": "people", "why": "People list, filtered." },

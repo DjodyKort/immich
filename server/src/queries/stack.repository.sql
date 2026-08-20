@@ -56,9 +56,10 @@ select
           and (
             "asset"."visibility" in ('archive', 'timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 32768 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 32768 = 0
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -149,9 +150,10 @@ select
           and (
             "asset"."visibility" in ('archive', 'timeline')
             and (
-              "asset"."hiddenFrom" is null
-              or "asset"."hiddenFrom" & 32768 = 0
-            )
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 32768 = 0
           )
         order by
           "asset"."fileCreatedAt" asc

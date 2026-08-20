@@ -2632,6 +2632,68 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/{id}/hidden-from": {
+      "put": {
+        "description": "Withhold this album's photos from chosen surfaces. Owner only. Members inherit the rule on joining and stop inheriting it on leaving; rules from several albums combine, so a photo hidden by any of its albums is hidden, and a photo can opt back out individually. Distinct from `isHidden` on the update endpoint, which hides the album itself and touches no photo. Separate from that endpoint because it rewrites derived state on every member.",
+        "operationId": "setAlbumHiddenFrom",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumSetHiddenFromDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set where an album's photos appear",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
     "/albums/{id}/locked": {
       "put": {
         "description": "Move an album, and every asset in it, into or out of the locked folder. Requires an elevated session and an album you own that is not shared and whose every asset you own. Locking sets those assets to Locked visibility and removes them from all other albums; unlocking returns them to the timeline and leaves them in this album. Separate from the update endpoint because it rewrites the assets, not just the album.",
@@ -16891,6 +16953,13 @@
             "description": "Has shared link",
             "type": "boolean"
           },
+          "hiddenFrom": {
+            "description": "Surfaces this album's photos are withheld from. Empty means no rule. Distinct from `isHidden`, which hides the album itself.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
           "id": {
             "description": "Album ID",
             "format": "uuid",
@@ -16940,12 +17009,28 @@
           "createdAt",
           "description",
           "hasSharedLink",
+          "hiddenFrom",
           "id",
           "isActivityEnabled",
           "isHidden",
           "isLocked",
           "shared",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AlbumSetHiddenFromDto": {
+        "properties": {
+          "hiddenFrom": {
+            "description": "Surfaces to withhold this album's photos from. Replaces the whole set; `[]` clears the rule. Photos inherit this on joining and stop inheriting it on leaving, and rules from several albums combine -- a photo hidden by any of its albums is hidden. A photo can opt back out individually with `hiddenFromShown`. Distinct from `isHidden`, which hides the album itself and touches no photo.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "hiddenFrom"
         ],
         "type": "object"
       },
@@ -17251,7 +17336,7 @@
             "type": "string"
           },
           "hiddenFrom": {
-            "description": "Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset.",
+            "description": "Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. Does not affect what the asset inherits from its albums; use `hiddenFromShown` to override that.",
             "items": {
               "$ref": "#/components/schemas/AssetSurface"
             },
@@ -17267,6 +17352,28 @@
           },
           "hiddenFromRemove": {
             "description": "Surfaces to remove from each asset's exclusions, leaving its other exclusions alone. The counterpart of `hiddenFromAdd`; a surface named in both is rejected. Mutually exclusive with `hiddenFrom`.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
+          "hiddenFromShown": {
+            "description": "Surfaces to show this asset on despite an album rule withholding it. Replaces the whole set. Kept disjoint from `hiddenFrom` on write, since the two are opposite positions of one control: naming a surface here clears it there, and vice versa. Has no effect on a surface nothing withholds the asset from.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "hiddenFromShownAdd": {
+            "description": "Surfaces to add to each asset's overrides, leaving its other overrides alone. The adjusting counterpart of `hiddenFromShown`, for the same reason `hiddenFromAdd` exists: a selection can hold assets overriding different surfaces, and the replacing field would flatten them.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
+          "hiddenFromShownRemove": {
+            "description": "Surfaces to remove from each asset's overrides, leaving its other overrides alone. The counterpart of `hiddenFromShownAdd`; a surface named in both is rejected.",
             "items": {
               "$ref": "#/components/schemas/AssetSurface"
             },
@@ -18244,7 +18351,28 @@
             "type": "integer"
           },
           "hiddenFrom": {
-            "description": "Surfaces this asset is withheld from. Empty when the asset appears everywhere its visibility allows.",
+            "description": "Surfaces this asset is withheld from by its own setting. Does not include what its albums impose -- see `hiddenFromInherited` -- so this is the set a per-asset edit replaces. Empty when the asset's own setting withholds it from nothing.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
+          "hiddenFromEffective": {
+            "description": "Where the asset is actually withheld from, i.e. `(hiddenFrom | hiddenFromInherited) & ~hiddenFromShown`. Read-only, and the only one of the four a client should use to decide what to render: computing it client-side would mean knowing the rules of every album the asset is in.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
+          "hiddenFromInherited": {
+            "description": "Surfaces withheld by the albums this asset belongs to, before `hiddenFromShown` is applied. Read-only: it is derived from album membership and changes when the asset joins or leaves an album, or an album's rule changes.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
+          "hiddenFromShown": {
+            "description": "Surfaces this asset is explicitly shown on despite an album rule. The per-photo override, and the only way back once an album withholds a photo, since album rules combine by union and can never reveal.",
             "items": {
               "$ref": "#/components/schemas/AssetSurface"
             },
@@ -18404,6 +18532,9 @@
           "hasMetadata",
           "height",
           "hiddenFrom",
+          "hiddenFromEffective",
+          "hiddenFromInherited",
+          "hiddenFromShown",
           "id",
           "isArchived",
           "isEdited",
@@ -27564,7 +27695,15 @@
             "type": "string"
           },
           "hiddenFrom": {
-            "description": "Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset.",
+            "description": "Surfaces to withhold this asset from. Replaces the whole set: the array given becomes the complete list of exclusions, and `null` or `[]` clears them all. Independent of `visibility` -- an asset withheld from a surface is otherwise a normal asset. Does not affect what the asset inherits from its albums; use `hiddenFromShown` to override that.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "hiddenFromShown": {
+            "description": "Surfaces to show this asset on despite an album rule withholding it. Replaces the whole set. Kept disjoint from `hiddenFrom` on write, since the two are opposite positions of one control: naming a surface here clears it there, and vice versa. Has no effect on a surface nothing withholds the asset from.",
             "items": {
               "$ref": "#/components/schemas/AssetSurface"
             },

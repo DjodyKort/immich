@@ -25,6 +25,7 @@ import { AssetOcrResponseDto } from 'src/dtos/ocr.dto';
 import {
   AssetFileType,
   AssetStatus,
+  AssetSurface,
   AssetType,
   AssetVisibility,
   JobName,
@@ -48,6 +49,27 @@ import { extractTimeZone } from 'src/utils/date';
 import { batched, findOrFail } from 'src/utils/misc';
 import { transformOcrBoundingBox } from 'src/utils/transform';
 import { forSystem, forViewer, toHiddenFromMask } from 'src/utils/visibility-policy';
+
+/**
+ * Turns the two replacing fields into column updates.
+ *
+ * No cross-clearing between them, deliberately. The effective mask brackets the override as
+ * `hiddenFrom | (inherited & ~shown)`, so `hiddenFromShown` can only ever cancel what an album imposed -
+ * it has no bearing on the asset's own `hiddenFrom`, and the two overlapping is meaningless rather than
+ * contradictory. That is the whole reason for the bracketing; see `EFFECTIVE_HIDDEN_FROM`.
+ *
+ * Absent means "leave that column alone". `null` and `[]` both clear.
+ */
+const hiddenFromColumns = ({
+  hiddenFrom,
+  hiddenFromShown,
+}: {
+  hiddenFrom?: AssetSurface[] | null;
+  hiddenFromShown?: AssetSurface[] | null;
+}) => ({
+  ...(hiddenFrom !== undefined && { hiddenFrom: toHiddenFromMask(hiddenFrom ?? []) }),
+  ...(hiddenFromShown !== undefined && { hiddenFromShown: toHiddenFromMask(hiddenFromShown ?? []) }),
+});
 
 @Injectable()
 export class AssetService extends BaseService {
@@ -96,7 +118,7 @@ export class AssetService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
-    const { description, dateTimeOriginal, latitude, longitude, rating, hiddenFrom, ...rest } = dto;
+    const { description, dateTimeOriginal, latitude, longitude, rating, hiddenFrom, hiddenFromShown, ...rest } = dto;
     const repos = { asset: this.assetRepository, event: this.eventRepository };
 
     let previousMotion: { id: string } | null = null;
@@ -116,7 +138,7 @@ export class AssetService extends BaseService {
       ...rest,
       // Absent means "leave the exclusions alone"; a list (or null, or []) replaces the whole set. The
       // wire format is surface names, so the mask is only ever computed here and in updateAll.
-      ...(hiddenFrom !== undefined && { hiddenFrom: toHiddenFromMask(hiddenFrom ?? []) }),
+      ...hiddenFromColumns({ hiddenFrom, hiddenFromShown }),
     });
 
     if (previousMotion && asset) {
@@ -150,6 +172,9 @@ export class AssetService extends BaseService {
       hiddenFrom,
       hiddenFromAdd,
       hiddenFromRemove,
+      hiddenFromShown,
+      hiddenFromShownAdd,
+      hiddenFromShownRemove,
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
@@ -168,7 +193,7 @@ export class AssetService extends BaseService {
         isFavorite,
         visibility,
         duplicateId,
-        hiddenFrom: hiddenFrom === undefined ? undefined : toHiddenFromMask(hiddenFrom ?? []),
+        ...hiddenFromColumns({ hiddenFrom, hiddenFromShown }),
       },
       _.isUndefined,
     );
@@ -209,6 +234,14 @@ export class AssetService extends BaseService {
         ids,
         toHiddenFromMask(hiddenFromAdd ?? []) ?? 0,
         toHiddenFromMask(hiddenFromRemove ?? []) ?? 0,
+      );
+    }
+
+    if (hiddenFromShownAdd !== undefined || hiddenFromShownRemove !== undefined) {
+      await this.assetRepository.updateAllHiddenFromShown(
+        ids,
+        toHiddenFromMask(hiddenFromShownAdd ?? []) ?? 0,
+        toHiddenFromMask(hiddenFromShownRemove ?? []) ?? 0,
       );
     }
 
