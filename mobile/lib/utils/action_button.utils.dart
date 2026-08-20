@@ -140,16 +140,15 @@ enum ActionButtonType {
             context.timelineOrigin != TimelineOrigin.trash &&
             !context.isInLockedView && //
             context.isStacked,
-      // Both guards on the asset itself are load-bearing, and neither is enough alone: a locked or trashed
-      // asset is already withheld from all six places so every switch would be a no-op, but a timeline-built
-      // asset reports neither until the viewer's watch on the stored row has fired, which is why the view it
-      // was opened from is checked as well.
+      // Locked assets are deliberately included, and so is the locked view. The locked folder is the
+      // timeline with visibility pinned to locked, so the timeline bit decides whether a locked photo
+      // shows up there - which makes the switch meaningful rather than the no-op the guard here used to
+      // assume. Trash is the one view no mask reaches, so it stays excluded, and it is checked both on
+      // the asset and on the view it was opened from: a timeline-built asset reports neither flag until
+      // the viewer's watch on the stored row has fired.
       ActionButtonType.hideFromPlaces => switch (context.asset) {
-        RemoteAsset(isLocked: false, isTrashed: false) =>
-          context.isOwner &&
-              !context.isInLockedView &&
-              context.timelineOrigin != TimelineOrigin.trash &&
-              context.selectedCount == 1,
+        RemoteAsset(isTrashed: false) =>
+          context.isOwner && context.timelineOrigin != TimelineOrigin.trash && context.selectedCount == 1,
         _ => false,
       },
       ActionButtonType.openInBrowser => context.asset.hasRemote && !context.isInLockedView,

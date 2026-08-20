@@ -11,6 +11,7 @@ import 'package:immich_mobile/presentation/actions/download.action.dart';
 import 'package:immich_mobile/presentation/actions/edit_datetime.action.dart';
 import 'package:immich_mobile/presentation/actions/edit_location.action.dart';
 import 'package:immich_mobile/presentation/actions/favorite.action.dart';
+import 'package:immich_mobile/presentation/actions/hide_from_places.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
 import 'package:immich_mobile/presentation/actions/remove_from_album.action.dart';
 import 'package:immich_mobile/presentation/actions/set_album_cover.action.dart';
@@ -95,6 +96,7 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
           .new(action: EditDateTimeAction(source: .timeline)),
           .new(action: EditLocationAction(source: .timeline)),
           .new(action: LockAction(source: .timeline)),
+          .new(action: HideFromPlacesAction(source: .timeline)),
           .new(action: StackAction(source: .timeline)),
         ],
         const .new(action: CleanupLocalAction(source: .timeline)),
