@@ -43,18 +43,25 @@ describe('AssetHiddenFromModal component', () => {
     expect(getSwitch('People')).not.toBeChecked();
   });
 
-  it('warns that a multi-selection is replaced wholesale, and starts blank', () => {
+  // A selection is edited as per-place intentions, not as a set of places: the modal cannot know what a
+  // multi-selection is currently hidden from, so a complete set would flatten assets that disagree and
+  // discard exclusions nobody was shown. Switches cannot express "leave alone", hence the three-way
+  // controls, and their absence here is the assertion that the bulk path is not the single-asset one.
+  it('edits a multi-selection per place rather than as a set, and starts with nothing to apply', () => {
     render(AssetHiddenFromModal, { props: { onClose, assetIds: ['asset-1', 'asset-2', 'asset-3'] } });
 
-    expect(screen.getByText(/replacing whatever each one is hidden from now/)).toBeInTheDocument();
-    expect(screen.getByText(/applies exactly this set to all 3 items/)).toBeInTheDocument();
-    expect(getSwitch('Main timeline')).not.toBeChecked();
+    expect(screen.getByText(/Every place starts unchanged/)).toBeInTheDocument();
+    expect(screen.getByText(/applied to the 3 items/)).toBeInTheDocument();
+    expect(screen.queryAllByRole('switch')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
-  it('does not warn for a single asset', () => {
+  it('keeps the switches, and no bulk notice, for a single asset', () => {
     render(AssetHiddenFromModal, { props: { onClose, assetIds: ['asset-1'] } });
 
-    expect(screen.queryByText(/replacing whatever each one is hidden from now/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Every place starts unchanged/)).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('switch')).toHaveLength(6);
+    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
   });
 
   it('sends the chosen surfaces for a single asset', async () => {
@@ -75,19 +82,18 @@ describe('AssetHiddenFromModal component', () => {
     expect(onClose).toHaveBeenCalledWith(true);
   });
 
-  it('sends a bulk update for a multi-selection', async () => {
-    sdkMock.updateAssets.mockResolvedValueOnce(undefined as never);
-
+  // The bulk payload rule is not exercised from here. Its controls are a headless `Select` whose trigger
+  // exposes no role this environment can find, and the rule worth pinning is the intent-to-payload
+  // mapping rather than the clicking -- so it is tested directly in `$lib/utils/hidden-from.spec.ts`,
+  // which is also what stops `hiddenFrom` (the replacing field) ever being sent alongside the adjusting
+  // ones. What is asserted here is that the bulk path is wired to a different control set at all, and
+  // that it refuses to send a request with nothing set.
+  it('does not send anything for a selection until a place is set', async () => {
     render(AssetHiddenFromModal, { props: { onClose, assetIds: ['asset-1', 'asset-2'] } });
 
-    await userEvent.click(getSwitch('Search'));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    await waitFor(() =>
-      expect(sdkMock.updateAssets).toHaveBeenCalledWith({
-        assetBulkUpdateDto: { ids: ['asset-1', 'asset-2'], hiddenFrom: [AssetSurface.Search] },
-      }),
-    );
+    expect(sdkMock.updateAssets).not.toHaveBeenCalled();
     expect(sdkMock.updateAsset).not.toHaveBeenCalled();
   });
 

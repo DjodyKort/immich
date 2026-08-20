@@ -146,9 +146,11 @@ enum ActionButtonType {
       // assume. Trash is the one view no mask reaches, so it stays excluded, and it is checked both on
       // the asset and on the view it was opened from: a timeline-built asset reports neither flag until
       // the viewer's watch on the stored row has fired.
+      //
+      // No `selectedCount` limit: the action adjusts a selection place by place rather than replacing each
+      // asset's set, so a mixed selection no longer risks discarding exclusions nobody was shown.
       ActionButtonType.hideFromPlaces => switch (context.asset) {
-        RemoteAsset(isTrashed: false) =>
-          context.isOwner && context.timelineOrigin != TimelineOrigin.trash && context.selectedCount == 1,
+        RemoteAsset(isTrashed: false) => context.isOwner && context.timelineOrigin != TimelineOrigin.trash,
         _ => false,
       },
       ActionButtonType.openInBrowser => context.asset.hasRemote && !context.isInLockedView,

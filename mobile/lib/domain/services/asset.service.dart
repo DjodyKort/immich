@@ -162,6 +162,25 @@ class AssetService {
     return stored;
   }
 
+  /// Switches [add] on and [remove] off for every asset in [remoteIds], leaving the rest alone.
+  ///
+  /// Unlike [updateHiddenFrom] this does not replace, which is what makes it usable on a selection: the
+  /// assets in one need not be withheld from the same places, and a replacement set would discard the
+  /// difference without ever showing it to anyone. The local rows are adjusted with the same arithmetic
+  /// rather than read back, because the bulk route answers with nothing.
+  Future<void> updateHiddenFromBulk(
+    List<String> remoteIds, {
+    required Set<AssetSurface> add,
+    required Set<AssetSurface> remove,
+  }) async {
+    if (remoteIds.isEmpty || (add.isEmpty && remove.isEmpty)) {
+      return;
+    }
+
+    await _apiRepository.updateHiddenFromBulk(remoteIds, add: add, remove: remove);
+    await _remoteRepository.adjustHiddenFrom(remoteIds, add: add, remove: remove);
+  }
+
   Future<void> trash(List<String> remoteIds) async {
     if (remoteIds.isEmpty) {
       return;

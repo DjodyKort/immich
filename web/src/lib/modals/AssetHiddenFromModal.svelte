@@ -1,8 +1,9 @@
 <script lang="ts">
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
+  import { hideFromPlaces, toHiddenFromAdjustment, type HideFromIntent } from '$lib/utils/hidden-from';
   import { AssetSurface, updateAsset, updateAssets } from '@immich/sdk';
-  import { Alert, Button, Field, FormModal, modalManager, Stack, Switch, Text, toastManager } from '@immich/ui';
+  import { Alert, Button, Field, FormModal, modalManager, Select, Stack, Switch, Text, toastManager } from '@immich/ui';
   import { mdiEyeOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -12,7 +13,8 @@
     /**
      * The current exclusions, when they are known. Only the single-asset entry points know them: a
      * multi-selection is made of timeline assets, which do not carry `hiddenFrom`, so the modal
-     * opens blank there and says so in the copy rather than pretending to show a merged state.
+     * cannot prefill there. That is why a selection is edited per place rather than as a set -- see
+     * the `bulk` comment below.
      */
     hiddenFrom?: AssetSurface[];
     /**
@@ -27,67 +29,105 @@
 
   let { onClose, assetIds, hiddenFrom = [], locked = false }: Props = $props();
 
-  // Ordered the way a person meets these places in the app, not the way the enum is declared.
-  const surfaces = [
-    AssetSurface.Timeline,
-    AssetSurface.Search,
-    AssetSurface.Map,
-    AssetSurface.People,
-    AssetSurface.Memories,
-    AssetSurface.Folders,
-  ];
+  /**
+   * A selection is edited as a set of per-place *intentions*, not as a set of places.
+   *
+   * The modal cannot know what a multi-selection is currently hidden from, and the assets in it need
+   * not agree. Sending a complete `hiddenFrom` set would therefore flatten them all to whatever this
+   * modal happens to show, silently discarding exclusions the user never saw. Instead each place is
+   * left alone unless it is explicitly set, and the server applies the difference with
+   * `hiddenFromAdd`/`hiddenFromRemove` -- one bitwise update per place, leaving every other bit of
+   * every asset untouched.
+   */
+  const bulk = $derived(assetIds.length > 1);
 
+  // The places list and the intent-to-payload rule both live in $lib/utils/hidden-from, so that rule can
+  // be unit-tested directly rather than by driving a headless Select in jsdom. Its spec is what pins the
+  // guarantee that only the places actually set are ever sent.
+  const surfaces = hideFromPlaces;
+
+  // Single-asset editing keeps the switches: the true state is known, so replacing the whole set is
+  // exactly what the user sees themselves doing.
   let selected = $state<Record<string, boolean>>(
     Object.fromEntries(surfaces.map((surface) => [surface, hiddenFrom.includes(surface)])),
   );
 
-  const options = $derived([
-    {
-      surface: AssetSurface.Timeline,
-      label: locked ? $t('hide_from_place_locked_folder') : $t('hide_from_place_timeline'),
-      description: locked
-        ? $t('hide_from_place_locked_folder_description')
-        : $t('hide_from_place_timeline_description'),
-    },
-    {
-      surface: AssetSurface.Search,
-      label: $t('hide_from_place_search'),
-      description: $t('hide_from_place_search_description'),
-    },
-    { surface: AssetSurface.Map, label: $t('hide_from_place_map'), description: $t('hide_from_place_map_description') },
-    {
-      surface: AssetSurface.People,
-      label: $t('hide_from_place_people'),
-      description: $t('hide_from_place_people_description'),
-    },
-    {
-      surface: AssetSurface.Memories,
-      label: $t('hide_from_place_memories'),
-      description: $t('hide_from_place_memories_description'),
-    },
-    {
-      surface: AssetSurface.Folders,
-      label: $t('hide_from_place_folders'),
-      description: $t('hide_from_place_folders_description'),
-    },
+  let intents = $state<Record<string, HideFromIntent>>(
+    Object.fromEntries(surfaces.map((surface) => [surface, 'unchanged'])),
+  );
+
+  const labels = $derived(
+    new Map([
+      [
+        AssetSurface.Timeline,
+        {
+          label: locked ? $t('hide_from_place_locked_folder') : $t('hide_from_place_timeline'),
+          description: locked
+            ? $t('hide_from_place_locked_folder_description')
+            : $t('hide_from_place_timeline_description'),
+        },
+      ],
+      [
+        AssetSurface.Search,
+        { label: $t('hide_from_place_search'), description: $t('hide_from_place_search_description') },
+      ],
+      [AssetSurface.Map, { label: $t('hide_from_place_map'), description: $t('hide_from_place_map_description') }],
+      [
+        AssetSurface.People,
+        { label: $t('hide_from_place_people'), description: $t('hide_from_place_people_description') },
+      ],
+      [
+        AssetSurface.Memories,
+        { label: $t('hide_from_place_memories'), description: $t('hide_from_place_memories_description') },
+      ],
+      [
+        AssetSurface.Folders,
+        { label: $t('hide_from_place_folders'), description: $t('hide_from_place_folders_description') },
+      ],
+    ]),
+  );
+
+  const intentOptions = $derived([
+    { label: $t('hide_from_places_bulk_unchanged'), value: 'unchanged' },
+    { label: $t('hide_from_places_bulk_hide'), value: 'hide' },
+    { label: $t('hide_from_places_bulk_show'), value: 'show' },
   ]);
 
-  const anySelected = $derived(surfaces.some((surface) => selected[surface]));
+  const toHide = $derived(surfaces.filter((surface) => intents[surface] === 'hide'));
+  /** The adjusting half of the bulk payload, or `undefined` when nothing was set. */
+  const adjustment = $derived(toHiddenFromAdjustment(intents));
 
-  const clearAll = () => {
+  const anySelected = $derived(surfaces.some((surface) => selected[surface]));
+  const anyIntent = $derived(adjustment !== undefined);
+
+  // Nothing to send is not an error, but submitting would emit a "0 updated" toast and refresh pages
+  // for no reason, so the button is simply inert until there is something to apply.
+  const submitDisabled = $derived(bulk && !anyIntent);
+
+  const resetAll = () => {
+    if (bulk) {
+      for (const surface of surfaces) {
+        intents[surface] = 'unchanged';
+      }
+      return;
+    }
     for (const surface of surfaces) {
       selected[surface] = false;
     }
   };
 
   const onSubmit = async () => {
-    // The API replaces the whole set, so an empty array is how "show everywhere again" is expressed.
-    const nextHiddenFrom = surfaces.filter((surface) => selected[surface]);
+    if (bulk && !anyIntent) {
+      return;
+    }
 
     // Hiding from all six surfaces is allowed -- it's not a one-way door, the Hidden view exists
-    // precisely so this stays findable -- but it's easy to flip every switch without meaning to,
-    // so it gets a confirmation rather than silent application.
-    if (nextHiddenFrom.length === surfaces.length) {
+    // precisely so this stays findable -- but it's easy to set every place without meaning to, so it
+    // gets a confirmation rather than silent application. In bulk that means every place set to
+    // "hide"; nothing about the assets' prior state can turn a partial edit into this.
+    const hidingEverywhere = bulk ? toHide.length === surfaces.length : surfaces.every((surface) => selected[surface]);
+
+    if (hidingEverywhere) {
       const confirmed = await modalManager.showDialog({
         title: $t('hide_from_places_all_confirm_title'),
         prompt: $t('hide_from_places_all_confirm_prompt', { values: { count: assetIds.length } }),
@@ -100,17 +140,23 @@
     }
 
     try {
-      if (assetIds.length === 1) {
+      if (bulk) {
+        await updateAssets({ assetBulkUpdateDto: { ids: assetIds, ...adjustment } });
+        // Only the places actually set are announced. A page whose surface was left unchanged must
+        // not drop its assets, and one whose surface was set to "show" must not either.
+        eventManager.emit('AssetsHiddenFrom', { assetIds, hiddenFrom: toHide });
+      } else {
+        // The API replaces the whole set here, which is what the switches mean: an empty array is how
+        // "show everywhere again" is expressed.
+        const nextHiddenFrom = surfaces.filter((surface) => selected[surface]);
         const response = await updateAsset({ id: assetIds[0], updateAssetDto: { hiddenFrom: nextHiddenFrom } });
         // Refreshes the open viewer and its detail panel with the value the server actually stored.
         eventManager.emit('AssetUpdate', response);
-      } else {
-        await updateAssets({ assetBulkUpdateDto: { ids: assetIds, hiddenFrom: nextHiddenFrom } });
+        // Emitted after AssetUpdate on purpose: that event upserts into the timeline, and a page whose
+        // own surface is now excluded has to get the last word and drop the asset.
+        eventManager.emit('AssetsHiddenFrom', { assetIds, hiddenFrom: nextHiddenFrom });
       }
 
-      // Emitted after AssetUpdate on purpose: that event upserts into the timeline, and a page whose
-      // own surface is now excluded has to get the last word and drop the asset.
-      eventManager.emit('AssetsHiddenFrom', { assetIds, hiddenFrom: nextHiddenFrom });
       toastManager.primary($t('hide_from_places_updated', { values: { count: assetIds.length } }));
       onClose(true);
     } catch (error) {
@@ -119,25 +165,47 @@
   };
 </script>
 
-<FormModal size="small" title={$t('hide_from_places')} icon={mdiEyeOffOutline} {onClose} {onSubmit}>
+<FormModal
+  size="small"
+  title={$t('hide_from_places')}
+  icon={mdiEyeOffOutline}
+  {onClose}
+  {onSubmit}
+  disabled={submitDisabled}
+>
   <Stack gap={4} class="my-4">
     <Text size="small" color="muted">{$t('hide_from_places_help')}</Text>
 
-    {#if assetIds.length > 1}
-      <Alert color="warning" size="small">
+    {#if bulk}
+      <Alert color="info" size="small">
         {$t('hide_from_places_bulk_help', { values: { count: assetIds.length } })}
       </Alert>
     {/if}
 
-    {#each options as option (option.surface)}
-      <Field label={option.label} description={option.description}>
-        <Switch bind:checked={selected[option.surface]} />
+    {#each surfaces as surface (surface)}
+      {@const copy = labels.get(surface)!}
+      <Field label={copy.label} description={copy.description}>
+        {#if bulk}
+          <Select
+            value={intents[surface]}
+            options={intentOptions}
+            onChange={(value) => (intents[surface] = value as HideFromIntent)}
+          />
+        {:else}
+          <Switch bind:checked={selected[surface]} />
+        {/if}
       </Field>
     {/each}
 
     <div class="flex justify-start">
-      <Button color="primary" size="small" variant="ghost" disabled={!anySelected} onclick={clearAll}>
-        {$t('hide_from_places_clear')}
+      <Button
+        color="primary"
+        size="small"
+        variant="ghost"
+        disabled={bulk ? !anyIntent : !anySelected}
+        onclick={resetAll}
+      >
+        {bulk ? $t('hide_from_places_bulk_reset') : $t('hide_from_places_clear')}
       </Button>
     </div>
   </Stack>

@@ -173,6 +173,7 @@ class ServiceMocks {
   void _stubAssetService() {
     when(asset.update).thenAnswer((_) async {});
     when(asset.updateHiddenFrom).thenAnswer((_) async => const {});
+    when(asset.updateHiddenFromBulk).thenAnswer((_) async {});
     when(asset.stack).thenAnswer((_) async {});
     when(asset.unstack).thenAnswer((_) async {});
     when(asset.restoreTrash).thenAnswer((_) async {});
@@ -250,8 +251,7 @@ extension type const LocalAlbumRepositoryStub(MockLocalAlbumRepository repo) imp
       () => repo.getAssetsToHash(any());
 }
 
-extension type const LocalAssetRepositoryStub(MockLocalAssetRepository repo)
-    implements Stub<MockLocalAssetRepository> {
+extension type const LocalAssetRepositoryStub(MockLocalAssetRepository repo) implements Stub<MockLocalAssetRepository> {
   Future<void> Function() get reconcileHashesFromCloudId =>
       () => repo.reconcileHashesFromCloudId();
 
@@ -367,6 +367,13 @@ extension type const AssetServiceStub(MockAssetService service) implements Stub<
 
   Future<Set<AssetSurface>> Function() get updateHiddenFrom =>
       () => service.updateHiddenFrom(any(), any());
+
+  Future<void> Function() get updateHiddenFromBulk =>
+      () => service.updateHiddenFromBulk(
+        any(),
+        add: any(named: 'add'),
+        remove: any(named: 'remove'),
+      );
 }
 
 extension type const RemoteAlbumServiceStub(MockRemoteAlbumService service) implements Stub<MockRemoteAlbumService> {

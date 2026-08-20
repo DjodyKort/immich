@@ -10,11 +10,14 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:openapi/api.dart' as api show AssetSurface, AssetVisibility;
 import 'package:openapi/api.dart' hide AssetSurface, AssetVisibility;
 
-/// Every other field of `UpdateAssetDto` and `AssetBulkUpdateDto` defaults to absent; `hiddenFrom`, being
-/// an array, is generated with `Optional.present(const [])` instead - so a request that simply omits it
-/// asks the server to *clear* the asset's exclusions. Favouriting a photo from the phone would wipe what
-/// the web set. Every construction of those two DTOs therefore has to say `absent` out loud, and this names
-/// why. The generator quirk is not ours to fix here: it is in the Dart client templates.
+/// Every other field of `UpdateAssetDto` and `AssetBulkUpdateDto` defaults to absent; the surface arrays -
+/// `hiddenFrom`, `hiddenFromAdd`, `hiddenFromRemove` - are generated with `Optional.present(const [])`
+/// instead, so a request that simply omits `hiddenFrom` asks the server to *clear* the asset's exclusions.
+/// Favouriting a photo from the phone would wipe what the web set. Every construction of those two DTOs
+/// therefore has to say `absent` out loud for all three, and this names why. The two adjusting fields are
+/// harmless at `[]` today - an empty add and an empty remove is a no-op the server short-circuits - but
+/// they are spelled out anyway so no call site depends on that staying true.
+/// The generator quirk is not ours to fix here: it is in the Dart client templates.
 const _leaveHiddenFromAlone = Optional<List<api.AssetSurface>?>.absent();
 
 final assetApiRepositoryProvider = Provider(
@@ -57,6 +60,8 @@ class AssetApiRepository extends ApiRepository {
         ids: ids,
         visibility: Optional.present(_mapVisibility(visibility)),
         hiddenFrom: _leaveHiddenFromAlone,
+        hiddenFromAdd: _leaveHiddenFromAlone,
+        hiddenFromRemove: _leaveHiddenFromAlone,
       ),
     );
   }
@@ -136,6 +141,8 @@ class AssetApiRepository extends ApiRepository {
         latitude: location.map((loc) => loc.latitude).toOptional(),
         longitude: location.map((loc) => loc.longitude).toOptional(),
         hiddenFrom: _leaveHiddenFromAlone,
+        hiddenFromAdd: _leaveHiddenFromAlone,
+        hiddenFromRemove: _leaveHiddenFromAlone,
       ),
     );
   }
@@ -157,6 +164,27 @@ class AssetApiRepository extends ApiRepository {
     return response.hiddenFrom.map((surface) => surface.toAssetSurface()).toSet();
   }
 
+  /// Switches [add] on and [remove] off for every asset in [ids], leaving their other exclusions alone.
+  ///
+  /// The bulk route rather than a loop over the single-asset one, and additive rather than replacing:
+  /// the assets in a selection need not be withheld from the same places, so sending one complete
+  /// `hiddenFrom` set would discard the difference. `hiddenFrom` is left absent here because naming it
+  /// alongside these two is rejected by the server - it replaces, they adjust.
+  Future<void> updateHiddenFromBulk(
+    List<String> ids, {
+    required Set<AssetSurface> add,
+    required Set<AssetSurface> remove,
+  }) {
+    return _api.updateAssets(
+      AssetBulkUpdateDto(
+        ids: ids,
+        hiddenFrom: _leaveHiddenFromAlone,
+        hiddenFromAdd: Optional.present(add.map(_mapSurface).toList(growable: false)),
+        hiddenFromRemove: Optional.present(remove.map(_mapSurface).toList(growable: false)),
+      ),
+    );
+  }
+
   Future<void> updateLocation(List<String> ids, LatLng location) async {
     return _api.updateAssets(
       AssetBulkUpdateDto(
@@ -164,13 +192,21 @@ class AssetApiRepository extends ApiRepository {
         latitude: Optional.present(location.latitude),
         longitude: Optional.present(location.longitude),
         hiddenFrom: _leaveHiddenFromAlone,
+        hiddenFromAdd: _leaveHiddenFromAlone,
+        hiddenFromRemove: _leaveHiddenFromAlone,
       ),
     );
   }
 
   Future<void> updateDateTime(List<String> ids, String dateTime) async {
     return _api.updateAssets(
-      AssetBulkUpdateDto(ids: ids, dateTimeOriginal: Optional.present(dateTime), hiddenFrom: _leaveHiddenFromAlone),
+      AssetBulkUpdateDto(
+        ids: ids,
+        dateTimeOriginal: Optional.present(dateTime),
+        hiddenFrom: _leaveHiddenFromAlone,
+        hiddenFromAdd: _leaveHiddenFromAlone,
+        hiddenFromRemove: _leaveHiddenFromAlone,
+      ),
     );
   }
 }
