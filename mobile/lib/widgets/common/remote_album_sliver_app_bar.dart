@@ -109,9 +109,22 @@ class _MesmerizingSliverAppBarState extends ConsumerState<RemoteAlbumSliverAppBa
           return AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
             child: scrollProgress > 0.95
-                ? Text(
-                    currentAlbum.name,
-                    style: TextStyle(color: context.primaryColor, fontWeight: FontWeight.w600, fontSize: 18),
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (currentAlbum.isLocked)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Icon(Icons.lock_rounded, size: 16, color: context.primaryColor),
+                        ),
+                      Flexible(
+                        child: Text(
+                          currentAlbum.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: context.primaryColor, fontWeight: FontWeight.w600, fontSize: 18),
+                        ),
+                      ),
+                    ],
                   )
                 : null,
           );
@@ -233,6 +246,32 @@ class _ExpandedBackgroundState extends ConsumerState<_ExpandedBackground> with S
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Past the PIN a locked album looks exactly like any other, and this is the screen
+                // where that matters: it is where you add photos, share, or invite users. The album
+                // list's padlock is behind you by the time you get here.
+                if (currentAlbum.isLocked)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: const BorderRadius.all(Radius.circular(999)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.lock_rounded, size: 14, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          context.t.locked_album,
+                          style: context.textTheme.labelMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Row(
                   children: [
                     if (dateRange.hasValue)
