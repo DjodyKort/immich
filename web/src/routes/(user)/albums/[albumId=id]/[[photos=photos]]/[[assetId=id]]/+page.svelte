@@ -4,6 +4,7 @@
   import { navigating } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import AlbumMap from '$lib/components/album-page/AlbumMap.svelte';
+  import AlbumHiddenFromSummary from '$lib/components/album-page/AlbumHiddenFromSummary.svelte';
   import AlbumSummary from '$lib/components/album-page/AlbumSummary.svelte';
   import ActivityStatus from '$lib/components/asset-viewer/ActivityStatus.svelte';
   import ActivityViewer from '$lib/components/asset-viewer/ActivityViewer.svelte';
@@ -408,6 +409,8 @@
               {#if album.assetCount > 0}
                 <AlbumSummary {album} />
               {/if}
+
+              <AlbumHiddenFromSummary {album} />
 
               <!-- ALBUM SHARING -->
               {#if album.albumUsers.length > 1 || (album.hasSharedLink && isOwned)}

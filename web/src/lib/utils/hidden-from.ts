@@ -1,4 +1,5 @@
 import { AssetSurface, type AssetBulkUpdateDto } from '@immich/sdk';
+import type { MessageFormatter } from 'svelte-i18n';
 
 /**
  * The six places an asset can be withheld from, in the order a person meets them in the app rather than
@@ -12,6 +13,47 @@ export const hideFromPlaces = [
   AssetSurface.Memories,
   AssetSurface.Folders,
 ] as const;
+
+/**
+ * The label and description for each place.
+ *
+ * Extracted from `AssetHiddenFromModal` once album settings needed the same six pairs. Takes the
+ * translator rather than importing it so this file stays free of Svelte context, and `locked` because the
+ * timeline row is called "Locked folder" for an asset that lives there - the surface is the same, the name
+ * a person knows it by is not.
+ */
+export const hideFromPlaceLabels = (
+  $t: MessageFormatter,
+  { locked = false }: { locked?: boolean } = {},
+): Map<AssetSurface, { label: string; description: string }> =>
+  new Map([
+    [
+      AssetSurface.Timeline,
+      {
+        label: locked ? $t('hide_from_place_locked_folder') : $t('hide_from_place_timeline'),
+        description: locked
+          ? $t('hide_from_place_locked_folder_description')
+          : $t('hide_from_place_timeline_description'),
+      },
+    ],
+    [
+      AssetSurface.Search,
+      { label: $t('hide_from_place_search'), description: $t('hide_from_place_search_description') },
+    ],
+    [AssetSurface.Map, { label: $t('hide_from_place_map'), description: $t('hide_from_place_map_description') }],
+    [
+      AssetSurface.People,
+      { label: $t('hide_from_place_people'), description: $t('hide_from_place_people_description') },
+    ],
+    [
+      AssetSurface.Memories,
+      { label: $t('hide_from_place_memories'), description: $t('hide_from_place_memories_description') },
+    ],
+    [
+      AssetSurface.Folders,
+      { label: $t('hide_from_place_folders'), description: $t('hide_from_place_folders_description') },
+    ],
+  ]);
 
 /**
  * What a person asked to change about one place, for a selection.

@@ -75,7 +75,7 @@ describe('AssetHiddenFromModal component', () => {
     await waitFor(() =>
       expect(sdkMock.updateAsset).toHaveBeenCalledWith({
         id: 'asset-1',
-        updateAssetDto: { hiddenFrom: [AssetSurface.Timeline, AssetSurface.Memories] },
+        updateAssetDto: { hiddenFrom: [AssetSurface.Timeline, AssetSurface.Memories], hiddenFromShown: [] },
       }),
     );
     expect(sdkMock.updateAssets).not.toHaveBeenCalled();
@@ -112,7 +112,53 @@ describe('AssetHiddenFromModal component', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
-      expect(sdkMock.updateAsset).toHaveBeenCalledWith({ id: 'asset-1', updateAssetDto: { hiddenFrom: [] } }),
+      expect(sdkMock.updateAsset).toHaveBeenCalledWith({
+        id: 'asset-1',
+        updateAssetDto: { hiddenFrom: [], hiddenFromShown: [] },
+      }),
+    );
+  });
+
+  // A photo in an album with a rule: the switch has to read the *effective* state, or it sits off while
+  // the photo is hidden and toggling it twice looks like a no-op.
+  it('shows a switch as on when the album withholds the place', () => {
+    render(AssetHiddenFromModal, {
+      props: { onClose, assetIds: ['asset-1'], hiddenFromInherited: [AssetSurface.Timeline] },
+    });
+
+    expect(getSwitch('Main timeline')).toBeChecked();
+    expect(getSwitch('Search')).not.toBeChecked();
+  });
+
+  it('reads an existing override as off', () => {
+    render(AssetHiddenFromModal, {
+      props: {
+        onClose,
+        assetIds: ['asset-1'],
+        hiddenFromInherited: [AssetSurface.Timeline],
+        hiddenFromShown: [AssetSurface.Timeline],
+      },
+    });
+
+    expect(getSwitch('Main timeline')).not.toBeChecked();
+  });
+
+  // Turning off a place the album withholds is an override, not an un-hide: there is no own bit to clear.
+  it('writes an override when an inherited place is switched off', async () => {
+    sdkMock.updateAsset.mockResolvedValueOnce({ id: 'asset-1' } as never);
+
+    render(AssetHiddenFromModal, {
+      props: { onClose, assetIds: ['asset-1'], hiddenFromInherited: [AssetSurface.Timeline] },
+    });
+
+    await userEvent.click(getSwitch('Main timeline'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(sdkMock.updateAsset).toHaveBeenCalledWith({
+        id: 'asset-1',
+        updateAssetDto: { hiddenFrom: [], hiddenFromShown: [AssetSurface.Timeline] },
+      }),
     );
   });
 });

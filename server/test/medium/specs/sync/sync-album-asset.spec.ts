@@ -80,6 +80,8 @@ describe(SyncRequestType.AlbumAssetsV2, () => {
           type: asset.type,
           visibility: asset.visibility,
           hiddenFrom: [],
+          hiddenFromInherited: [],
+          hiddenFromShown: [],
           duration: asset.duration,
           livePhotoVideoId: asset.livePhotoVideoId,
           stackId: asset.stackId,

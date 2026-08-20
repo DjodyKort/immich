@@ -61,6 +61,8 @@ describe(SyncEntityType.AssetV2, () => {
           type: asset.type,
           visibility: asset.visibility,
           hiddenFrom: [],
+          hiddenFromInherited: [],
+          hiddenFromShown: [],
           duration: asset.duration,
           stackId: null,
           livePhotoVideoId: null,
