@@ -148,6 +148,28 @@ where
   )
   and "album_asset"."assetId" = $3
   and "album"."deletedAt" is null
+  and "album"."isLocked" = $4
+order by
+  "album"."createdAt" desc
+
+-- AlbumRepository.getByAssetIdForStorageTemplate
+select
+  "album"."id",
+  "album"."albumName"
+from
+  "album"
+  inner join "album_asset" on "album_asset"."albumId" = "album"."id"
+where
+  exists (
+    select
+    from
+      "album_user"
+    where
+      "album_user"."albumId" = "album"."id"
+      and "album_user"."userId" = $1
+  )
+  and "album_asset"."assetId" = $2
+  and "album"."deletedAt" is null
 order by
   "album"."createdAt" desc
 

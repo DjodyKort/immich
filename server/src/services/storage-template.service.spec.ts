@@ -184,7 +184,7 @@ describe(StorageTemplateService.name, () => {
 
       mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(stillAsset));
       mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(motionAsset));
-      mocks.album.getByAssetId.mockResolvedValue([getForAlbum(album)]);
+      mocks.album.getByAssetIdForStorageTemplate.mockResolvedValue([getForAlbum(album)]);
 
       mocks.move.create.mockResolvedValueOnce({
         id: '123',
@@ -205,7 +205,7 @@ describe(StorageTemplateService.name, () => {
       await expect(sut.handleMigrationSingle({ id: stillAsset.id })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.storage.checkFileExists).toHaveBeenCalledTimes(2);
-      expect(mocks.album.getByAssetId).toHaveBeenCalledWith(stillAsset.ownerId, stillAsset.id);
+      expect(mocks.album.getByAssetIdForStorageTemplate).toHaveBeenCalledWith(stillAsset.ownerId, stillAsset.id);
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: stillAsset.id, originalPath: newStillPicturePath });
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: motionAsset.id, originalPath: newMotionPicturePath });
     });
@@ -223,7 +223,7 @@ describe(StorageTemplateService.name, () => {
 
       mocks.user.get.mockResolvedValue(user);
       mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(asset));
-      mocks.album.getByAssetId.mockResolvedValueOnce([getForAlbum(album)]);
+      mocks.album.getByAssetIdForStorageTemplate.mockResolvedValueOnce([getForAlbum(album)]);
 
       expect(await sut.handleMigrationSingle({ id: asset.id })).toBe(JobStatus.Success);
 
@@ -274,7 +274,7 @@ describe(StorageTemplateService.name, () => {
 
       mocks.user.get.mockResolvedValue(user);
       mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(asset));
-      mocks.album.getByAssetId.mockResolvedValueOnce([getForAlbum(album)]);
+      mocks.album.getByAssetIdForStorageTemplate.mockResolvedValueOnce([getForAlbum(album)]);
       mocks.album.getMetadataForIds.mockResolvedValueOnce([
         {
           startDate: asset.fileCreatedAt,
@@ -836,7 +836,7 @@ describe(StorageTemplateService.name, () => {
       mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(stillAsset)]));
       mocks.user.getList.mockResolvedValue([userStub.user1]);
       mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(motionAsset));
-      mocks.album.getByAssetId.mockResolvedValue([getForAlbum(album)]);
+      mocks.album.getByAssetIdForStorageTemplate.mockResolvedValue([getForAlbum(album)]);
 
       mocks.move.create.mockResolvedValueOnce({
         id: '123',
@@ -875,7 +875,7 @@ describe(StorageTemplateService.name, () => {
       mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(stillAsset)]));
       mocks.user.getList.mockResolvedValue([user]);
       mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(motionAsset));
-      mocks.album.getByAssetId.mockResolvedValue([getForAlbum(album)]);
+      mocks.album.getByAssetIdForStorageTemplate.mockResolvedValue([getForAlbum(album)]);
 
       mocks.move.create.mockResolvedValueOnce({
         id: '123',
@@ -895,8 +895,8 @@ describe(StorageTemplateService.name, () => {
 
       await sut.handleMigration();
 
-      expect(mocks.album.getByAssetId).toHaveBeenCalledWith(stillAsset.ownerId, stillAsset.id);
-      expect(mocks.album.getByAssetId).toHaveBeenCalledTimes(2);
+      expect(mocks.album.getByAssetIdForStorageTemplate).toHaveBeenCalledWith(stillAsset.ownerId, stillAsset.id);
+      expect(mocks.album.getByAssetIdForStorageTemplate).toHaveBeenCalledTimes(2);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: stillAsset.id,
         originalPath: expect.stringContaining(`/${album.albumName}/`),

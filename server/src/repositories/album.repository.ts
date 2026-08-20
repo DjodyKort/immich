@@ -19,7 +19,13 @@ import { DB } from 'src/schema';
 import { AlbumTable } from 'src/schema/tables/album.table';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
 import { asUuid, dummy } from 'src/utils/database';
-import { PolicyContext, Surface, surfacePredicate, withSurface } from 'src/utils/visibility-policy';
+import {
+  excludeLockedAlbumsUnlessElevated,
+  PolicyContext,
+  Surface,
+  surfacePredicate,
+  withSurface,
+} from 'src/utils/visibility-policy';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -102,8 +108,12 @@ export class AlbumRepository {
       .executeTakeFirst();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
-  getByAssetId(ownerId: string, assetId: string) {
+  // Deliberately not filtered on `album.isHidden`: hiding is about the album list, and an asset's own
+  // "in albums" list is how a hidden album stays findable. Locked albums are a different matter -- the
+  // rule is that an unelevated session must not learn one exists, and knowing an asset id inside one
+  // must not be a way around that -- so this path takes the same elevation gate as the listing.
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, { elevated: false }] })
+  getByAssetId(ownerId: string, assetId: string, ctx: PolicyContext) {
     return this.db
       .selectFrom('album')
       .selectAll('album')
@@ -118,7 +128,37 @@ export class AlbumRepository {
       )
       .where('album_asset.assetId', '=', assetId)
       .where('album.deletedAt', 'is', null)
+      .$call((qb) => excludeLockedAlbumsUnlessElevated(qb, ctx))
       .select(withAlbumUsers(ownerId))
+      .orderBy('album.createdAt', 'desc')
+      .execute();
+  }
+
+  /**
+   * The album an asset belongs to, for rendering a storage path. Not a listing, and deliberately not
+   * gated on elevation.
+   *
+   * The storage-template job streams every asset except motion parts, locked ones included, and
+   * `{{album}}` renders into the path on disk. Asking the visibility question here would resolve a
+   * locked album's name to null and move those files on the next migration run, so this asks only
+   * where the asset lives. Nothing user-facing may call it: `getByAssetId` is the listing.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getByAssetIdForStorageTemplate(ownerId: string, assetId: string) {
+    return this.db
+      .selectFrom('album')
+      .select(['album.id', 'album.albumName'])
+      .innerJoin('album_asset', 'album_asset.albumId', 'album.id')
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('album_user')
+            .whereRef('album_user.albumId', '=', 'album.id')
+            .where('album_user.userId', '=', ownerId),
+        ),
+      )
+      .where('album_asset.assetId', '=', assetId)
+      .where('album.deletedAt', 'is', null)
       .orderBy('album.createdAt', 'desc')
       .execute();
   }

@@ -44,7 +44,7 @@ export class AlbumService extends BaseService {
     await this.albumRepository.updateThumbnails();
 
     const albums = assetId
-      ? await this.albumRepository.getByAssetId(ownerId, assetId)
+      ? await this.albumRepository.getByAssetId(ownerId, assetId, forViewer(auth))
       : // Elevation decides whether locked albums are visible at all, so it travels with the query
         // rather than being applied afterwards: filtering post-hoc would leak their existence via counts.
         await this.albumRepository.getAll(ownerId, { ...rest, elevated: forViewer(auth).elevated });
