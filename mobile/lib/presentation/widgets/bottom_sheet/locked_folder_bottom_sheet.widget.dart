@@ -3,6 +3,7 @@ import 'package:immich_mobile/presentation/actions/action.widget.dart';
 import 'package:immich_mobile/presentation/actions/asset_debug.action.dart';
 import 'package:immich_mobile/presentation/actions/delete.action.dart';
 import 'package:immich_mobile/presentation/actions/download.action.dart';
+import 'package:immich_mobile/presentation/actions/hide_from_places.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
 import 'package:immich_mobile/presentation/actions/share.action.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/base_bottom_sheet.widget.dart';
@@ -22,6 +23,9 @@ class LockedFolderBottomSheet extends StatelessWidget {
         .new(action: DownloadAction(source: .timeline)),
         .new(action: DeleteAction(source: .timeline)),
         .new(action: LockAction(source: .timeline)),
+        // The locked folder is the timeline with visibility pinned to locked, so the timeline switch
+        // decides whether a locked photo appears here while leaving it in its locked albums.
+        .new(action: HideFromPlacesAction(source: .timeline)),
       ],
     );
   }

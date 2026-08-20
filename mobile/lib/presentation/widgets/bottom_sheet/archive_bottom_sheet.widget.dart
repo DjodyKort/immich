@@ -11,6 +11,7 @@ import 'package:immich_mobile/presentation/actions/download.action.dart';
 import 'package:immich_mobile/presentation/actions/edit_datetime.action.dart';
 import 'package:immich_mobile/presentation/actions/edit_location.action.dart';
 import 'package:immich_mobile/presentation/actions/favorite.action.dart';
+import 'package:immich_mobile/presentation/actions/hide_from_places.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
 import 'package:immich_mobile/presentation/actions/share.action.dart';
 import 'package:immich_mobile/presentation/actions/share_link.action.dart';
@@ -84,6 +85,7 @@ class _ArchiveBottomSheetState extends ConsumerState<ArchiveBottomSheet> {
         .new(action: EditDateTimeAction(source: .timeline)),
         .new(action: EditLocationAction(source: .timeline)),
         .new(action: LockAction(source: .timeline)),
+        .new(action: HideFromPlacesAction(source: .timeline)),
         .new(action: StackAction(source: .timeline)),
         .new(action: CleanupLocalAction(source: .timeline)),
       ],

@@ -39,6 +39,7 @@ RemoteAsset createRemoteAsset({
   DateTime? uploadedAt,
   bool isFavorite = false,
   DateTime? deletedAt,
+  AssetVisibility visibility = AssetVisibility.timeline,
 }) {
   return RemoteAsset(
     id: 'remote-id',
@@ -53,6 +54,7 @@ RemoteAsset createRemoteAsset({
     isFavorite: isFavorite,
     isEdited: false,
     deletedAt: deletedAt,
+    visibility: visibility,
   );
 }
 
@@ -144,6 +146,77 @@ void main() {
         );
 
         expect(ActionButtonType.share.shouldShow(context), isTrue);
+      });
+    });
+
+    group('hideFromPlaces button', () {
+      ActionButtonContext contextFor(
+        BaseAsset asset, {
+        bool isOwner = true,
+        bool isInLockedView = false,
+        TimelineOrigin timelineOrigin = TimelineOrigin.main,
+        int selectedCount = 1,
+      }) {
+        return ActionButtonContext(
+          asset: asset,
+          isOwner: isOwner,
+          isArchived: false,
+          isTrashEnabled: true,
+          isInLockedView: isInLockedView,
+          currentAlbum: null,
+          advancedTroubleshooting: false,
+          isStacked: false,
+          source: ActionSource.timeline,
+          timelineOrigin: timelineOrigin,
+          selectedCount: selectedCount,
+        );
+      }
+
+      test('should show for an owned timeline asset', () {
+        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(createRemoteAsset())), isTrue);
+      });
+
+      // Was excluded on the reasoning that a locked asset is off all six surfaces already, so every
+      // switch would be a no-op. The locked folder is the timeline with visibility pinned to locked,
+      // so the timeline bit governs whether a locked photo shows up there.
+      test('should show for a locked asset', () {
+        final asset = createRemoteAsset(visibility: AssetVisibility.locked);
+
+        expect(asset.isLocked, isTrue);
+        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(asset)), isTrue);
+      });
+
+      test('should show while in the locked view', () {
+        final asset = createRemoteAsset(visibility: AssetVisibility.locked);
+
+        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(asset, isInLockedView: true)), isTrue);
+      });
+
+      // Trash is the one view no mask reaches, so hiding there could only mislead.
+      test('should not show for a trashed asset', () {
+        final asset = createRemoteAsset(deletedAt: DateTime(2026));
+
+        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(asset)), isFalse);
+      });
+
+      test('should not show when opened from trash', () {
+        final context = contextFor(createRemoteAsset(), timelineOrigin: TimelineOrigin.trash);
+
+        expect(ActionButtonType.hideFromPlaces.shouldShow(context), isFalse);
+      });
+
+      test('should not show for an asset owned by someone else', () {
+        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(createRemoteAsset(), isOwner: false)), isFalse);
+      });
+
+      // The set replaces rather than merges, so applying it to a mixed selection would silently
+      // discard whatever the other assets are already withheld from.
+      test('should not show when more than one asset is selected', () {
+        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(createRemoteAsset(), selectedCount: 2)), isFalse);
+      });
+
+      test('should not show for a local-only asset', () {
+        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(createLocalAsset())), isFalse);
       });
     });
 
