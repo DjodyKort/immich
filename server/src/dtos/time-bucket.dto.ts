@@ -29,6 +29,13 @@ const TimeBucketQueryBaseSchema = z
     visibility: AssetVisibilitySchema.optional().describe(
       'Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)',
     ),
+    hidden: stringToBool
+      .optional()
+      .describe(
+        'Return only assets that are hidden from at least one surface. This is the review view for ' +
+          'per-asset hiding, and the one list that cannot itself be hidden from, so hiding an asset ' +
+          'everywhere else can never leave it unreachable.',
+      ),
     withCoordinates: stringToBool.optional().describe('Include location data in the response'),
     key: z.string().optional(),
     slug: z.string().optional(),

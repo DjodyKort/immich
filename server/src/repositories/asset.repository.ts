@@ -100,9 +100,15 @@ interface AssetBuilderOptions {
  * asset unrecoverable: the trash view asks with `isTrashed` and no explicit visibility, so it would
  * otherwise inherit the timeline's mask.
  */
-const timelineSurfaceFor = (options: { isTrashed?: boolean; albumId?: string }): Surface => {
+const timelineSurfaceFor = (options: { isTrashed?: boolean; albumId?: string; hidden?: boolean }): Surface => {
   if (options.isTrashed) {
     return Surface.Trash;
+  }
+
+  // Checked before the album case so that "show me everything I have hidden" is never narrowed by an
+  // album scope, and before the plain timeline so the review view is not itself hideable.
+  if (options.hidden) {
+    return Surface.HiddenReview;
   }
 
   return options.albumId ? Surface.AlbumTimeline : Surface.Timeline;
@@ -117,6 +123,13 @@ export interface TimeBucketOptions extends AssetBuilderOptions {
    * the album-scoped case.
    */
   ctx: PolicyContext;
+  /**
+   * The review view for per-asset hiding: only assets that carry a `hiddenFrom` mask.
+   *
+   * Its surface has no bit, so this list cannot itself be hidden from. That is the point: without it,
+   * hiding an asset from every user-facing surface leaves it reachable only by knowing its id.
+   */
+  hidden?: boolean;
 }
 
 export interface TimeBucketItem {
@@ -823,6 +836,7 @@ export class AssetRepository {
 
             return withBoundingBox(withBoundingCircle, bbox);
           })
+          .$if(!!options.hidden, (qb) => qb.where('asset.hiddenFrom', 'is not', null))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           // A requested visibility overrides the surface's visibility set, but not its per-asset mask.
           // Without this, the locked folder and the archive view - the two grids that pin a visibility -
@@ -911,6 +925,7 @@ export class AssetRepository {
           )
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
+          .$if(!!options.hidden, (qb) => qb.where('asset.hiddenFrom', 'is not', null))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           // A requested visibility overrides the surface's visibility set, but not its per-asset mask.
           // Without this, the locked folder and the archive view - the two grids that pin a visibility -
