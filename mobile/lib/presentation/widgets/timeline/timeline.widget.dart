@@ -471,7 +471,11 @@ class _SliverTimelineState extends ConsumerState<_SliverTimeline> with WidgetsBi
                   timelineHeight: maxHeight,
                   topPadding: topPadding,
                   bottomPadding: scrubberBottomPadding,
-                  monthSegmentSnappingOffset: widget.topSliverWidgetHeight ?? 0 + appBarExpandedHeight,
+                  // Parenthesised deliberately: `+` binds tighter than `??`, so this read as
+                  // `height ?? (0 + appBarExpandedHeight)` and dropped the app bar's 200px whenever a
+                  // height was given. Everything above the segmented list has to be summed, since
+                  // `layoutSegment.startOffset` is measured inside that list.
+                  monthSegmentSnappingOffset: (widget.topSliverWidgetHeight ?? 0) + appBarExpandedHeight,
                   hasAppBar: widget.appBar != null,
                   child: grid,
                 );
