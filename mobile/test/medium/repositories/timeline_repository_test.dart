@@ -204,11 +204,31 @@ void main() {
       expect(assets.map((asset) => (asset as RemoteAsset).id), isNot(contains(hidden.id)));
     });
 
+    test('still shows it in its locked album, which is the point of hiding it from the folder', () async {
+      // The server's guarantee is "hidden from the locked folder, still in my locked album". Mobile
+      // could not assert it while album views admitted only timeline and archive visibility - a locked
+      // asset never reached one. The elevated branch closed that, so the guarantee is now testable
+      // here, and it holds for two independent reasons: elevation admits locked visibility, and album
+      // views take no hiddenFrom mask at all.
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final hidden = await ctx.newRemoteAsset(
+        ownerId: user.id,
+        visibility: AssetVisibility.locked,
+        hiddenFrom: const [AssetSurface.timeline],
+      );
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: hidden.id);
+
+      final lockedFolder = await sut.locked(user.id, .day).assetSource(0, 10);
+      expect(lockedFolder, isEmpty);
+
+      final inAlbum = await sut.remoteAlbum(album.id, .day, isElevated: true).assetSource(0, 10);
+      expect(inAlbum.map((asset) => (asset as RemoteAsset).id), [hidden.id]);
+    });
+
     test('still lists it in the Hidden view, so hiding it from the folder is not losing it', () async {
-      // The server's equivalent guarantee is "still in my locked album", which mobile cannot assert:
-      // its album queries admit only timeline and archive visibility, so a locked asset never appears
-      // in a mobile album view at all (see 'does not expose locked assets in an album view' above).
-      // The Hidden view is the route that does hold here, and it takes no surface bit by design.
+      // The other route back to it, and the one that holds for an asset in no album at all. The Hidden
+      // view takes no surface bit by design.
       final user = await ctx.newUser();
       final hidden = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline]);
 
