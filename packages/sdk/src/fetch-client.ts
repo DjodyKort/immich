@@ -517,6 +517,8 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
+    /** Album is kept out of the album list, but remains reachable by URL */
+    isHidden: boolean;
     /** Album is locked and requires PIN elevation to view */
     isLocked: boolean;
     /** Last modified asset timestamp */
@@ -574,6 +576,8 @@ export type UpdateAlbumDto = {
     description?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
+    /** Keep this album out of the album list */
+    isHidden?: boolean;
     order?: AssetOrder;
 };
 export type BulkIdsDto = {
@@ -3851,8 +3855,9 @@ export function getUserStatisticsAdmin({ id, isFavorite, isTrashed, visibility }
 /**
  * List all albums
  */
-export function getAllAlbums({ assetId, id, isOwned, isShared, name }: {
+export function getAllAlbums({ assetId, hidden, id, isOwned, isShared, name }: {
     assetId?: string;
+    hidden?: boolean;
     id?: string;
     isOwned?: boolean;
     isShared?: boolean;
@@ -3863,6 +3868,7 @@ export function getAllAlbums({ assetId, id, isOwned, isShared, name }: {
         data: AlbumResponseDto[];
     }>(`/albums${QS.query(QS.explode({
         assetId,
+        hidden,
         id,
         isOwned,
         isShared,

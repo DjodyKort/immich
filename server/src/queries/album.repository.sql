@@ -272,6 +272,8 @@ where
         "shared_link"."albumId" = "album"."id"
     )
   )
+  and "album"."isHidden" = $3
+  and "album"."isLocked" = $4
 order by
   "album"."createdAt" desc
 
