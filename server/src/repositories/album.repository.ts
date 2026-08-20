@@ -315,6 +315,29 @@ export class AlbumRepository {
   }
 
   /**
+   * Remove the given assets from every album *except* the one keeping them.
+   *
+   * Locking an existing album makes its assets Locked, and a locked asset may belong to at most one
+   * album -- the locked one. Any other membership those assets had has to go, or the same photo would
+   * sit behind the PIN here and in plain sight in an ordinary album, which is the exact leak
+   * `checkAlbumAccess` exists to prevent. Deliberately not `removeAssetsFromAll` followed by a
+   * re-add: that would drop and recreate rows the caller means to keep, losing their `createdAt`.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.UUID] })
+  @Chunked()
+  async removeAssetsFromOtherAlbums(assetIds: string[], keepAlbumId: string): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    await this.db
+      .deleteFrom('album_asset')
+      .where('album_asset.assetId', 'in', assetIds)
+      .where('album_asset.albumId', '!=', keepAlbumId)
+      .execute();
+  }
+
+  /**
    * Which of the given album IDs are currently locked -- used to enforce the "an asset can only be
    * added to one locked album at a time" rule server-side, mirroring the client-side check in the
    * album picker, so any caller (not just the web UI) is held to the same rule.
@@ -428,6 +451,31 @@ export class AlbumRepository {
       .where('album_asset.assetId', 'in', assetIds)
       .execute()
       .then((results) => new Set(results.map(({ assetId }) => assetId)));
+  }
+
+  /**
+   * Every asset in the album with its owner, regardless of visibility.
+   *
+   * Deliberately unfiltered, and the only album read that is. `withAssets` applies
+   * `Surface.AlbumContents`, whose `elevatedAdds` is empty, so it never returns locked assets even to an
+   * elevated session -- correct for describing an album to a viewer, and useless for `setLocked`, which
+   * has to act on the members it cannot see. Reading the album through that path made *unlocking* a
+   * silent no-op on the photos: the album flipped to unlocked while its contents stayed in the locked
+   * folder, reachable from nowhere.
+   *
+   * Safe because it returns ids and owner ids only -- no paths, no EXIF, nothing that could leak a locked
+   * photo's content -- and its one caller is owner-only and elevation-gated. Do not reach for it to
+   * render an album.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getMemberAssetsForLockChange(albumId: string): Promise<Array<{ id: string; ownerId: string }>> {
+    return this.db
+      .selectFrom('album_asset')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .select(['asset.id', 'asset.ownerId'])
+      .where('album_asset.albumId', '=', albumId)
+      .where('asset.deletedAt', 'is', null)
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })

@@ -15,11 +15,15 @@ class DriftAlbumApiRepository extends ApiRepository {
 
   DriftAlbumApiRepository(this._api);
 
+  /// [isLocked] creates the album already locked, which the server only permits when every id in
+  /// [assetIds] is already a locked asset. Locking an album that already exists is a different call -
+  /// see [setLocked].
   Future<RemoteAlbum> createDriftAlbum(
     String name,
     UserDto owner, {
     required Iterable<String> assetIds,
     String? description,
+    bool isLocked = false,
   }) async {
     final responseDto = await checkNull(
       _api.createAlbum(
@@ -29,6 +33,7 @@ class DriftAlbumApiRepository extends ApiRepository {
               ? const Optional.absent()
               : Optional.present(description.isEmpty ? null : description),
           assetIds: Optional.present(assetIds.toList()),
+          isLocked: Optional.present(isLocked),
         ),
       ),
     );
@@ -131,6 +136,13 @@ class DriftAlbumApiRepository extends ApiRepository {
     );
     return response.isHidden;
   }
+
+  /// Its own route rather than a field on `updateAlbumInfo`, because the server rewrites the visibility of
+  /// every asset in the album and their memberships elsewhere. See `AlbumService.setLocked`.
+  Future<bool> setLocked(String albumId, bool isLocked) async {
+    final response = await checkNull(_api.setAlbumLocked(albumId, AlbumSetLockedDto(isLocked: isLocked)));
+    return response.isLocked;
+  }
 }
 
 extension on AlbumResponseDto {
@@ -146,6 +158,7 @@ extension on AlbumResponseDto {
       thumbnailAssetId: albumThumbnailAssetId,
       isActivityEnabled: isActivityEnabled,
       isHidden: isHidden,
+      isLocked: isLocked,
       order: order.orElse(null) == AssetOrder.asc ? AlbumAssetOrder.asc : AlbumAssetOrder.desc,
       assetCount: assetCount,
       isShared: albumUsers.length > 2,

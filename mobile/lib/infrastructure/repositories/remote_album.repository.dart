@@ -34,6 +34,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
     Set<SortRemoteAlbumsBy> sortBy = const {SortRemoteAlbumsBy.updatedAt},
     bool isElevated = false,
     bool hidden = false,
+    bool lockedOnly = false,
   }) {
     // Count non-trashed assets via the joined asset table. Filtering trashed assets in the
     // join condition (instead of the where clause) keeps albums whose assets are all trashed
@@ -71,7 +72,14 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
       ..addColumns([_db.remoteAlbumUserEntity.userId.count(distinct: true)])
       ..groupBy([_db.remoteAlbumEntity.id]);
 
-    query.where(VisibilityPolicy.albumListing(_db.remoteAlbumEntity, isElevated: isElevated, hidden: hidden));
+    query.where(
+      VisibilityPolicy.albumListing(
+        _db.remoteAlbumEntity,
+        isElevated: isElevated,
+        hidden: hidden,
+        lockedOnly: lockedOnly,
+      ),
+    );
 
     if (sortBy.isNotEmpty) {
       final orderings = <OrderingTerm>[];
@@ -602,6 +610,7 @@ extension on RemoteAlbumEntityData {
       thumbnailAssetId: thumbnailAssetId,
       isActivityEnabled: isActivityEnabled,
       isHidden: isHidden,
+      isLocked: isLocked,
       order: order,
       assetCount: assetCount,
       ownerName: ownerName,

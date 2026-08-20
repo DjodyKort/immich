@@ -6,6 +6,7 @@ import {
   AlbumResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
+  AlbumSetLockedDto,
   AlbumStatisticsResponseDto,
   AlbumUserParamDto,
   CreateAlbumDto,
@@ -84,6 +85,22 @@ export class AlbumController {
     @Body() dto: UpdateAlbumDto,
   ): Promise<AlbumResponseDto> {
     return this.service.update(auth, id, dto);
+  }
+
+  @Put(':id/locked')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Lock or unlock an album',
+    description:
+      'Move an album, and every asset in it, into or out of the locked folder. Requires an elevated session and an album you own that is not shared and whose every asset you own. Locking sets those assets to Locked visibility and removes them from all other albums; unlocking returns them to the timeline and leaves them in this album. Separate from the update endpoint because it rewrites the assets, not just the album.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  setAlbumLocked(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AlbumSetLockedDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.setLocked(auth, id, dto);
   }
 
   @Delete(':id')

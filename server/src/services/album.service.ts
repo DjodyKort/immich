@@ -4,6 +4,7 @@ import {
   AlbumResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
+  AlbumSetLockedDto,
   AlbumStatisticsResponseDto,
   CreateAlbumDto,
   GetAlbumsDto,
@@ -14,7 +15,7 @@ import {
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
 import { MapMarkerResponseDto } from 'src/dtos/map.dto';
-import { AlbumUserRole, Permission } from 'src/enum';
+import { AlbumUserRole, AssetVisibility, JobName, Permission } from 'src/enum';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository';
 import { BaseService } from 'src/services/base.service';
 import { addAssets, removeAssets } from 'src/utils/asset.util';
@@ -139,10 +140,10 @@ export class AlbumService extends BaseService {
     });
     const assetIds = [...allowedAssetIdsSet].map((id) => id);
 
-    // A locked album can only ever be created already-locked, and can only ever contain assets
-    // that are already locked (i.e. already sitting in the locked folder) -- there's no "lock an
-    // existing album" conversion path anymore, so every asset given here must already have
-    // Locked visibility, or creation is rejected outright.
+    // Creating a locked album still requires its initial assets to be locked already: this path
+    // assembles an album out of the locked folder, so anything else is a mistake worth reporting.
+    // Converting an ordinary album is a separate operation -- see setLocked() -- which locks the
+    // assets itself rather than demanding they arrive that way.
     // Validate against what was REQUESTED rather than what survived the access filter: checking the
     // filtered list means a rejected asset is silently dropped instead of failing the request, and
     // an empty filtered list would skip this check altogether.
@@ -202,6 +203,95 @@ export class AlbumService extends BaseService {
     );
 
     return mapAlbum({ ...updatedAlbum, assets: album.assets });
+  }
+
+  /**
+   * Move an existing album, contents and all, into or out of the locked folder.
+   *
+   * Upstream only allowed locking at creation time, which in practice meant locked albums could only
+   * ever be assembled photo-by-photo from the locked folder: setting an asset to Locked evicts it from
+   * every album, so an ordinary album whose assets were all already locked could not exist. This is the
+   * operation that was missing, and it is deliberately not a field on `UpdateAlbumDto` -- it rewrites
+   * the visibility of every member asset and their memberships elsewhere, so it must not be able to
+   * half-apply alongside a rename.
+   *
+   * Every precondition below is a refusal rather than a fix-up. Locking is the one direction where
+   * guessing wrong is unrecoverable for the user (their photos vanish from the timeline and they may not
+   * know why), so anything ambiguous is reported instead of resolved.
+   */
+  async setLocked(auth: AuthDto, id: string, dto: AlbumSetLockedDto): Promise<AlbumResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
+
+    // Required in both directions. Locking without it would let a session that cannot itself open the
+    // locked folder put photos beyond its own reach; unlocking without it would be a way to empty
+    // someone's locked folder from an unelevated session.
+    if (!auth.session?.hasElevatedPermission) {
+      throw new BadRequestException('Locking or unlocking an album requires an elevated session');
+    }
+
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth));
+
+    // `Permission.AlbumUpdate` is granted to editors too, and handing an editor the ability to move
+    // the owner's photos into a locked folder they cannot open is not a power sharing should confer.
+    // Ownership lives in `albumUsers` as the Owner role rather than a column on the album.
+    const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
+    if (owner?.user.id !== auth.user.id) {
+      throw new BadRequestException('Only the album owner can lock or unlock an album');
+    }
+
+    if (album.isLocked === dto.isLocked) {
+      return mapAlbum(album);
+    }
+
+    // Read separately rather than from `album.assets`: that list comes through `Surface.AlbumContents`,
+    // whose `elevatedAdds` is empty, so it never contains locked assets even for an elevated session.
+    // Using it made unlocking a no-op on the photos - the album became ordinary while its contents stayed
+    // in the locked folder. This operation has to see the members it is about to change.
+    const members = await this.albumRepository.getMemberAssetsForLockChange(album.id);
+    const assetIds = members.map((asset) => asset.id);
+
+    if (dto.isLocked) {
+      // A locked album must not be readable by anyone else, and `checkAlbumAccess` grants asset reads
+      // through album membership. Refusing is better than silently revoking other people's access.
+      //
+      // Shared links count as sharing here even though they already fail closed - a link carries no
+      // session, so it is never elevated and the album access check turns it away. Refusing anyway means
+      // the user is never left holding a link that has quietly stopped working, and it matches what the
+      // web modal already tells them by disabling the switch.
+      const sharedWithUser = album.albumUsers.some(({ user }) => user.id !== auth.user.id);
+      const sharedByLink = (album.sharedLinks ?? []).length > 0;
+      if (sharedWithUser || sharedByLink) {
+        throw new BadRequestException('Unshare the album before locking it');
+      }
+
+      // Contributed assets belong to their owner; locking them would hide another user's photo from
+      // that user. Checked against the assets in hand rather than by a permission call, because
+      // `Permission.AssetUpdate` would pass for assets shared *to* this user as well.
+      if (members.some((asset) => asset.ownerId !== auth.user.id)) {
+        throw new BadRequestException('An album can only be locked if you own every asset in it');
+      }
+
+      await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Locked });
+      await this.albumRepository.removeAssetsFromOtherAlbums(assetIds, id);
+    } else {
+      // Timeline, not archive: it is the default visibility and the same value the single-asset "remove
+      // from locked folder" action restores. Memberships are left alone -- the assets stay in this album,
+      // which is now an ordinary one.
+      //
+      // Known consequence, shared with that single-asset action: an asset that was *archived* before the
+      // album was locked comes back to the timeline rather than to the archive. `visibility` is one
+      // exclusive column, so locking overwrote the archive state and there is nowhere it was kept.
+      // Restoring it would mean recording the previous value somewhere, which is a bigger change than
+      // this operation warrants; matching the existing unlock behaviour is the consistent choice.
+      await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Timeline });
+    }
+
+    const updated = await this.albumRepository.update(album.id, { id: album.id, isLocked: dto.isLocked }, auth.user.id);
+
+    // Same follow-up the single-asset visibility change queues, so sidecars reflect the new state.
+    await this.jobRepository.queueAll(assetIds.map((assetId) => ({ name: JobName.SidecarWrite, data: { id: assetId } })));
+
+    return mapAlbum({ ...updated, assets: album.assets });
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {

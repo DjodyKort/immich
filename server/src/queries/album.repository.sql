@@ -334,6 +334,12 @@ delete from "album_asset"
 where
   "album_asset"."assetId" in ($1)
 
+-- AlbumRepository.removeAssetsFromOtherAlbums
+delete from "album_asset"
+where
+  "album_asset"."assetId" in ($1)
+  and "album_asset"."albumId" != $2
+
 -- AlbumRepository.getLockedAlbumIds
 select
   "album"."id"

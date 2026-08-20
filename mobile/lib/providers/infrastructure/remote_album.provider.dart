@@ -107,10 +107,13 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
   /// Creates an album from a heterogeneous asset selection. Already-remote
   /// assets seed the album immediately; local-only assets are uploaded in the
   /// background and linked one-by-one as each upload completes.
+  /// [isLocked] creates the album already locked; the server requires every asset to be locked already,
+  /// which is why the locked folder is the only place that passes it.
   Future<RemoteAlbum?> createAlbumWithAssets({
     required String title,
     String? description,
     Iterable<BaseAsset> assets = const [],
+    bool isLocked = false,
   }) async {
     try {
       final currentUser = ref.read(currentUserProvider);
@@ -124,6 +127,7 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
         owner: currentUser,
         description: description,
         assetIds: candidates.remoteAssetIds,
+        isLocked: isLocked,
       );
 
       state = state.copyWith(albums: [...state.albums, album]);
@@ -321,6 +325,20 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
 
     ref.invalidate(hiddenRemoteAlbumsProvider);
   }
+
+  /// Moves the album, and every asset in it, into or out of the locked folder.
+  ///
+  /// Refreshes rather than patching state, unlike [setHidden]: this changes the visibility of every member
+  /// asset too, so the timelines those assets appear on are stale as well and there is nothing useful to
+  /// surgically adjust. `_getAll` is correct in both directions here — locking removes the album from the
+  /// ordinary listing only while the session is unelevated, and an elevated session should still see it.
+  Future<void> setLocked(String albumId, bool isLocked) async {
+    await _remoteAlbumService.setLocked(albumId, isLocked);
+    await _getAll();
+
+    ref.invalidate(lockedRemoteAlbumsProvider);
+    ref.invalidate(hiddenRemoteAlbumsProvider);
+  }
 }
 
 final remoteAlbumDateRangeProvider = StreamProvider.autoDispose.family<(DateTime, DateTime), String>((ref, albumId) {
@@ -345,4 +363,31 @@ final hiddenRemoteAlbumsProvider = FutureProvider.autoDispose<List<RemoteAlbum>>
   final service = ref.watch(remoteAlbumServiceProvider);
   final isElevated = await ref.read(authServiceProvider).isSessionElevated();
   return service.getAll(isElevated: isElevated, hidden: true);
+});
+
+/// Whether this session has cleared the PIN/biometric flow.
+///
+/// The one place screens should ask, rather than each calling `isSessionElevated()` and inventing its own
+/// loading and failure handling. Autodisposed on purpose: elevation expires, so a value cached past the
+/// screen that asked for it would be a stale claim about the user's authorisation. Callers should treat
+/// loading and error alike as *not* elevated — [AuthApiRepository.isSessionElevated] already fails closed,
+/// and the narrow branch is the safe one to guess.
+final sessionElevatedProvider = FutureProvider.autoDispose<bool>((ref) async {
+  return ref.read(authServiceProvider).isSessionElevated();
+});
+
+/// The locked albums, for the locked folder's own album section.
+///
+/// Only ever asked for from behind the PIN guard, so it does not take an elevation flag: it passes
+/// `isElevated: true` because reaching this at all means the session is elevated, and a locked album is by
+/// definition invisible without that. Returns an empty list rather than throwing if elevation has lapsed
+/// mid-session, which the listing query enforces anyway.
+final lockedRemoteAlbumsProvider = FutureProvider.autoDispose<List<RemoteAlbum>>((ref) async {
+  final service = ref.watch(remoteAlbumServiceProvider);
+  final isElevated = await ref.watch(sessionElevatedProvider.future);
+  if (!isElevated) {
+    return const [];
+  }
+
+  return service.getAllLocked();
 });

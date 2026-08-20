@@ -18,6 +18,7 @@ import 'package:immich_mobile/providers/infrastructure/current_album.provider.da
 import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
+import 'package:immich_mobile/widgets/common/confirm_dialog.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 import 'package:immich_mobile/widgets/common/user_circle_avatar.dart';
 
@@ -32,6 +33,7 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
     final userId = ref.watch(authProvider).userId;
     final activityEnabled = useState(album.isActivityEnabled);
     final hidden = useState(album.isHidden);
+    final locked = useState(album.isLocked);
     final isOwner = album.ownerId == userId;
     final owner = isOwner ? ref.watch(currentUserProvider) : null;
     final allUsers = isOwner ? null : ref.watch(driftUsersProvider);
@@ -44,6 +46,53 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
         toastType: ToastType.error,
         gravity: ToastGravity.BOTTOM,
       );
+    }
+
+    /// Confirms, then moves the album and its contents into or out of the locked folder.
+    ///
+    /// The switch is only flipped once the server has agreed, rather than optimistically: this is not a
+    /// preference that can be silently retried, and a switch that snapped back after a refusal would leave
+    /// the user unsure whether their photos moved.
+    Future<void> setLocked(bool value) async {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => ConfirmDialog(
+          title: value ? context.t.lock_album_confirm_title : context.t.unlock_album_confirm_title,
+          content: value
+              ? context.t.lock_album_confirm_prompt(count: album.assetCount)
+              : context.t.unlock_album_confirm_prompt(count: album.assetCount),
+          ok: value ? context.t.lock_album_confirm_action : context.t.unlock_album_confirm_action,
+        ),
+      );
+      if (confirmed != true || !context.mounted) {
+        return;
+      }
+
+      try {
+        await ref.read(remoteAlbumProvider.notifier).setLocked(album.id, value);
+        locked.value = value;
+        if (!context.mounted) {
+          return;
+        }
+        ImmichToast.show(
+          context: context,
+          msg: value ? context.t.lock_album_locked : context.t.lock_album_unlocked,
+          gravity: ToastGravity.BOTTOM,
+        );
+      } catch (_) {
+        if (!context.mounted) {
+          return;
+        }
+        // Deliberately generic: the server's refusals here are about ownership of the album or of the
+        // assets in it, neither of which this screen can distinguish, and guessing wrong would be worse
+        // than saying it did not work.
+        ImmichToast.show(
+          context: context,
+          msg: context.t.shared_album_section_people_action_error,
+          toastType: ToastType.error,
+          gravity: ToastGravity.BOTTOM,
+        );
+      }
     }
 
     Future<void> leaveAlbum() async {
@@ -250,6 +299,25 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
                 ),
                 subtitle: Text(
                   context.t.hide_album_description,
+                  style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
+                ),
+              ),
+            // Locking is not hiding: it moves the album *and every photo in it* behind the PIN, so unlike
+            // the switch above it confirms first and names what will happen. Disabled while the album is
+            // shared, because the server refuses that case and saying so up front beats a toast after the
+            // tap. Assets owned by someone else are not knowable here, so that one stays a server error.
+            if (isOwner)
+              SwitchListTile.adaptive(
+                value: locked.value,
+                onChanged: album.isShared ? null : (bool value) async => setLocked(value),
+                activeThumbColor: locked.value ? context.primaryColor : context.themeData.disabledColor,
+                dense: true,
+                title: Text(
+                  context.t.lock_album,
+                  style: context.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                subtitle: Text(
+                  album.isShared ? context.t.lock_album_error_shared : context.t.lock_album_description,
                   style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
                 ),
               ),

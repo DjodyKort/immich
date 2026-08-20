@@ -57,6 +57,7 @@ final _album = RemoteAlbum(
   updatedAt: DateTime(2026, 6, 12),
   isActivityEnabled: true,
   isHidden: false,
+  isLocked: false,
   isShared: true,
   order: AlbumAssetOrder.asc,
   assetCount: 1,

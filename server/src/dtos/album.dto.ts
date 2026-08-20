@@ -97,12 +97,32 @@ const UpdateAlbumSchema = z
     albumThumbnailAssetId: z.uuidv4().optional().describe('Album thumbnail asset ID'),
     isActivityEnabled: z.boolean().optional().describe('Enable activity feed'),
     order: AssetOrderSchema.optional(),
-    // Toggleable after creation, unlike isLocked, which can only be set at creation time because a
-    // locked album may only ever contain already-locked assets. Hiding carries no such invariant: it
-    // is about the album list, not about confidentiality, so it can be turned on and off freely.
+    // Deliberately absent here: `isLocked`. Locking an existing album is not a property assignment -
+    // it moves every asset in the album into the locked folder and evicts them from every other album -
+    // so it gets its own route rather than riding along with a rename. See AlbumSetLockedDto.
+    // Hiding carries no such invariant: it is about the album list, not about confidentiality, so it
+    // can be turned on and off freely.
     isHidden: z.boolean().optional().describe('Keep this album out of the album list'),
   })
   .meta({ id: 'UpdateAlbumDto' });
+
+/**
+ * Locking or unlocking an existing album, contents and all.
+ *
+ * Its own DTO and its own route because it is a transactional move rather than a field set: locking
+ * also sets every member asset to Locked visibility and removes them from every other album, and
+ * unlocking puts them back on the timeline. Folding that into `UpdateAlbumDto` would allow "rename
+ * and lock" to half-apply.
+ */
+const AlbumSetLockedSchema = z
+  .object({
+    isLocked: z
+      .boolean()
+      .describe(
+        'Whether the album, and every asset in it, should live behind the locked folder. Locking requires an elevated session, an album you own, that is shared with nobody and has no shared links, and whose every asset you own; it sets those assets to Locked visibility and removes them from all other albums. Unlocking returns them to the timeline -- including any that were archived beforehand, since `visibility` is a single exclusive column -- and leaves them in this album.',
+      ),
+  })
+  .meta({ id: 'AlbumSetLockedDto' });
 
 const GetAlbumsSchema = z
   .object({
@@ -219,6 +239,7 @@ export class CreateAlbumDto extends createZodDto(CreateAlbumSchema) {}
 export class AlbumsAddAssetsDto extends createZodDto(AlbumsAddAssetsSchema) {}
 export class AlbumsAddAssetsResponseDto extends createZodDto(AlbumsAddAssetsResponseSchema) {}
 export class UpdateAlbumDto extends createZodDto(UpdateAlbumSchema) {}
+export class AlbumSetLockedDto extends createZodDto(AlbumSetLockedSchema) {}
 export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}

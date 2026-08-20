@@ -33,7 +33,15 @@ class AlbumSelector extends ConsumerStatefulWidget {
   final AlbumSelectorCallback onAlbumSelected;
   final Function? onKeyboardExpanded;
 
-  const AlbumSelector({super.key, required this.onAlbumSelected, this.onKeyboardExpanded});
+  /// Restricts which albums are offered, applied to the provider's list before sorting and searching.
+  ///
+  /// A predicate rather than an injected album source: this widget owns its search, sort and quick-filter
+  /// state and drives them off `remoteAlbumProvider`, so handing it a different list would mean
+  /// duplicating all of that. The locked folder passes `(album) => album.isLocked`, which is only ever
+  /// non-empty for an elevated session because the provider itself withholds locked albums otherwise.
+  final bool Function(RemoteAlbum album)? albumFilter;
+
+  const AlbumSelector({super.key, required this.onAlbumSelected, this.onKeyboardExpanded, this.albumFilter});
 
   @override
   ConsumerState<AlbumSelector> createState() => _AlbumSelectorState();
@@ -124,9 +132,15 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
   }
 
   Future<void> sortAlbums() async {
+    // Applied here rather than further down the pipeline so search and the quick filters both see the
+    // restricted set: filtering after them would let a search surface an album the caller excluded.
+    final source = widget.albumFilter == null
+        ? ref.read(remoteAlbumProvider).albums
+        : ref.read(remoteAlbumProvider).albums.where(widget.albumFilter!).toList();
+
     final sorted = await ref
         .read(remoteAlbumProvider.notifier)
-        .sortAlbums(ref.read(remoteAlbumProvider).albums, sort.mode, isReverse: sort.isReverse);
+        .sortAlbums(source, sort.mode, isReverse: sort.isReverse);
 
     if (!mounted) {
       return;
@@ -739,7 +753,13 @@ class _GridAlbumCard extends ConsumerWidget {
 }
 
 class AddToAlbumHeader extends ConsumerWidget {
-  const AddToAlbumHeader({super.key});
+  /// Creates the new album already locked, for the locked folder's sheet.
+  ///
+  /// The server only accepts this when every selected asset is already locked, which is true by
+  /// construction in the one view that passes it.
+  final bool createLocked;
+
+  const AddToAlbumHeader({super.key, this.createLocked = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -752,7 +772,7 @@ class AddToAlbumHeader extends ConsumerWidget {
       final selectedAssets = ref.read(multiSelectProvider).selectedAssets;
       final newAlbum = await ref
           .read(remoteAlbumProvider.notifier)
-          .createAlbumWithAssets(title: albumName, assets: selectedAssets);
+          .createAlbumWithAssets(title: albumName, assets: selectedAssets, isLocked: createLocked);
 
       if (!context.mounted) {
         return;
