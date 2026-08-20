@@ -289,7 +289,9 @@ export class AlbumService extends BaseService {
     const updated = await this.albumRepository.update(album.id, { id: album.id, isLocked: dto.isLocked }, auth.user.id);
 
     // Same follow-up the single-asset visibility change queues, so sidecars reflect the new state.
-    await this.jobRepository.queueAll(assetIds.map((assetId) => ({ name: JobName.SidecarWrite, data: { id: assetId } })));
+    await this.jobRepository.queueAll(
+      assetIds.map((assetId) => ({ name: JobName.SidecarWrite, data: { id: assetId } })),
+    );
 
     return mapAlbum({ ...updated, assets: album.assets });
   }

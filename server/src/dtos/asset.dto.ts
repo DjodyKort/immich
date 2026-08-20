@@ -53,13 +53,13 @@ const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({
     .array(AssetSurfaceSchema)
     .optional()
     .describe(
-      'Surfaces to add to each asset\'s exclusions, leaving its other exclusions alone. Use this rather than `hiddenFrom` for a multi-asset selection: `hiddenFrom` replaces the whole set, so applying it to assets that are withheld from different places silently discards the difference. Mutually exclusive with `hiddenFrom`.',
+      "Surfaces to add to each asset's exclusions, leaving its other exclusions alone. Use this rather than `hiddenFrom` for a multi-asset selection: `hiddenFrom` replaces the whole set, so applying it to assets that are withheld from different places silently discards the difference. Mutually exclusive with `hiddenFrom`.",
     ),
   hiddenFromRemove: z
     .array(AssetSurfaceSchema)
     .optional()
     .describe(
-      'Surfaces to remove from each asset\'s exclusions, leaving its other exclusions alone. The counterpart of `hiddenFromAdd`; a surface named in both is rejected. Mutually exclusive with `hiddenFrom`.',
+      "Surfaces to remove from each asset's exclusions, leaving its other exclusions alone. The counterpart of `hiddenFromAdd`; a surface named in both is rejected. Mutually exclusive with `hiddenFrom`.",
     ),
 });
 

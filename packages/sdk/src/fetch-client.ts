@@ -593,7 +593,7 @@ export type BulkIdResponseDto = {
     success: boolean;
 };
 export type AlbumSetLockedDto = {
-    /** Whether the album, and every asset in it, should live behind the locked folder. Locking requires an elevated session, an album you own, that is not shared, and whose every asset you own; it sets those assets to Locked visibility and removes them from all other albums. Unlocking returns them to the timeline and leaves them in this album. */
+    /** Whether the album, and every asset in it, should live behind the locked folder. Locking requires an elevated session, an album you own, that is shared with nobody and has no shared links, and whose every asset you own; it sets those assets to Locked visibility and removes them from all other albums. Unlocking returns them to the timeline -- including any that were archived beforehand, since `visibility` is a single exclusive column -- and leaves them in this album. */
     isLocked: boolean;
 };
 export type MapMarkerResponseDto = {
