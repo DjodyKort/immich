@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { AssetVisibility } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
@@ -105,5 +106,39 @@ describe('album list visibility', () => {
     // Asking for hidden albums is not a back door around elevation.
     expect(names(await sut.getAll(notElevated, { hidden: true }))).toEqual([]);
     expect(names(await sut.getAll(elevated, { hidden: true }))).toEqual(['locked and hidden']);
+  });
+
+  describe("an asset's own album list", () => {
+    // `?assetId=` takes a different repository method than the listing above, so the two rules have to
+    // be stated again here rather than inherited.
+    it('should still show a hidden album, which is what makes hiding safe', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'findable' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      await sut.update(auth, album.id, { isHidden: true });
+
+      expect(names(await sut.getAll(auth, {}))).toEqual([]);
+      expect(names(await sut.getAll(auth, { assetId: asset.id }))).toEqual(['findable']);
+    });
+
+    it('should not reveal a locked album to an unelevated session', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const notElevated = factory.auth({ user });
+      const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'private', isLocked: true });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+
+      // Knowing an asset id must not be a way around elevation. Nothing enumerates a locked asset
+      // unelevated, but an id learned before locking, or from a shared link, would otherwise have
+      // disclosed the album's name here.
+      expect(names(await sut.getAll(notElevated, { assetId: asset.id }))).toEqual([]);
+      expect(names(await sut.getAll(elevated, { assetId: asset.id }))).toEqual(['private']);
+    });
   });
 });
