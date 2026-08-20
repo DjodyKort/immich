@@ -115,8 +115,10 @@ const GetAlbumsSchema = z
       .optional()
       .describe('Filter by shared status: true = only shared, false = not shared, undefined = no filter'),
     assetId: z.uuidv4().optional().describe('Filter albums containing this asset ID (ignores other parameters)'),
-    hidden: z
-      .boolean()
+    // stringToBool, not z.boolean(): this is a query parameter, so it arrives as the string "true".
+    // A plain boolean schema rejects it with "expected boolean, received string", which the medium
+    // tests cannot catch because they call the service with a real boolean and never cross the wire.
+    hidden: stringToBool
       .optional()
       .describe('true lists only hidden albums, the review view for album hiding. Omitted or false leaves them out.'),
   })
