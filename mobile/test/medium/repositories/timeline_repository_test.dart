@@ -48,9 +48,9 @@ void main() {
     });
 
     test('does not expose locked assets in an album view', () async {
-      // A locked album syncs down looking ordinary, because RemoteAlbumEntity has no isLocked column,
-      // so the visibility predicate on the album queries is the only thing keeping locked-folder
-      // assets from rendering with no PIN.
+      // The visibility predicate on the album queries is the only thing keeping locked-folder assets from
+      // rendering without a PIN: album membership alone says nothing about visibility, and a locked asset
+      // can sit in an ordinary album if it was there before being locked.
       final user = await ctx.newUser();
       final album = await ctx.newRemoteAlbum(ownerId: user.id);
       final visible = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.timeline);
@@ -77,6 +77,50 @@ void main() {
 
       final buckets = await sut.remoteAlbum(album.id, .none).bucketSource().first;
       expect(buckets.single.assetCount, 1);
+    });
+
+    // The other half of the rule, and the reason locked albums were web-only on this client: a locked
+    // album contains nothing but locked assets, so without this branch an elevated user opening one saw an
+    // empty album rather than their photos.
+    test('shows locked assets in an album view once the session is elevated', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final locked = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: locked.id);
+
+      final query = sut.remoteAlbum(album.id, .day, isElevated: true);
+
+      final assets = await query.assetSource(0, 10);
+      expect(assets.map((asset) => (asset as RemoteAsset).id), [locked.id]);
+
+      final buckets = await query.bucketSource().first;
+      expect(buckets.fold<int>(0, (sum, bucket) => sum + bucket.assetCount), 1);
+    });
+
+    test('counts locked assets in an ungrouped album bucket once elevated', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final visible = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.timeline);
+      final locked = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: visible.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: locked.id);
+
+      final buckets = await sut.remoteAlbum(album.id, .none, isElevated: true).bucketSource().first;
+      expect(buckets.single.assetCount, 2);
+    });
+
+    // Elevation widens the album view to locked and nothing else. `hidden` is the motion-photo video-part
+    // marker here, not a confidentiality state, so entering a PIN must not start showing video halves.
+    test('still hides motion-part assets from an album view when elevated', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final visible = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.timeline);
+      final motionPart = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.hidden);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: visible.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: motionPart.id);
+
+      final assets = await sut.remoteAlbum(album.id, .day, isElevated: true).assetSource(0, 10);
+      expect(assets.map((asset) => (asset as RemoteAsset).id), [visible.id]);
     });
   });
 
@@ -166,10 +210,7 @@ void main() {
       // in a mobile album view at all (see 'does not expose locked assets in an album view' above).
       // The Hidden view is the route that does hold here, and it takes no surface bit by design.
       final user = await ctx.newUser();
-      final hidden = await ctx.newRemoteAsset(
-        ownerId: user.id,
-        hiddenFrom: const [AssetSurface.timeline],
-      );
+      final hidden = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline]);
 
       final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
       expect(assets.map((asset) => (asset as RemoteAsset).id), [hidden.id]);
@@ -216,11 +257,7 @@ void main() {
 
     test('excludes a hidden-and-trashed asset, findable through trash instead', () async {
       final user = await ctx.newUser();
-      await ctx.newRemoteAsset(
-        ownerId: user.id,
-        hiddenFrom: const [AssetSurface.timeline],
-        deletedAt: DateTime(2026),
-      );
+      await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline], deletedAt: DateTime(2026));
 
       final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
       expect(assets, isEmpty);

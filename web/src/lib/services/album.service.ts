@@ -6,6 +6,7 @@ import {
   BulkIdErrorReason,
   deleteAlbum,
   removeUserFromAlbum,
+  setAlbumLocked,
   updateAlbumInfo,
   updateAlbumUser,
   type AlbumResponseDto,
@@ -338,6 +339,46 @@ export const redirectIfLockedAndNotElevated = async (album: AlbumResponseDto): P
   const continueUrl = new URL(Route.viewAlbum({ id: album.id }), page.url);
   await goto(Route.pinPrompt({ continue: `${continueUrl.pathname}${continueUrl.search}` }));
   return true;
+};
+
+/**
+ * Moves an album, and every photo in it, into or out of the locked folder.
+ *
+ * Not part of `handleUpdateAlbum`: the server rewrites the visibility of every member asset and evicts
+ * them from other albums, so it is its own route and gets its own confirmation naming what will happen.
+ * Elevation is required in both directions, so an unelevated session is sent to the PIN prompt rather
+ * than allowed to fail against the API.
+ */
+export const handleSetAlbumLocked = async (album: AlbumResponseDto, isLocked: boolean) => {
+  const $t = await getFormatter();
+
+  if (!authManager.isElevated) {
+    const continueUrl = new URL(Route.viewAlbum({ id: album.id }), page.url);
+    await goto(Route.pinPrompt({ continue: `${continueUrl.pathname}${continueUrl.search}` }));
+    return false;
+  }
+
+  const confirmed = await modalManager.showDialog({
+    title: $t(isLocked ? 'lock_album_confirm_title' : 'unlock_album_confirm_title'),
+    prompt: $t(isLocked ? 'lock_album_confirm_prompt' : 'unlock_album_confirm_prompt', {
+      values: { count: album.assetCount },
+    }),
+    confirmText: $t(isLocked ? 'lock_album_confirm_action' : 'unlock_album_confirm_action'),
+  });
+
+  if (!confirmed) {
+    return false;
+  }
+
+  try {
+    const response = await setAlbumLocked({ id: album.id, albumSetLockedDto: { isLocked } });
+    eventManager.emit('AlbumUpdate', response);
+    toastManager.primary($t(isLocked ? 'lock_album_locked' : 'lock_album_unlocked'));
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_album_info'));
+    return false;
+  }
 };
 
 export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { prompt?: boolean; notify?: boolean }) => {

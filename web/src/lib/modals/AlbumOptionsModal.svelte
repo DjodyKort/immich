@@ -6,6 +6,7 @@
   import {
     getAlbumActions,
     handleRemoveUserFromAlbum,
+    handleSetAlbumLocked,
     handleUpdateAlbum,
     handleUpdateUserAlbumRole,
   } from '$lib/services/album.service';
@@ -60,6 +61,13 @@
 
   let sharedLinks: SharedLinkResponseDto[] = $state([]);
 
+  /**
+   * Whether anyone but the owner can reach this album, which is what stops it being locked. `albumUsers`
+   * always contains the owner, so more than one entry means it is shared with a person; a shared link is
+   * the other way in. The server refuses either, so both are checked here to explain it in place.
+   */
+  const isShared = $derived(album.albumUsers.length > 1 || sharedLinks.length > 0);
+
   onMount(async () => {
     sharedLinks = await getAllSharedLinks({ albumId: album.id });
   });
@@ -102,6 +110,18 @@
               checked={album.isHidden}
               onCheckedChange={(checked) => handleUpdateAlbum(album, { isHidden: checked })}
             />
+          </Field>
+          <!--
+            Locking is not hiding: it moves the album *and every photo in it* behind the PIN, so unlike the
+            switch above it confirms first and names what will happen. Disabled while the album is shared,
+            because the server refuses that case and saying so up front beats an error after the click.
+          -->
+          <Field
+            label={$t('lock_album')}
+            description={isShared ? $t('lock_album_error_shared') : $t('lock_album_description')}
+            disabled={readOnly || isShared}
+          >
+            <Switch checked={album.isLocked} onCheckedChange={(checked) => handleSetAlbumLocked(album, checked)} />
           </Field>
         </div>
       </div>

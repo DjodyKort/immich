@@ -2632,6 +2632,68 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/{id}/locked": {
+      "put": {
+        "description": "Move an album, and every asset in it, into or out of the locked folder. Requires an elevated session and an album you own that is not shared and whose every asset you own. Locking sets those assets to Locked visibility and removes them from all other albums; unlocking returns them to the timeline and leaves them in this album. Separate from the update endpoint because it rewrites the assets, not just the album.",
+        "operationId": "setAlbumLocked",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumSetLockedDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Lock or unlock an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
     "/albums/{id}/map-markers": {
       "get": {
         "description": "Retrieve map marker information for a specific album by its ID.",
@@ -16887,6 +16949,18 @@
         ],
         "type": "object"
       },
+      "AlbumSetLockedDto": {
+        "properties": {
+          "isLocked": {
+            "description": "Whether the album, and every asset in it, should live behind the locked folder. Locking requires an elevated session, an album you own, that is shared with nobody and has no shared links, and whose every asset you own; it sets those assets to Locked visibility and removes them from all other albums. Unlocking returns them to the timeline -- including any that were archived beforehand, since `visibility` is a single exclusive column -- and leaves them in this album.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isLocked"
+        ],
+        "type": "object"
+      },
       "AlbumStatisticsResponseDto": {
         "properties": {
           "notShared": {
@@ -17182,6 +17256,20 @@
               "$ref": "#/components/schemas/AssetSurface"
             },
             "nullable": true,
+            "type": "array"
+          },
+          "hiddenFromAdd": {
+            "description": "Surfaces to add to each asset's exclusions, leaving its other exclusions alone. Use this rather than `hiddenFrom` for a multi-asset selection: `hiddenFrom` replaces the whole set, so applying it to assets that are withheld from different places silently discards the difference. Mutually exclusive with `hiddenFrom`.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
+          "hiddenFromRemove": {
+            "description": "Surfaces to remove from each asset's exclusions, leaving its other exclusions alone. The counterpart of `hiddenFromAdd`; a surface named in both is rejected. Mutually exclusive with `hiddenFrom`.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
             "type": "array"
           },
           "ids": {

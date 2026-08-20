@@ -186,19 +186,30 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
 
   /// Album views must not surface assets the server would withhold. The rule itself, and why album
   /// views need it at all, lives in [VisibilityPolicy.albumAssets].
-  Expression<bool> _albumAssetVisibility() => VisibilityPolicy.albumAssets(_db.remoteAssetEntity);
+  ///
+  /// [isElevated] widens it to admit locked assets, which is what makes a locked album openable at all -
+  /// it contains nothing else. Passed down from the caller rather than read here, so the query cannot
+  /// change its own answer depending on when it runs.
+  Expression<bool> _albumAssetVisibility({required bool isElevated}) =>
+      VisibilityPolicy.albumAssets(_db.remoteAssetEntity, isElevated: isElevated);
 
   /// The per-asset exclusion clause for a query standing in for one of the six surfaces a user can hide
   /// an asset from. Album and trash views deliberately get none; see [VisibilityPolicy.notHiddenFrom].
   Expression<bool> _visibleOn(AssetSurface surface) => VisibilityPolicy.notHiddenFrom(_db.remoteAssetEntity, surface);
 
-  TimelineQuery remoteAlbum(String albumId, GroupAssetsBy groupBy) => (
-    bucketSource: () => _watchRemoteAlbumBucket(albumId, groupBy: groupBy),
-    assetSource: (offset, count) => _getRemoteAlbumBucketAssets(albumId, offset: offset, count: count),
+  /// [isElevated] must be true to see a locked album's contents; see [_albumAssetVisibility].
+  TimelineQuery remoteAlbum(String albumId, GroupAssetsBy groupBy, {bool isElevated = false}) => (
+    bucketSource: () => _watchRemoteAlbumBucket(albumId, groupBy: groupBy, isElevated: isElevated),
+    assetSource: (offset, count) =>
+        _getRemoteAlbumBucketAssets(albumId, offset: offset, count: count, isElevated: isElevated),
     origin: TimelineOrigin.remoteAlbum,
   );
 
-  Stream<List<Bucket>> _watchRemoteAlbumBucket(String albumId, {GroupAssetsBy groupBy = GroupAssetsBy.day}) {
+  Stream<List<Bucket>> _watchRemoteAlbumBucket(
+    String albumId, {
+    GroupAssetsBy groupBy = GroupAssetsBy.day,
+    required bool isElevated,
+  }) {
     if (groupBy == GroupAssetsBy.none) {
       // Counted through a join on the asset table rather than straight off album membership, so the
       // visibility predicate can apply. This also stops soft-deleted assets being counted, matching
@@ -216,7 +227,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
             ..where(
               _db.remoteAssetEntity.deletedAt.isNull() &
                   _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
-                  _albumAssetVisibility(),
+                  _albumAssetVisibility(isElevated: isElevated),
             ))
           .map((row) => row.read(countExp) ?? 0)
           .watchSingleOrNull()
@@ -248,7 +259,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
             ..where(
               _db.remoteAssetEntity.deletedAt.isNull() &
                   _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
-                  _albumAssetVisibility(),
+                  _albumAssetVisibility(isElevated: isElevated),
             )
             ..groupBy([dateExp]);
 
@@ -268,7 +279,12 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
         .handleError((error) => const <Bucket>[]);
   }
 
-  Future<List<BaseAsset>> _getRemoteAlbumBucketAssets(String albumId, {required int offset, required int count}) async {
+  Future<List<BaseAsset>> _getRemoteAlbumBucketAssets(
+    String albumId, {
+    required int offset,
+    required int count,
+    required bool isElevated,
+  }) async {
     final albumData = await (_db.remoteAlbumEntity.select()..where((row) => row.id.equals(albumId))).getSingleOrNull();
 
     // If album doesn't exist (was deleted), return empty list
@@ -297,7 +313,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
         ])..where(
           _db.remoteAssetEntity.deletedAt.isNull() &
               _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
-              _albumAssetVisibility(),
+              _albumAssetVisibility(isElevated: isElevated),
         );
 
     if (isAscending) {

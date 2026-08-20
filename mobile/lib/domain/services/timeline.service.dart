@@ -55,8 +55,9 @@ class TimelineFactory {
   TimelineService localAlbum({required String albumId}) =>
       TimelineService(_timelineRepository.localAlbum(albumId, groupBy));
 
-  TimelineService remoteAlbum({required String albumId}) =>
-      TimelineService(_timelineRepository.remoteAlbum(albumId, groupBy));
+  /// [isElevated] must be true for a locked album to show anything: it contains only locked assets.
+  TimelineService remoteAlbum({required String albumId, bool isElevated = false}) =>
+      TimelineService(_timelineRepository.remoteAlbum(albumId, groupBy, isElevated: isElevated));
 
   TimelineService remoteAssets(String userId) => TimelineService(_timelineRepository.remote(userId, groupBy));
 

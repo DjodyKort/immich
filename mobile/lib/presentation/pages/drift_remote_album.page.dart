@@ -191,7 +191,14 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
     return ProviderScope(
       overrides: [
         timelineServiceProvider.overrideWith((ref) {
-          final timelineService = ref.watch(timelineFactoryProvider).remoteAlbum(albumId: _album.id);
+          // A locked album contains only locked assets, so without elevation this query returns nothing
+          // and the album renders empty - which is exactly what mobile did before locked albums existed
+          // here. Watched rather than read once: it starts unresolved, and the album has to re-query when
+          // the answer arrives. Loading and failure both read as "not elevated", the safe branch.
+          final isElevated = ref.watch(sessionElevatedProvider).valueOrNull ?? false;
+          final timelineService = ref
+              .watch(timelineFactoryProvider)
+              .remoteAlbum(albumId: _album.id, isElevated: isElevated);
           ref.onDispose(timelineService.dispose);
           return timelineService;
         }),

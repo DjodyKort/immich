@@ -60,6 +60,23 @@ class RemoteAlbumService {
     return _repository.getAll(isElevated: isElevated, hidden: hidden);
   }
 
+  /// The locked albums, for the locked folder's own album section.
+  ///
+  /// Elevation is not a parameter because there is no useful unelevated answer: a locked album is invisible
+  /// without the PIN, so the caller has to be past it already. The listing query still refuses to return
+  /// anything if that turns out to be false.
+  Future<List<RemoteAlbum>> getAllLocked() {
+    return _repository.getAll(isElevated: true, lockedOnly: true);
+  }
+
+  /// Moves an album, and everything in it, into or out of the locked folder.
+  ///
+  /// The server does the work — locking the member assets and evicting them from other albums — so this is
+  /// a single call rather than a client-side sequence. See `AlbumService.setLocked`.
+  Future<void> setLocked(String albumId, bool isLocked) {
+    return _albumApiRepository.setLocked(albumId, isLocked);
+  }
+
   Future<RemoteAlbum?> get(String albumId) {
     return _repository.get(albumId);
   }
@@ -121,12 +138,14 @@ class RemoteAlbumService {
     required UserDto owner,
     required List<String> assetIds,
     String? description,
+    bool isLocked = false,
   }) async {
     final album = await _albumApiRepository.createDriftAlbum(
       title,
       owner,
       description: description,
       assetIds: assetIds,
+      isLocked: isLocked,
     );
     await _repository.create(album, assetIds);
 
