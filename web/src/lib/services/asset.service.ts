@@ -85,12 +85,17 @@ export const getAssetBulkActions = ($t: MessageFormatter) => {
     onAction: async () => {
       // A timeline asset carries no `hiddenFrom`, so the modal cannot prefill for a selection. It
       // opens blank and says in its own copy that saving replaces each asset's current set.
-      const assetIds = assetMultiSelectManager.ownedAssets.map(({ id }) => id);
+      const owned = assetMultiSelectManager.ownedAssets;
+      const assetIds = owned.map(({ id }) => id);
       if (assetIds.length === 0) {
         return;
       }
 
-      const updated = await modalManager.show(AssetHiddenFromModal, { assetIds });
+      // Relabel the timeline row only when the whole selection is locked, as it is in the Locked
+      // Folder view. A mixed selection keeps the main-timeline wording, since that is what the switch
+      // means for most of it.
+      const locked = owned.every((asset) => asset.visibility === AssetVisibility.Locked);
+      const updated = await modalManager.show(AssetHiddenFromModal, { assetIds, locked });
       if (updated) {
         assetMultiSelectManager.clear();
       }
@@ -305,10 +310,19 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
   const HideFromPlaces: ActionItem = {
     title: $t('hide_from_places'),
     icon: mdiEyeOffOutline,
-    // A locked asset is already withheld from every one of these places by its visibility, so the
-    // toggles could only ever be a no-op there. A trashed asset is off them for the same reason.
-    $if: () => isOwner && !asset.isTrashed && asset.visibility !== AssetVisibility.Locked,
-    onAction: () => modalManager.show(AssetHiddenFromModal, { assetIds: [asset.id], hiddenFrom: asset.hiddenFrom }),
+    // Offered for locked assets too. The locked folder *is* the timeline with visibility pinned to
+    // locked, so the timeline switch decides whether a locked photo appears there -- see
+    // `server/test/medium/specs/locked-folder-hiding.spec.ts`, which pins "hidden from the locked
+    // folder, still in my locked album". The other five surfaces are already implied by its
+    // visibility, which is why the modal relabels the first row when the asset is locked.
+    // Trashed is still excluded: nothing there is on any surface, and trash is deliberately unmaskable.
+    $if: () => isOwner && !asset.isTrashed,
+    onAction: () =>
+      modalManager.show(AssetHiddenFromModal, {
+        assetIds: [asset.id],
+        hiddenFrom: asset.hiddenFrom,
+        locked: asset.visibility === AssetVisibility.Locked,
+      }),
   };
 
   const RefreshFacesJob: ActionItem = {

@@ -1196,6 +1196,8 @@
   "hide_all_people": "Hide all people",
   "hide_from_place_folders": "Folders",
   "hide_from_place_folders_description": "The folder view of your original file layout.",
+  "hide_from_place_locked_folder": "Locked folder",
+  "hide_from_place_locked_folder_description": "The locked folder's own timeline. Locked albums that contain it are not affected.",
   "hide_from_place_map": "Map",
   "hide_from_place_map_description": "The library-wide map. An album's own map is not affected.",
   "hide_from_place_memories": "Memories",
