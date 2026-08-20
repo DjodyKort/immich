@@ -1,3 +1,4 @@
+import { serverVersion } from 'src/constants';
 import { SystemMetadataKey } from 'src/enum';
 import { ServerService } from 'src/services/server.service';
 import { mockEnvData } from 'test/repositories/config.repository.mock';
@@ -128,6 +129,39 @@ describe(ServerService.name, () => {
   describe('ping', () => {
     it('should respond with pong', () => {
       expect(sut.ping()).toEqual({ res: 'pong' });
+    });
+  });
+
+  describe('getApkLinks', () => {
+    it('should point at the upstream releases by default', () => {
+      expect(sut.getApkLinks().universal).toContain('https://github.com/immich-app/immich/releases/download/');
+    });
+
+    it("should follow the build's own repository, so a fork does not hand out the upstream APK", () => {
+      // The whole point: the app a server offers has to be the one that server was built from.
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ buildMetadata: { repositoryUrl: 'https://github.com/someone/immich' } }),
+      );
+
+      const links = sut.getApkLinks();
+      expect(links.universal).toBe(
+        `https://github.com/someone/immich/releases/download/v${serverVersion.toString()}/app-release.apk`,
+      );
+      expect(links.arm64v8a).toContain('https://github.com/someone/immich/releases/download/');
+      expect(Object.values(links).join(' ')).not.toContain('immich-app/immich');
+    });
+  });
+
+  describe('getAboutInfo', () => {
+    it('should link the version to the same repository the APKs come from', async () => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ buildMetadata: { repositoryUrl: 'https://github.com/someone/immich' } }),
+      );
+      mocks.serverInfo.getBuildVersions.mockResolvedValue({} as never);
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      const about = await sut.getAboutInfo();
+      expect(about.versionUrl).toBe(`https://github.com/someone/immich/releases/tag/v${serverVersion.toString()}`);
     });
   });
 
