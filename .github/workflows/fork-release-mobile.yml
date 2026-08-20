@@ -1,0 +1,144 @@
+# [FORK] Build a signed Android APK and publish it as a release on this fork.
+#
+# Why this exists rather than reusing upstream's `build-mobile.yml`: that workflow is a
+# `workflow_call` with twelve `required: true` secrets, including iOS certificates, App Store Connect
+# keys and Fastlane team ids. A fork that only wants an Android APK cannot satisfy them, and GitHub
+# refuses the call outright when a required secret is missing. This is the Android half, standalone.
+#
+# It exists to feed Obtainium: point Obtainium at this repository and it tracks these releases,
+# picking the APK for your device's ABI.
+#
+# ## Before the first run
+#
+# Set these four repository secrets, generated from a keystore you create once:
+#
+#   KEY_JKS                 the keystore, base64 encoded (`base64 -w0 key.jks`)
+#   ALIAS                   the key alias inside it
+#   ANDROID_KEY_PASSWORD    the key password
+#   ANDROID_STORE_PASSWORD  the keystore password
+#
+# **Back that keystore up somewhere you trust, and never rotate it.** Android refuses to install an
+# update signed by a different key than the installed app, so losing it means every future release
+# fails to install and each user has to uninstall and lose their local state. For the same reason,
+# moving from the official Immich app to these builds needs one uninstall first: the signatures
+# differ, and no amount of version bumping gets around that.
+#
+# ## Releasing
+#
+# Tag a commit and push the tag:
+#
+#   git tag v3.1.0-fork.3 && git push origin v3.1.0-fork.3
+#
+# The tag pattern matches the image tags this fork already uses. Obtainium compares release tags, so
+# the fork counter has to keep going up.
+
+name: '[FORK] Release mobile APK'
+
+on:
+  push:
+    tags:
+      - 'v*-fork.*'
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: 'Create the release as a draft'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Build, sign and release the Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to create the release and attach the APKs
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # Gradle falls back to *debug* signing when `android/key.jks` is missing or empty
+      # (mobile/android/app/build.gradle, `hasKeystore`). A debug-signed APK installs happily once and
+      # then can never be updated by a properly signed one, so a missing secret has to stop the run
+      # here rather than produce a release that poisons everyone who installs it.
+      - name: Create and verify the keystore
+        env:
+          KEY_JKS: ${{ secrets.KEY_JKS }}
+        working-directory: ./mobile
+        run: |
+          if [ -z "$KEY_JKS" ]; then
+            echo "::error::KEY_JKS is not set. Without it Gradle would silently debug-sign the APK," \
+                 "which can never be updated. See the header of this workflow." && exit 1
+          fi
+          printf "%s" "$KEY_JKS" | base64 -d > android/key.jks
+          if [ ! -s android/key.jks ]; then
+            echo "::error::key.jks decoded to an empty file - check that KEY_JKS is valid base64." && exit 1
+          fi
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      # The public mise action, not immich-app/devtools/actions/use-mise: that one needs a token from
+      # an app this fork does not have. Same substitution fork-ci.yml makes.
+      - uses: jdx/mise-action@v3
+        with:
+          working_directory: ./mobile
+
+      - name: Install dependencies
+        run: mise //mobile:install:ci
+
+      - name: Perform codegen
+        run: mise //mobile:codegen
+
+      # versionCode comes from the run number rather than pubspec's build number, which only moves
+      # when upstream bumps it - two fork releases off one upstream version would otherwise carry the
+      # same versionCode. Run numbers only ever increase, which is all Android and Obtainium need.
+      - name: Build the APKs
+        working-directory: ./mobile
+        env:
+          ALIAS: ${{ secrets.ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          flutter build apk --release --build-number=${{ github.run_number }}
+          flutter build apk --release --build-number=${{ github.run_number }} \
+            --split-per-abi --target-platform android-arm,android-arm64,android-x64
+
+      - name: Confirm the APKs are not debug-signed
+        working-directory: ./mobile/build/app/outputs/flutter-apk
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          for apk in *.apk; do
+            if "$APKSIGNER" verify --print-certs "$apk" | grep -q "CN=Android Debug"; then
+              echo "::error::$apk is debug-signed and would be uninstallable-to-update." && exit 1
+            fi
+            echo "$apk: release-signed"
+          done
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          DRAFT: ${{ inputs.draft && '--draft' || '' }}
+        working-directory: ./mobile/build/app/outputs/flutter-apk
+        run: |
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --title "$TAG" \
+            --generate-notes \
+            $DRAFT \
+            app-release.apk \
+            app-arm64-v8a-release.apk \
+            app-armeabi-v7a-release.apk \
+            app-x86_64-release.apk
