@@ -2,7 +2,7 @@ import { WorkflowStepConfig, WorkflowTrigger } from '@immich/plugin-sdk';
 import { Kysely } from 'kysely';
 import { readFileSync } from 'node:fs';
 import { PluginManifestDto } from 'src/dtos/plugin-manifest.dto';
-import { AssetType, AssetVisibility, LogLevel } from 'src/enum';
+import { AssetSurface, AssetType, AssetVisibility, LogLevel } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
@@ -17,6 +17,7 @@ import { UserRepository } from 'src/repositories/user.repository';
 import { WorkflowRepository } from 'src/repositories/workflow.repository';
 import { DB } from 'src/schema';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service';
+import { toHiddenFromMask } from 'src/utils/visibility-policy';
 import { resolveMethod } from 'src/utils/workflow';
 import { MediumTestContext } from 'test/medium.factory';
 import { mockEnvData } from 'test/repositories/config.repository.mock';
@@ -199,6 +200,90 @@ describe('core plugin', () => {
       await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
         visibility: AssetVisibility.Timeline,
       });
+    });
+  });
+
+  describe('assetHideFrom', () => {
+    it('should hide an asset from the chosen surfaces', async () => {
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+      const workflow = await createWorkflow({
+        ownerId: user.id,
+        trigger: WorkflowTrigger.AssetCreate,
+        steps: [{ method: 'immich-plugin-core#assetHideFrom', config: { hide: [AssetSurface.Timeline] } }],
+      });
+
+      await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
+
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline]),
+        // Independent of visibility, which is the point of the action: hiding is not archiving.
+        visibility: AssetVisibility.Timeline,
+      });
+    });
+
+    it('should add to existing exclusions rather than replacing them', async () => {
+      // The reason the plugin unions with `data.asset.hiddenFrom` instead of emitting its config
+      // directly: `changes.asset.hiddenFrom` replaces the whole set, so a workflow that hides from
+      // search would otherwise silently un-hide an asset the user had withheld from the timeline.
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline]),
+      });
+
+      const workflow = await createWorkflow({
+        ownerId: user.id,
+        trigger: WorkflowTrigger.AssetCreate,
+        steps: [{ method: 'immich-plugin-core#assetHideFrom', config: { hide: [AssetSurface.Search] } }],
+      });
+
+      await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
+
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline, AssetSurface.Search]),
+      });
+    });
+
+    it('should un-hide the surfaces named in show', async () => {
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline, AssetSurface.Search]),
+      });
+
+      const workflow = await createWorkflow({
+        ownerId: user.id,
+        trigger: WorkflowTrigger.AssetCreate,
+        steps: [{ method: 'immich-plugin-core#assetHideFrom', config: { show: [AssetSurface.Search] } }],
+      });
+
+      await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
+
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline]),
+      });
+    });
+
+    it('should clear the column rather than storing zero when the last surface is shown again', async () => {
+      // `hiddenFrom is not null` is what decides Hidden-view membership, so a stored 0 would leave a
+      // fully un-hidden asset stuck there forever. `toHiddenFromMask` returns null for an empty set.
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline]),
+      });
+
+      const workflow = await createWorkflow({
+        ownerId: user.id,
+        trigger: WorkflowTrigger.AssetCreate,
+        steps: [{ method: 'immich-plugin-core#assetHideFrom', config: { show: [AssetSurface.Timeline] } }],
+      });
+
+      await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
+
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ hiddenFrom: null });
     });
   });
 

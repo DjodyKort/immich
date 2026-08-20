@@ -1,9 +1,10 @@
 import { Kysely } from 'kysely';
-import { AssetVisibility } from 'src/enum';
+import { AssetSurface, AssetVisibility } from 'src/enum';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { WorkflowRepository } from 'src/repositories/workflow.repository';
 import { DB } from 'src/schema';
 import { BaseService } from 'src/services/base.service';
+import { toHiddenFromMask } from 'src/utils/visibility-policy';
 import { newMediumService } from 'test/medium.factory';
 import { getKyselyDB } from 'test/utils';
 
@@ -111,6 +112,52 @@ describe(WorkflowRepository.name, () => {
 
       const fromFirstRow = await sut.getForAlbumAssetV1Backfill(user.id, first[0].updateId);
       expect(fromFirstRow.map(({ assetId }) => assetId)).toEqual(first.slice(1).map(({ assetId }) => assetId));
+    });
+  });
+
+  /**
+   * The plugin-facing payload speaks in `AssetSurface` names, never in `hiddenFrom` bit values.
+   *
+   * That boundary is why the numbering in `SURFACE_BIT` is still movable: the bits are persisted, but
+   * nothing outside `visibility-policy.ts` knows them. A plugin is the one consumer that could end that
+   * -- its config is stored, it may be third-party, and it is the one place we cannot migrate. Mobile
+   * made the same call by having sync carry names.
+   */
+  describe('hiddenFrom translation', () => {
+    it('should report no exclusions as an empty array, not null', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+      // Every row upstream writes is null. A plugin iterating the field must not have to null-check it.
+      await expect(sut.getForAssetV1(asset.id)).resolves.toMatchObject({ hiddenFrom: [] });
+    });
+
+    it('should translate every surface, so no bit reaches a plugin unnamed', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const surfaces = Object.values(AssetSurface);
+      const { asset } = await ctx.newAsset({ ownerId: user.id, hiddenFrom: toHiddenFromMask(surfaces) });
+
+      const payload = await sut.getForAssetV1(asset.id);
+      expect([...payload.hiddenFrom].sort()).toEqual([...surfaces].sort());
+    });
+
+    it('should carry the names through the album-asset path the queue is built from', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { album } = await ctx.newAlbum({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Search]),
+      });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+
+      // This path's rows are serialised into `workflow_queue.data` and read back by `runQueue`, so a
+      // raw bitmask leaking here would be persisted rather than merely passed.
+      const rows = await sut.getForAlbumAssetV1(NIL_UUID);
+      const row = rows.find(({ assetId }) => assetId === asset.id);
+      expect(row?.asset?.hiddenFrom).toEqual([AssetSurface.Search]);
     });
   });
 });

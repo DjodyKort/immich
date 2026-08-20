@@ -1,5 +1,5 @@
 import { wrapper } from '@immich/plugin-sdk';
-import { AssetVisibility } from '@immich/sdk';
+import { AssetSurface, AssetVisibility } from '@immich/sdk';
 import type { Manifest } from '../dist/index.d.ts';
 
 type MatchValueConfig = {
@@ -165,6 +165,29 @@ const methods = wrapper<Manifest>({
     return { workflow: { continue: assetDate >= startDate && assetDate < endDate } };
   },
 
+  assetHideFrom: ({ config, data }) => {
+    const hide = (config.hide ?? []) as AssetSurface[];
+    const show = (config.show ?? []) as AssetSurface[];
+
+    // Union with the asset's current surfaces rather than overwriting them: `changes.asset.hiddenFrom`
+    // replaces the whole set, and a workflow that hides from search must not silently un-hide an asset
+    // the user had already withheld from the timeline by hand.
+    const next = new Set<AssetSurface>(data.asset.hiddenFrom);
+    for (const surface of hide) {
+      next.add(surface);
+    }
+    for (const surface of show) {
+      next.delete(surface);
+    }
+
+    const current = new Set<AssetSurface>(data.asset.hiddenFrom);
+    if (next.size === current.size && [...next].every((surface) => current.has(surface))) {
+      return {};
+    }
+
+    return { changes: { asset: { hiddenFrom: [...next] } } };
+  },
+
   assetLock: ({ config, data }) => {
     if (!config.inverse && data.asset.visibility !== AssetVisibility.Locked) {
       return { changes: { asset: { visibility: AssetVisibility.Locked } } };
@@ -239,6 +262,7 @@ const {
   assetArchive,
   assetFavorite,
   assetFileFilter,
+  assetHideFrom,
   assetLocationFilter,
   assetExifFilter,
   assetDateFilter,
@@ -260,6 +284,7 @@ export {
   assetArchive,
   assetFavorite,
   assetFileFilter,
+  assetHideFrom,
   assetLocationFilter,
   assetExifFilter,
   assetDateFilter,

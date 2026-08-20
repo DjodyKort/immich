@@ -508,6 +508,10 @@ export class WorkflowExecutionService extends BaseService {
       await assetService.update(auth, assetId, {
         isFavorite: asset.isFavorite,
         visibility: asset.visibility,
+        // Replaces the whole set, which is why `assetHideFrom` computes the union itself from the
+        // asset's current surfaces rather than emitting a delta: `changes` carries state, not
+        // instructions, so a relative "add these" has nowhere to live in this shape.
+        hiddenFrom: asset.hiddenFrom,
         dateTimeOriginal: asset.exifInfo?.dateTimeOriginal ?? undefined,
         // TODO allow setting to null
         longitude: asset.exifInfo?.longitude ?? undefined,

@@ -459,6 +459,35 @@
       }
     },
     {
+      "name": "assetHideFrom",
+      "title": "Hide from places",
+      "description": "Withhold the asset from chosen places without archiving or locking it. Adds to whatever the asset is already hidden from, so it never un-hides something set by hand.",
+      "types": ["AssetV1"],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "hide": {
+            "title": "Hide from",
+            "description": "Places the asset should be withheld from",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["timeline", "search", "map", "people", "memories", "folders"]
+            }
+          },
+          "show": {
+            "title": "Show in",
+            "description": "Places the asset should be shown in again, undoing an earlier exclusion",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["timeline", "search", "map", "people", "memories", "folders"]
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "assetVisibility",
       "title": "Update visibility",
       "description": "Change visibility to selected option",
