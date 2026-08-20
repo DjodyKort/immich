@@ -1,5 +1,6 @@
 <script lang="ts">
   import AlbumLockedIcon from '$lib/components/album-page/AlbumLockedIcon.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { userInteraction } from '$lib/stores/user.svelte';
@@ -22,12 +23,24 @@
     }
   };
 
+  // The cached list was fetched with whatever elevation the session had at the time, and the server
+  // decides album *membership* of the list by elevation - a locked album is not merely covered, it is
+  // absent. So locking has to drop the cache, not just re-render: `AlbumLockedIcon` and the padlock
+  // cover correct themselves from `authManager.isElevated`, but a locked album would otherwise sit in
+  // this list until something else happened to refresh it.
+  const onSessionLocked = () => {
+    userInteraction.recentAlbums = undefined;
+    void refreshAlbums();
+  };
+
   $effect(() => {
     if (!userInteraction.recentAlbums) {
       void refreshAlbums();
     }
   });
 </script>
+
+<OnEvents {onSessionLocked} />
 
 {#each albums as album (album.id)}
   <a
