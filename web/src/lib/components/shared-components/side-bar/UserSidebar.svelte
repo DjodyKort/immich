@@ -14,6 +14,8 @@
     mdiAccountOutline,
     mdiArchiveArrowDown,
     mdiArchiveArrowDownOutline,
+    mdiEyeOff,
+    mdiEyeOffOutline,
     mdiFolderOutline,
     mdiHeart,
     mdiHeartOutline,
@@ -104,6 +106,8 @@
     icon={mdiArchiveArrowDownOutline}
     activeIcon={mdiArchiveArrowDown}
   />
+
+  <NavbarItem title={$t('hidden')} href={Route.hidden()} icon={mdiEyeOffOutline} activeIcon={mdiEyeOff} />
 
   <NavbarItem title={$t('locked_folder')} href={Route.locked()} icon={mdiLockOutline} activeIcon={mdiLock} />
 

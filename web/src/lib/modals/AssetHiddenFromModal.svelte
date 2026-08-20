@@ -2,7 +2,7 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { AssetSurface, updateAsset, updateAssets } from '@immich/sdk';
-  import { Alert, Button, Field, FormModal, Stack, Switch, Text, toastManager } from '@immich/ui';
+  import { Alert, Button, Field, FormModal, modalManager, Stack, Switch, Text, toastManager } from '@immich/ui';
   import { mdiEyeOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -73,6 +73,21 @@
   const onSubmit = async () => {
     // The API replaces the whole set, so an empty array is how "show everywhere again" is expressed.
     const nextHiddenFrom = surfaces.filter((surface) => selected[surface]);
+
+    // Hiding from all six surfaces is allowed -- it's not a one-way door, the Hidden view exists
+    // precisely so this stays findable -- but it's easy to flip every switch without meaning to,
+    // so it gets a confirmation rather than silent application.
+    if (nextHiddenFrom.length === surfaces.length) {
+      const confirmed = await modalManager.showDialog({
+        title: $t('hide_from_places_all_confirm_title'),
+        prompt: $t('hide_from_places_all_confirm_prompt', { values: { count: assetIds.length } }),
+        confirmText: $t('hide_from_places_all_confirm_action'),
+      });
+
+      if (!confirmed) {
+        return;
+      }
+    }
 
     try {
       if (assetIds.length === 1) {
