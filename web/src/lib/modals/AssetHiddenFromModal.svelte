@@ -15,9 +15,17 @@
      * opens blank there and says so in the copy rather than pretending to show a merged state.
      */
     hiddenFrom?: AssetSurface[];
+    /**
+     * Whether every asset here has Locked visibility. Only relabels the timeline row: for a locked
+     * asset that switch governs the locked folder, not the main timeline, because the locked folder is
+     * the timeline with visibility pinned to locked. The other five rows keep their copy -- a locked
+     * asset is off those places already, so switching them changes nothing today and stays correct if
+     * its visibility later changes.
+     */
+    locked?: boolean;
   }
 
-  let { onClose, assetIds, hiddenFrom = [] }: Props = $props();
+  let { onClose, assetIds, hiddenFrom = [], locked = false }: Props = $props();
 
   // Ordered the way a person meets these places in the app, not the way the enum is declared.
   const surfaces = [
@@ -36,8 +44,10 @@
   const options = $derived([
     {
       surface: AssetSurface.Timeline,
-      label: $t('hide_from_place_timeline'),
-      description: $t('hide_from_place_timeline_description'),
+      label: locked ? $t('hide_from_place_locked_folder') : $t('hide_from_place_timeline'),
+      description: locked
+        ? $t('hide_from_place_locked_folder_description')
+        : $t('hide_from_place_timeline_description'),
     },
     {
       surface: AssetSurface.Search,
