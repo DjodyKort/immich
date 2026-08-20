@@ -404,6 +404,30 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     groupBy: groupBy,
   );
 
+  /// Every asset withheld from at least one surface - the one view that is never itself subject to
+  /// [VisibilityPolicy.notHiddenFrom]. Every other surface can be hidden from, so hiding an asset from
+  /// all six would otherwise leave it reachable only by knowing its id; this is the route that always
+  /// applies, mirroring the server's `Surface.HiddenReview` (`server/src/utils/visibility-policy.ts`).
+  ///
+  /// Admits `timeline` and `archive` visibility only, deliberately excluding `locked` - like the
+  /// server's rule does for an unelevated session. This page has no PIN gate of its own (it sits next to
+  /// Archive, not next to the locked folder), so admitting locked assets here would leak them into a view
+  /// that never asks for the PIN. `hidden` (the motion-photo video-part marker) is excluded the same way,
+  /// by only matching the two real-photo values instead of `!= locked`.
+  ///
+  /// Deleted assets are excluded too: a hidden-and-trashed asset stays findable through the trash, which
+  /// is the other place named to the user when they confirm hiding from every surface.
+  TimelineQuery hidden(String userId, GroupAssetsBy groupBy) => _remoteQueryBuilder(
+    filter: (row) =>
+        row.deletedAt.isNull() &
+        row.ownerId.equals(userId) &
+        row.hiddenFrom.isNotNull() &
+        (row.visibility.equalsValue(AssetVisibility.timeline) | row.visibility.equalsValue(AssetVisibility.archive)),
+    origin: TimelineOrigin.hidden,
+    groupBy: groupBy,
+    joinLocal: true,
+  );
+
   TimelineQuery video(String userId, GroupAssetsBy groupBy) => _remoteQueryBuilder(
     filter: (row) =>
         row.deletedAt.isNull() &

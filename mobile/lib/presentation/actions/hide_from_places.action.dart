@@ -9,6 +9,7 @@ import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/db.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/toast.provider.dart';
 import 'package:immich_mobile/utils/error_handler.dart';
+import 'package:immich_mobile/widgets/common/confirm_dialog.dart';
 import 'package:immich_mobile/widgets/common/hide_from_places_picker.dart';
 
 /// Exactly one owned asset, and only when hiding it from somewhere could actually change anything.
@@ -60,6 +61,23 @@ class HideFromPlacesAction extends AssetActionBuilder {
       final places = await showHideFromPlacesPicker(context: context, hiddenFrom: stored.hiddenFrom);
       if (places == null || !context.mounted) {
         return;
+      }
+
+      // Hiding from every surface is allowed - it is not a one-way door, the Hidden view exists
+      // precisely so this stays findable - but it is easy to flip every switch without meaning to, so it
+      // gets a confirmation naming where the asset stays findable rather than applying silently.
+      if (places.length == AssetSurface.values.length) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (_) => ConfirmDialog(
+            title: context.t.hide_from_places_all_confirm_title,
+            content: context.t.hide_from_places_all_confirm_prompt(count: 1),
+            ok: context.t.hide_from_places_all_confirm_action,
+          ),
+        );
+        if (confirmed != true || !context.mounted) {
+          return;
+        }
       }
 
       await saveHiddenFrom(context, ref, assetId, places);

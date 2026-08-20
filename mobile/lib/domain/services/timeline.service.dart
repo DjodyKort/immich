@@ -26,6 +26,7 @@ enum TimelineOrigin {
   trash,
   archive,
   lockedFolder,
+  hidden,
   video,
   place,
   person,
@@ -68,6 +69,8 @@ class TimelineFactory {
   TimelineService archive(String userId) => TimelineService(_timelineRepository.archived(userId, groupBy));
 
   TimelineService lockedFolder(String userId) => TimelineService(_timelineRepository.locked(userId, groupBy));
+
+  TimelineService hidden(String userId) => TimelineService(_timelineRepository.hidden(userId, groupBy));
 
   TimelineService video(String userId) => TimelineService(_timelineRepository.video(userId, groupBy));
 

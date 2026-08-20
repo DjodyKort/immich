@@ -47,6 +47,7 @@ import 'package:immich_mobile/presentation/pages/drift_asset_selection_timeline.
 import 'package:immich_mobile/presentation/pages/drift_asset_troubleshoot.page.dart';
 import 'package:immich_mobile/presentation/pages/drift_create_album.page.dart';
 import 'package:immich_mobile/presentation/pages/drift_favorite.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_hidden.page.dart';
 import 'package:immich_mobile/presentation/pages/drift_library.page.dart';
 import 'package:immich_mobile/presentation/pages/drift_local_album.page.dart';
 import 'package:immich_mobile/presentation/pages/drift_locked_folder.page.dart';
@@ -164,6 +165,7 @@ class AppRouter extends RootStackRouter {
     AutoRoute(page: DriftFavoriteRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: DriftTrashRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: DriftArchiveRoute.page, guards: [_authGuard, _duplicateGuard]),
+    AutoRoute(page: DriftHiddenRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: DriftLockedFolderRoute.page, guards: [_authGuard, _lockedGuard, _duplicateGuard]),
     AutoRoute(page: DriftVideoRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: DriftLibraryRoute.page, guards: [_authGuard, _duplicateGuard]),

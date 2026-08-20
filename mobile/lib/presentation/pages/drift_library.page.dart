@@ -83,6 +83,16 @@ class _ActionButtonGrid extends ConsumerWidget {
                     : const SizedBox.shrink(),
               ],
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _ActionButton(
+                  icon: Icons.visibility_off_outlined,
+                  onTap: () => context.pushRoute(const DriftHiddenRoute()),
+                  label: context.t.hidden,
+                ),
+              ],
+            ),
           ],
         ),
       ),

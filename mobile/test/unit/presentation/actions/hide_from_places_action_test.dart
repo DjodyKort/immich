@@ -97,6 +97,55 @@ void main() {
       verify(() => assetService.updateHiddenFrom(asset.id, {AssetSurface.timeline, AssetSurface.search})).called(1);
     });
 
+    testWidgets('asks for confirmation before hiding from every place', (tester) async {
+      final asset = owned();
+      // Every place but the last already on; ticking it turns the selection into all six.
+      stored(asset, hiddenFrom: {
+        AssetSurface.timeline,
+        AssetSurface.search,
+        AssetSurface.map,
+        AssetSurface.people,
+        AssetSurface.memories,
+      });
+
+      await openPicker(tester, {asset});
+      // Six switches do not all fit the test viewport, so the last one has to be scrolled to before
+      // it can be tapped; without this the tap misses and Flutter reports it as an off-screen target.
+      await tester.ensureVisible(find.byType(SwitchListTile).last);
+      await tester.tap(find.byType(SwitchListTile).last);
+      await animate(tester);
+      await tapLabel(tester, StaticTranslations.instance.save);
+
+      expect(find.text(StaticTranslations.instance.hide_from_places_all_confirm_title), findsOneWidget);
+      verifyNever(() => assetService.updateHiddenFrom(any(), any()));
+
+      await tapLabel(tester, StaticTranslations.instance.hide_from_places_all_confirm_action);
+
+      verify(() => assetService.updateHiddenFrom(asset.id, Set.of(AssetSurface.values))).called(1);
+    });
+
+    testWidgets('does not hide from anywhere when the all-places confirmation is declined', (tester) async {
+      final asset = owned();
+      stored(asset, hiddenFrom: {
+        AssetSurface.timeline,
+        AssetSurface.search,
+        AssetSurface.map,
+        AssetSurface.people,
+        AssetSurface.memories,
+      });
+
+      await openPicker(tester, {asset});
+      // Six switches do not all fit the test viewport, so the last one has to be scrolled to before
+      // it can be tapped; without this the tap misses and Flutter reports it as an off-screen target.
+      await tester.ensureVisible(find.byType(SwitchListTile).last);
+      await tester.tap(find.byType(SwitchListTile).last);
+      await animate(tester);
+      await tapLabel(tester, StaticTranslations.instance.save);
+      await tapLabel(tester, StaticTranslations.instance.cancel);
+
+      verifyNever(() => assetService.updateHiddenFrom(any(), any()));
+    });
+
     testWidgets('clearing everything and saving shows the asset everywhere again', (tester) async {
       final asset = owned();
       stored(asset, hiddenFrom: {AssetSurface.timeline, AssetSurface.people});
