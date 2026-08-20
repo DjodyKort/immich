@@ -1,11 +1,12 @@
 <script lang="ts">
   import AlbumCover from '$lib/components/album-page/AlbumCover.svelte';
+  import AlbumLockedIcon from '$lib/components/album-page/AlbumLockedIcon.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getContextMenuPositionFromEvent, type ContextMenuPosition } from '$lib/utils/context-menu';
   import { getShortDateRange } from '$lib/utils/date-time';
   import { type AlbumResponseDto } from '@immich/sdk';
-  import { Icon, IconButton } from '@immich/ui';
-  import { mdiDotsVertical, mdiLock } from '@mdi/js';
+  import { IconButton } from '@immich/ui';
+  import { mdiDotsVertical } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -64,11 +65,7 @@
       data-testid="album-name"
       title={album.albumName}
     >
-      {#if album.isLocked}
-        <span title={$t('lock_album')} data-testid="album-locked-icon" class="shrink-0">
-          <Icon icon={mdiLock} size="16" />
-        </span>
-      {/if}
+      <AlbumLockedIcon {album} />
       {album.albumName}
     </p>
 

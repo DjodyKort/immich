@@ -1348,6 +1348,8 @@
   "lock_album_error_shared": "Stop sharing this album before locking it",
   "lock_album_locked": "Album moved to the locked folder",
   "lock_album_unlocked": "Album moved out of the locked folder",
+  "locked_album": "Locked album",
+  "locked_album_hint": "Only visible with your PIN",
   "locked_albums": "Locked albums",
   "locked_albums_empty": "Albums you lock will appear here",
   "locked_folder": "Locked Folder",

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumLockedIcon from '$lib/components/album-page/AlbumLockedIcon.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { userInteraction } from '$lib/stores/user.svelte';
@@ -48,8 +49,9 @@
         ></div>
       {/if}
     </div>
-    <div class="grow truncate text-sm font-medium">
-      {album.albumName}
+    <div class="flex grow items-center gap-1 truncate text-sm font-medium">
+      <AlbumLockedIcon {album} size="14" />
+      <span class="truncate">{album.albumName}</span>
     </div>
   </a>
 {/each}
