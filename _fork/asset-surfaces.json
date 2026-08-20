@@ -53,6 +53,10 @@
       "surface": "albumContents",
       "why": "Named by the AlbumContents doc comment, and asserted in the matrix as AlbumService.update (assetCount)."
     },
+    "setAlbumLocked": {
+      "surface": "albumContents",
+      "why": "Its response is the album DTO, whose assets come from the same withAssets/AlbumContents path updateAlbumInfo uses, so it reads no wider than that. The member list the operation itself acts on is read separately via getMemberAssetsForLockChange, which is deliberately unfiltered and returns ids and owner ids only - never asset bodies - and is gated on album ownership plus an elevated session. Refusals and the eviction from other albums are pinned in album-locking.spec.ts."
+    },
     "addUsersToAlbum": { "surface": "albumContents", "why": "Named by the AlbumContents doc comment: adding album users." },
     "getAllPeople": { "surface": "people", "why": "The people list and its counts. Asserted in the matrix via PersonService.getStatistics." },
     "searchPerson": { "surface": "people", "why": "People list, filtered." },
