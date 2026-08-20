@@ -186,6 +186,7 @@ class MediumRepositoryContext {
     String? description,
     bool? isActivityEnabled,
     bool? isLocked,
+    bool? isHidden,
     AlbumAssetOrder? order,
     String? thumbnailAssetId,
   }) async {
@@ -201,6 +202,7 @@ class MediumRepositoryContext {
             description: .new(description ?? 'Description for album $id'),
             isActivityEnabled: .new(isActivityEnabled ?? false),
             isLocked: .new(isLocked ?? false),
+            isHidden: .new(isHidden ?? false),
             order: .new(order ?? .asc),
             thumbnailAssetId: .new(thumbnailAssetId),
           ),

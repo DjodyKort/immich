@@ -33,15 +33,27 @@ abstract final class VisibilityPolicy {
   static Expression<bool> albumAssets($RemoteAssetEntityTable asset) =>
       albumAssetVisibility.map(asset.visibility.equalsValue).reduce((a, b) => a | b);
 
-  /// Which albums a listing may show. Locked albums belong to the locked folder and are reachable only
-  /// through the PIN/biometric flow, so an unelevated session must not even learn they exist.
+  /// Which albums a listing may show.
   ///
-  /// Returns `null` when the session is elevated and every album is admissible, so the caller adds no
-  /// clause at all and the elevated query stays exactly the query mobile ran before this existed.
+  /// Mirrors the server's two-state `hidden` filter in `album.repository.ts`'s `getAll`: hidden albums
+  /// are either the whole point of the request or excluded from it, never mixed in, so [hidden] always
+  /// contributes a clause. Locked albums additionally belong to the locked folder and are reachable
+  /// only through the PIN/biometric flow, so an unelevated session must not even learn they exist —
+  /// that clause is added only when [isElevated] is false, same as before.
+  ///
+  /// Unlike the single-clause version this replaced, this can no longer return `null`: with the hidden
+  /// filter always present there is no longer a case with nothing to add, elevated or not. Callers that
+  /// special-cased `null` to mean "no clause" should now just always apply the returned expression.
   /// [isElevated] is threaded in from the caller — mirroring the server's `PolicyContext` — rather than
   /// read from global state inside a query.
-  static Expression<bool>? albumListing($RemoteAlbumEntityTable album, {required bool isElevated}) =>
-      isElevated ? null : album.isLocked.equals(false);
+  static Expression<bool> albumListing(
+    $RemoteAlbumEntityTable album, {
+    required bool isElevated,
+    bool hidden = false,
+  }) {
+    final visibility = album.isHidden.equals(hidden);
+    return isElevated ? visibility : visibility & album.isLocked.equals(false);
+  }
 
   /// The bit each surface occupies in `remote_asset_entity.hidden_from`.
   ///

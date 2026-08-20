@@ -124,6 +124,13 @@ class DriftAlbumApiRepository extends ApiRepository {
     );
     return response.isActivityEnabled;
   }
+
+  Future<bool> setHidden(String albumId, bool isHidden) async {
+    final response = await checkNull(
+      _api.updateAlbumInfo(albumId, UpdateAlbumDto(isHidden: Optional.present(isHidden))),
+    );
+    return response.isHidden;
+  }
 }
 
 extension on AlbumResponseDto {
@@ -138,6 +145,7 @@ extension on AlbumResponseDto {
       updatedAt: updatedAt,
       thumbnailAssetId: albumThumbnailAssetId,
       isActivityEnabled: isActivityEnabled,
+      isHidden: isHidden,
       order: order.orElse(null) == AssetOrder.asc ? AlbumAssetOrder.asc : AlbumAssetOrder.desc,
       assetCount: assetCount,
       isShared: albumUsers.length > 2,

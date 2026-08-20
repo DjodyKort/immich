@@ -116,13 +116,14 @@ SyncAssetExifV1 _createExif({
   );
 }
 
-SyncAlbumV2 _createAlbumV2({required String id, bool isLocked = false}) {
+SyncAlbumV2 _createAlbumV2({required String id, bool isLocked = false, bool isHidden = false}) {
   return SyncAlbumV2(
     id: id,
     name: 'album_$id',
     description: '',
     isActivityEnabled: true,
     isLocked: isLocked,
+    isHidden: isHidden,
     order: AssetOrder.desc,
     thumbnailAssetId: null,
     createdAt: DateTime(2024, 1, 1),
@@ -252,6 +253,28 @@ void main() {
 
       await sut.updateAlbumsV2([_createAlbumV2(id: 'album-1')]);
       expect(await isLocked(), isFalse, reason: 'unlocking must not leave a stale true behind');
+    });
+
+    // Same shape as isLocked: the server sends `album.isHidden` and mobile just has to keep it, or a
+    // hidden album would arrive looking ordinary and re-appear in the album list on the next sync.
+    test('persists isHidden', () async {
+      await sut.updateAlbumsV2([_createAlbumV2(id: 'album-shown'), _createAlbumV2(id: 'album-hidden', isHidden: true)]);
+
+      final rows = await db.remoteAlbumEntity.select().get();
+
+      expect({for (final row in rows) row.id: row.isHidden}, {'album-shown': false, 'album-hidden': true});
+    });
+
+    test('carries isHidden changes through on conflict, in both directions', () async {
+      Future<bool> isHidden() async =>
+          (await (db.remoteAlbumEntity.select()..where((tbl) => tbl.id.equals('album-1'))).getSingle()).isHidden;
+
+      await sut.updateAlbumsV2([_createAlbumV2(id: 'album-1')]);
+      await sut.updateAlbumsV2([_createAlbumV2(id: 'album-1', isHidden: true)]);
+      expect(await isHidden(), isTrue, reason: 'hiding an existing album must reach the column');
+
+      await sut.updateAlbumsV2([_createAlbumV2(id: 'album-1')]);
+      expect(await isHidden(), isFalse, reason: 'unhiding must not leave a stale true behind');
     });
   });
 

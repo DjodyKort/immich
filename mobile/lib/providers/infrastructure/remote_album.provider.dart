@@ -305,6 +305,22 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
   Future<void> setActivityStatus(String albumId, bool enabled) {
     return _remoteAlbumService.setActivityStatus(albumId, enabled);
   }
+
+  Future<void> setHidden(String albumId, bool isHidden) async {
+    await _remoteAlbumService.setHidden(albumId, isHidden);
+
+    // Unlike the other settings on that screen, this one changes which listing the album belongs to, so
+    // the cached list cannot be left to the next pull-to-refresh: the album the user just hid would sit
+    // there looking unhidden. Dropping it locally mirrors deleteAlbum and leaveAlbum. Unhiding has to
+    // re-read instead, because the album is not in state to put back.
+    if (isHidden) {
+      state = state.copyWith(albums: state.albums.where((album) => album.id != albumId).toList());
+    } else {
+      await _getAll();
+    }
+
+    ref.invalidate(hiddenRemoteAlbumsProvider);
+  }
 }
 
 final remoteAlbumDateRangeProvider = StreamProvider.autoDispose.family<(DateTime, DateTime), String>((ref, albumId) {
@@ -317,4 +333,16 @@ final remoteAlbumSharedUsersProvider = FutureProvider.autoDispose.family<List<Us
   ref.onDispose(() => link.close());
   final service = ref.watch(remoteAlbumServiceProvider);
   return service.getSharedUsers(albumId);
+});
+
+/// Albums for the Hidden page's "Hidden albums" section. Respects elevation the same way
+/// [RemoteAlbumNotifier._getAll] does, so a hidden album that is also locked stays invisible until the
+/// session clears the PIN/biometric flow. [AuthApiRepository.isSessionElevated] fails closed on its
+/// own, so a failure here resolves to `false` too.
+/// Left to dispose with the page, like [remoteAlbumSharedUsersProvider]: the section is small, and a
+/// cached copy that outlived the page would show an album the user has since unhidden.
+final hiddenRemoteAlbumsProvider = FutureProvider.autoDispose<List<RemoteAlbum>>((ref) async {
+  final service = ref.watch(remoteAlbumServiceProvider);
+  final isElevated = await ref.read(authServiceProvider).isSessionElevated();
+  return service.getAll(isElevated: isElevated, hidden: true);
 });

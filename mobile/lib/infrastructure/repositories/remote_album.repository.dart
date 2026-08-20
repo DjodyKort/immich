@@ -28,10 +28,12 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
   /// [isElevated] says whether the caller's session has cleared the PIN/biometric flow; it is threaded
   /// in rather than read from global state here, mirroring how the server passes a `PolicyContext` into
   /// a query. It defaults to the restrictive branch, so an omission hides locked albums rather than
-  /// exposing them.
+  /// exposing them. [hidden] selects which of the two disjoint album sets to return — the default
+  /// listing (`false`) or the hidden albums section (`true`) — mirroring the server's `hidden` option.
   Future<List<RemoteAlbum>> getAll({
     Set<SortRemoteAlbumsBy> sortBy = const {SortRemoteAlbumsBy.updatedAt},
     bool isElevated = false,
+    bool hidden = false,
   }) {
     // Count non-trashed assets via the joined asset table. Filtering trashed assets in the
     // join condition (instead of the where clause) keeps albums whose assets are all trashed
@@ -69,10 +71,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
       ..addColumns([_db.remoteAlbumUserEntity.userId.count(distinct: true)])
       ..groupBy([_db.remoteAlbumEntity.id]);
 
-    final listable = VisibilityPolicy.albumListing(_db.remoteAlbumEntity, isElevated: isElevated);
-    if (listable != null) {
-      query.where(listable);
-    }
+    query.where(VisibilityPolicy.albumListing(_db.remoteAlbumEntity, isElevated: isElevated, hidden: hidden));
 
     if (sortBy.isNotEmpty) {
       final orderings = <OrderingTerm>[];
@@ -380,6 +379,12 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
     await query.write(RemoteAlbumEntityCompanion(isActivityEnabled: Value(isEnabled)));
   }
 
+  Future<void> setHidden(String albumId, bool isHidden) async {
+    final query = _db.update(_db.remoteAlbumEntity)..where((row) => row.id.equals(albumId));
+
+    await query.write(RemoteAlbumEntityCompanion(isHidden: Value(isHidden)));
+  }
+
   Stream<RemoteAlbum?> watchAlbum(String albumId) {
     final query =
         _db.remoteAlbumEntity.select().join([
@@ -596,6 +601,7 @@ extension on RemoteAlbumEntityData {
       description: description,
       thumbnailAssetId: thumbnailAssetId,
       isActivityEnabled: isActivityEnabled,
+      isHidden: isHidden,
       order: order,
       assetCount: assetCount,
       ownerName: ownerName,

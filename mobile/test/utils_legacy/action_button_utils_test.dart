@@ -60,6 +60,7 @@ RemoteAlbum createRemoteAlbum({
   String id = 'test-album-id',
   String name = 'Test Album',
   bool isActivityEnabled = false,
+  bool isHidden = false,
   bool isShared = false,
 }) {
   return RemoteAlbum(
@@ -70,6 +71,7 @@ RemoteAlbum createRemoteAlbum({
     createdAt: DateTime.now(),
     updatedAt: DateTime.now(),
     isActivityEnabled: isActivityEnabled,
+    isHidden: isHidden,
     isShared: isShared,
     order: AlbumAssetOrder.asc,
     assetCount: 0,
