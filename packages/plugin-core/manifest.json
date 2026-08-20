@@ -7,6 +7,27 @@
   "wasmPath": "dist/plugin.wasm",
   "templates": [
     {
+      "name": "hidden-album",
+      "title": "Hide an album's photos",
+      "description": "Withhold photos added to a chosen album from the timeline, search and the map, without archiving or locking them. Pick the album after adding this, and use the album's own select-all with \"Hide from places\" once for photos that are already in it.",
+      "trigger": "AlbumAssetAdded",
+      "steps": [
+        {
+          "method": "immich-plugin-core#assetAlbumFilter",
+          "config": {
+            "albumIds": []
+          }
+        },
+        {
+          "method": "immich-plugin-core#assetHideFrom",
+          "config": {
+            "hide": ["timeline", "search", "map"],
+            "show": []
+          }
+        }
+      ]
+    },
+    {
       "name": "screenshots-smart-album",
       "title": "Archive screenshots",
       "description": "Archive uploads with \"screenshot\" in the filename and optionally add them to an album",
