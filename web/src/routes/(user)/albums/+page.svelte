@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation';
   import { scrollMemory } from '$lib/actions/scroll-memory';
   import AlbumsControls from './AlbumsControls.svelte';
   import Albums from '$lib/components/album-page/AlbumsList.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
   import GroupTab from '$lib/elements/GroupTab.svelte';
@@ -20,7 +22,14 @@
 
   let searchQuery = $state('');
   let albumGroups: string[] = $state([]);
+
+  // `+page.ts` fetched these with the elevation the session had then, and the server decides list
+  // membership by elevation - a locked album is absent, not merely covered. Re-running the load is
+  // the only way to drop one; re-rendering cannot, because the album is already in `data`.
+  const onSessionLocked = () => void invalidateAll();
 </script>
+
+<OnEvents {onSessionLocked} />
 
 <UserPageLayout title={data.meta.title} use={[[scrollMemory, { routeStartsWith: Route.albums() }]]}>
   {#snippet buttons()}

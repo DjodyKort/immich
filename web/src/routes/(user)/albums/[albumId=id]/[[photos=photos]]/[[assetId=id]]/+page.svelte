@@ -322,6 +322,17 @@
     await invalidate('album:data');
   };
 
+  // Leaving a locked album on screen after the user locks the session is the sharpest version of the
+  // staleness: the assets are already rendered, so nothing re-requests them and nothing hides them.
+  // `/locked` has always bounced to the timeline on this event; a locked album is the same content
+  // behind the same PIN, so it does the same. An ordinary album stays put -- locking says nothing
+  // about it.
+  const onSessionLocked = async () => {
+    if (album.isLocked) {
+      await goto(Route.photos());
+    }
+  };
+
   const { Cast } = $derived(getGlobalActions($t));
   const { Share } = $derived(getAlbumActions($t, album));
   const { AddAssets, Upload } = $derived(getAlbumAssetsActions($t, album, timelineMultiSelectManager.assets));
@@ -344,6 +355,7 @@
   {onAlbumUserUpdate}
   onAlbumUserDelete={refreshAlbum}
   {onAlbumUpdate}
+  {onSessionLocked}
 />
 <CommandPaletteDefaultProvider name={$t('album')} actions={[AddAssets, Upload, Close]} />
 

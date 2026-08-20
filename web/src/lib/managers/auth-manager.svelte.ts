@@ -54,7 +54,23 @@ class AuthManager {
   constructor() {
     eventManager.on({
       SessionDelete: () => goto(Route.logout()),
+      // Locking is the one way elevation ends that the client initiates, and the server has already
+      // de-elevated the session by the time this fires. Without this the flag stayed true until the
+      // expiry timer or the next navigation re-checked -- up to a full elevation window of the UI
+      // rendering its elevated branch after the user explicitly locked: locked albums still listed,
+      // and `AlbumCover` choosing the real thumbnail over `LockedCover`. New image requests would be
+      // refused, but that cover was on screen seconds earlier, so the browser cache often still
+      // painted it.
+      SessionLocked: () => this.#deElevate(),
     });
+  }
+
+  // Drops elevation locally without asking the server, for the cases where we already know the
+  // answer. `refreshElevation` would also work but costs a round trip to be told what we just did.
+  #deElevate() {
+    this.isElevated = false;
+    clearTimeout(this.#elevationExpiryTimer);
+    this.#elevationExpiryTimer = undefined;
   }
 
   async load() {
@@ -177,9 +193,7 @@ class AuthManager {
   reset() {
     this.#user = undefined;
     this.#preferences = undefined;
-    this.isElevated = false;
-    clearTimeout(this.#elevationExpiryTimer);
-    this.#elevationExpiryTimer = undefined;
+    this.#deElevate();
   }
 
   #hasAuthCookie() {
