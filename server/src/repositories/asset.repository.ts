@@ -53,7 +53,7 @@ import {
   withTags,
 } from 'src/utils/database';
 import { globToSqlPattern } from 'src/utils/misc';
-import { PolicyContext, Surface, withSurface } from 'src/utils/visibility-policy';
+import { excludeHiddenFromSurface, PolicyContext, Surface, withSurface } from 'src/utils/visibility-policy';
 
 export type AssetStats = Record<AssetType, number>;
 
@@ -824,6 +824,12 @@ export class AssetRepository {
             return withBoundingBox(withBoundingCircle, bbox);
           })
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          // A requested visibility overrides the surface's visibility set, but not its per-asset mask.
+          // Without this, the locked folder and the archive view - the two grids that pin a visibility -
+          // were the only ones ignoring "hide this from my timeline", so a hidden asset disappeared from
+          // the timeline and then turned up in the locked folder. Applied to both bucket queries, or the
+          // counts and the contents disagree.
+          .$if(!!options.visibility, (qb) => excludeHiddenFromSurface(qb, timelineSurfaceFor(options)))
           // An album-scoped bucket widens to the locked folder once the session is elevated, because a
           // locked album is by construction made only of locked assets; the plain timeline never does.
           // An explicitly requested visibility above still wins over the surface default.
@@ -906,6 +912,12 @@ export class AssetRepository {
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          // A requested visibility overrides the surface's visibility set, but not its per-asset mask.
+          // Without this, the locked folder and the archive view - the two grids that pin a visibility -
+          // were the only ones ignoring "hide this from my timeline", so a hidden asset disappeared from
+          // the timeline and then turned up in the locked folder. Applied to both bucket queries, or the
+          // counts and the contents disagree.
+          .$if(!!options.visibility, (qb) => excludeHiddenFromSurface(qb, timelineSurfaceFor(options)))
           // An album-scoped bucket widens to the locked folder once the session is elevated, because a
           // locked album is by construction made only of locked assets; the plain timeline never does.
           // An explicitly requested visibility above still wins over the surface default.

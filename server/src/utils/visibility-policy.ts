@@ -307,6 +307,23 @@ export function withSurface<O>(qb: SelectQueryBuilder<DB, 'asset', O>, surface: 
 }
 
 /**
+ * The per-asset exclusion on its own, without the surface's visibility set.
+ *
+ * For a caller that names a visibility explicitly - the locked folder asks for `visibility: locked`,
+ * the archive view for `archive` - the surface's own visibility set must not override that choice.
+ * The per-asset mask still should apply, though, and previously did not: "hide this from my timeline"
+ * is about the timeline-shaped grids, and those views are the timeline with one visibility pinned.
+ *
+ * The resulting rule, stated whole: hiding an asset from `timeline` removes it from every
+ * timeline-shaped grid - the main timeline, archive, and the locked folder - and from no album, ever,
+ * because album surfaces have no user-facing name to hide from. Trash is untouchable by construction,
+ * having no bit at all.
+ */
+export function excludeHiddenFromSurface<O>(qb: SelectQueryBuilder<DB, 'asset', O>, surface: Surface) {
+  return qb.where((eb) => notExcludedPerAsset(eb, surface));
+}
+
+/**
  * The same rule as an expression, for `or` groups, join `ON` clauses, and the v3 search filter, none of
  * which can take a query builder. Reads the same table as {@link withSurface}, so the two cannot drift
  * apart.
