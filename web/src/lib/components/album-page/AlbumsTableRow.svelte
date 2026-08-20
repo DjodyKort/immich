@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import AlbumLockedIcon from '$lib/components/album-page/AlbumLockedIcon.svelte';
   import { dateFormats } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
@@ -37,6 +38,7 @@
   {oncontextmenu}
 >
   <td class="text-md w-8/12 items-center text-start text-ellipsis sm:w-4/12 md:w-4/12 xl:w-[30%] 2xl:w-[40%]">
+    <AlbumLockedIcon {album} class="me-1 inline align-text-bottom" />
     {album.albumName}
     {#if album.shared}
       <Icon

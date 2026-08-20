@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumLockedIcon from '$lib/components/album-page/AlbumLockedIcon.svelte';
   import { SCROLL_PROPERTIES } from '$lib/components/shared-components/album-selection/album-selection-utils';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
@@ -151,7 +152,10 @@
       {/if}
     </span>
     <span class="flex h-full flex-col items-start justify-center overflow-hidden">
-      <span class="w-full shrink truncate">{albumNameArray[0]}<b>{albumNameArray[1]}</b>{albumNameArray[2]}</span>
+      <span class="flex w-full shrink items-center gap-1 truncate">
+        <AlbumLockedIcon {album} size="14" />
+        <span class="truncate">{albumNameArray[0]}<b>{albumNameArray[1]}</b>{albumNameArray[2]}</span>
+      </span>
       <span class="flex gap-1 text-sm">
         <AlbumListItemDetails {album} />
       </span>

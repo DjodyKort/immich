@@ -71,6 +71,7 @@
     mdiImageOutline,
     mdiImagePlusOutline,
     mdiLink,
+    mdiLock,
     mdiPlus,
     mdiPresentationPlay,
   } from '@mdi/js';
@@ -368,6 +369,23 @@
           {#if viewMode !== AlbumPageViewMode.SELECT_THUMBNAIL}
             <!-- ALBUM TITLE -->
             <section class="pt-8 md:pt-24">
+              <!--
+                A locked album is otherwise indistinguishable from an ordinary one once you are past
+                the PIN, and this is the page where mistaking the two matters most: it is where you
+                share, add photos, or invite users. Label it rather than relying on the padlock in
+                the album list you arrived from.
+              -->
+              {#if album.isLocked}
+                <div
+                  class="mb-3 inline-flex items-center gap-2 rounded-full bg-subtle px-3 py-1 text-sm font-medium text-primary"
+                  data-testid="album-locked-badge"
+                >
+                  <Icon icon={mdiLock} size="16" />
+                  <span>{$t('locked_album')}</span>
+                  <span class="text-gray-500 dark:text-gray-400">• {$t('locked_album_hint')}</span>
+                </div>
+              {/if}
+
               <AlbumTitle
                 {album}
                 albumName={album.albumName}
