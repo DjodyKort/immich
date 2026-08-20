@@ -304,6 +304,13 @@ set
 where
   "id" = any ($1::uuid[])
 
+-- AssetRepository.updateAllHiddenFrom
+update "asset"
+set
+  "hiddenFrom" = nullif((coalesce("asset"."hiddenFrom", 0) | 1) & ~ 2, 0)
+where
+  "id" = any ($1::uuid[])
+
 -- AssetRepository.getLockedAssetIds
 select
   "asset"."id"

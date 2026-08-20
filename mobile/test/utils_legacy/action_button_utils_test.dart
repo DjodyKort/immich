@@ -63,6 +63,7 @@ RemoteAlbum createRemoteAlbum({
   String name = 'Test Album',
   bool isActivityEnabled = false,
   bool isHidden = false,
+  bool isLocked = false,
   bool isShared = false,
 }) {
   return RemoteAlbum(
@@ -74,6 +75,7 @@ RemoteAlbum createRemoteAlbum({
     updatedAt: DateTime.now(),
     isActivityEnabled: isActivityEnabled,
     isHidden: isHidden,
+    isLocked: isLocked,
     isShared: isShared,
     order: AlbumAssetOrder.asc,
     assetCount: 0,
@@ -209,10 +211,11 @@ void main() {
         expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(createRemoteAsset(), isOwner: false)), isFalse);
       });
 
-      // The set replaces rather than merges, so applying it to a mixed selection would silently
-      // discard whatever the other assets are already withheld from.
-      test('should not show when more than one asset is selected', () {
-        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(createRemoteAsset(), selectedCount: 2)), isFalse);
+      // Was capped at one asset, because the set replaced rather than merged and applying it to a mixed
+      // selection would have discarded whatever the other assets were already withheld from. The bulk
+      // path adjusts place by place instead, so a selection is safe and the cap is gone.
+      test('should show when more than one asset is selected', () {
+        expect(ActionButtonType.hideFromPlaces.shouldShow(contextFor(createRemoteAsset(), selectedCount: 2)), isTrue);
       });
 
       test('should not show for a local-only asset', () {

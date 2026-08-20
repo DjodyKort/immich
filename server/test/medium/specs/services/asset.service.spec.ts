@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto';
-import { AssetFileType, AssetMetadataKey, AssetStatus, JobName, SharedLinkType } from 'src/enum';
+import { AssetFileType, AssetMetadataKey, AssetStatus, AssetSurface, JobName, SharedLinkType } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
@@ -17,7 +17,7 @@ import { StorageRepository } from 'src/repositories/storage.repository';
 import { UserRepository } from 'src/repositories/user.repository';
 import { DB } from 'src/schema';
 import { AssetService } from 'src/services/asset.service';
-import { forSystem } from 'src/utils/visibility-policy';
+import { forSystem, fromHiddenFromMask, toHiddenFromMask } from 'src/utils/visibility-policy';
 import { newMediumService } from 'test/medium.factory';
 import { factory } from 'test/small.factory';
 import { getKyselyDB } from 'test/utils';
@@ -44,6 +44,29 @@ const setup = (db?: Kysely<DB>) => {
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
+
+type Ctx = Awaited<ReturnType<typeof setup>>['ctx'];
+
+/** The surfaces an asset is actually withheld from, read back from the column. */
+const hiddenFromOf = async (ctx: Ctx, id: string) => {
+  const row = await ctx.database
+    .selectFrom('asset')
+    .select('hiddenFrom')
+    .where('id', '=', id)
+    .executeTakeFirstOrThrow();
+  return fromHiddenFromMask(row.hiddenFrom).sort();
+};
+
+/** Three assets withheld from *different* places - the case a replacing set would flatten. */
+const seedMixed = async (ctx: Ctx, ownerId: string) => {
+  const { asset: onTimeline } = await ctx.newAsset({
+    ownerId,
+    hiddenFrom: toHiddenFromMask([AssetSurface.Timeline]),
+  });
+  const { asset: onMap } = await ctx.newAsset({ ownerId, hiddenFrom: toHiddenFromMask([AssetSurface.Map]) });
+  const { asset: onNothing } = await ctx.newAsset({ ownerId, hiddenFrom: null });
+  return { onTimeline, onMap, onNothing };
+};
 
 describe(AssetService.name, () => {
   describe('get', () => {
@@ -445,6 +468,117 @@ describe(AssetService.name, () => {
           exifInfo: expect.objectContaining({ dateTimeOriginal: '2023-11-19T18:11:00+00:00', timeZone: 'UTC' }),
         }),
       );
+    });
+  });
+
+  /**
+   * The point of `hiddenFromAdd`/`hiddenFromRemove`: a selection can hold assets withheld from
+   * different places, and `hiddenFrom` replaces the whole set, so using it across a mixed selection
+   * discards the difference. These assert the arithmetic on real Postgres, since the whole thing is
+   * one bitwise statement rather than application logic.
+   */
+  describe('updateAll hiddenFrom arithmetic', () => {
+    it('should add a surface without disturbing exclusions it was not told about', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { onTimeline, onMap, onNothing } = await seedMixed(ctx, user.id);
+
+      await sut.updateAll(auth, {
+        ids: [onTimeline.id, onMap.id, onNothing.id],
+        hiddenFromAdd: [AssetSurface.Search],
+      });
+
+      // This is the case a plain `hiddenFrom: ['search']` would have got wrong, flattening all three
+      // to search alone and losing the timeline and map exclusions.
+      await expect(hiddenFromOf(ctx, onTimeline.id)).resolves.toEqual([AssetSurface.Search, AssetSurface.Timeline]);
+      await expect(hiddenFromOf(ctx, onMap.id)).resolves.toEqual([AssetSurface.Map, AssetSurface.Search]);
+      await expect(hiddenFromOf(ctx, onNothing.id)).resolves.toEqual([AssetSurface.Search]);
+    });
+
+    it('should remove only the named surface', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline, AssetSurface.Map, AssetSurface.People]),
+      });
+
+      await sut.updateAll(auth, { ids: [asset.id], hiddenFromRemove: [AssetSurface.Map] });
+
+      await expect(hiddenFromOf(ctx, asset.id)).resolves.toEqual([AssetSurface.People, AssetSurface.Timeline]);
+    });
+
+    it('should apply an add and a remove in one call', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline]),
+      });
+
+      await sut.updateAll(auth, {
+        ids: [asset.id],
+        hiddenFromAdd: [AssetSurface.Memories],
+        hiddenFromRemove: [AssetSurface.Timeline],
+      });
+
+      await expect(hiddenFromOf(ctx, asset.id)).resolves.toEqual([AssetSurface.Memories]);
+    });
+
+    // A stored 0 would read as "has exclusions" to `hiddenFrom is not null`, which is what decides
+    // membership of the Hidden view -- so a fully-unhidden asset would be stuck in it forever.
+    it('should store null rather than zero once the last exclusion is removed', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline]),
+      });
+
+      await sut.updateAll(auth, { ids: [asset.id], hiddenFromRemove: [AssetSurface.Timeline] });
+
+      await expect(
+        ctx.database.selectFrom('asset').select('hiddenFrom').where('id', '=', asset.id).executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ hiddenFrom: null });
+    });
+
+    it('should be a no-op when removing a surface the asset was never hidden from', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Timeline]),
+      });
+
+      await sut.updateAll(auth, { ids: [asset.id], hiddenFromRemove: [AssetSurface.Folders] });
+
+      await expect(hiddenFromOf(ctx, asset.id)).resolves.toEqual([AssetSurface.Timeline]);
+    });
+
+    it('should not touch assets outside the id list', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset: target } = await ctx.newAsset({ ownerId: user.id, hiddenFrom: null });
+      const { asset: bystander } = await ctx.newAsset({
+        ownerId: user.id,
+        hiddenFrom: toHiddenFromMask([AssetSurface.Map]),
+      });
+
+      await sut.updateAll(auth, { ids: [target.id], hiddenFromAdd: [AssetSurface.Search] });
+
+      await expect(hiddenFromOf(ctx, bystander.id)).resolves.toEqual([AssetSurface.Map]);
     });
   });
 

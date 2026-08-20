@@ -148,6 +148,8 @@ export class AssetService extends BaseService {
       dateTimeRelative,
       timeZone,
       hiddenFrom,
+      hiddenFromAdd,
+      hiddenFromRemove,
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
@@ -197,6 +199,17 @@ export class AssetService extends BaseService {
 
     if (Object.keys(assetDto).length > 0) {
       await this.assetRepository.updateAll(ids, assetDto);
+    }
+
+    // Kept separate from `assetDto` rather than folded into it: this is arithmetic on the column's
+    // existing value, so it cannot be expressed as a plain assignment alongside the other fields.
+    // The DTO rejects combining it with `hiddenFrom`, so at most one of the two branches ever runs.
+    if (hiddenFromAdd !== undefined || hiddenFromRemove !== undefined) {
+      await this.assetRepository.updateAllHiddenFrom(
+        ids,
+        toHiddenFromMask(hiddenFromAdd ?? []) ?? 0,
+        toHiddenFromMask(hiddenFromRemove ?? []) ?? 0,
+      );
     }
 
     if (unlockingAssetIds.size > 0) {

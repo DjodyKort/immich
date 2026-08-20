@@ -100,13 +100,16 @@ void main() {
     testWidgets('asks for confirmation before hiding from every place', (tester) async {
       final asset = owned();
       // Every place but the last already on; ticking it turns the selection into all six.
-      stored(asset, hiddenFrom: {
-        AssetSurface.timeline,
-        AssetSurface.search,
-        AssetSurface.map,
-        AssetSurface.people,
-        AssetSurface.memories,
-      });
+      stored(
+        asset,
+        hiddenFrom: {
+          AssetSurface.timeline,
+          AssetSurface.search,
+          AssetSurface.map,
+          AssetSurface.people,
+          AssetSurface.memories,
+        },
+      );
 
       await openPicker(tester, {asset});
       // Six switches do not all fit the test viewport, so the last one has to be scrolled to before
@@ -126,13 +129,16 @@ void main() {
 
     testWidgets('does not hide from anywhere when the all-places confirmation is declined', (tester) async {
       final asset = owned();
-      stored(asset, hiddenFrom: {
-        AssetSurface.timeline,
-        AssetSurface.search,
-        AssetSurface.map,
-        AssetSurface.people,
-        AssetSurface.memories,
-      });
+      stored(
+        asset,
+        hiddenFrom: {
+          AssetSurface.timeline,
+          AssetSurface.search,
+          AssetSurface.map,
+          AssetSurface.people,
+          AssetSurface.memories,
+        },
+      );
 
       await openPicker(tester, {asset});
       // Six switches do not all fit the test viewport, so the last one has to be scrolled to before
@@ -206,14 +212,139 @@ void main() {
       expect(find.byType(ImmichIconButton), findsNothing);
     });
 
-    testWidgets('is hidden when more than one asset is selected', (tester) async {
+    // Was hidden here while the sheet could only replace an asset's whole set, which would have
+    // flattened a mixed selection. The bulk sheet adjusts place by place instead.
+    testWidgets('is offered when more than one asset is selected', (tester) async {
       await tester.pumpTestWidget(
         context,
         const ActionIconButton(action: HideFromPlacesAction(source: .timeline)),
         overrides: context.selected({owned(), owned()}),
       );
 
-      expect(find.byType(ImmichIconButton), findsNothing);
+      expect(find.byType(ImmichIconButton), findsOneWidget);
+    });
+  });
+
+  /// A selection is edited as per-place intentions, so nothing the user was not shown gets discarded.
+  group('HideFromPlacesAction, on a selection', () {
+    /// Two assets that disagree about where they are hidden - the case a replacing set would ruin.
+    Future<(RemoteAsset, RemoteAsset)> twoMismatched() async {
+      final first = RemoteAssetFactory.create(id: 'first', ownerId: context.currentUser.id);
+      final second = RemoteAssetFactory.create(id: 'second', ownerId: context.currentUser.id);
+      stored(first, hiddenFrom: {AssetSurface.timeline});
+      stored(second, hiddenFrom: {AssetSurface.map});
+      return (first, second);
+    }
+
+    /// Sets one place's segmented control, found by the tooltip its segment carries.
+    Future<void> choose(WidgetTester tester, int row, String tooltip) async {
+      final segment = find.descendant(of: find.byType(ListTile).at(row), matching: find.byTooltip(tooltip));
+      await tester.ensureVisible(segment);
+      await tester.tap(segment);
+      await animate(tester);
+    }
+
+    testWidgets('sends only the places that were set, as an add and a remove', (tester) async {
+      final (first, second) = await twoMismatched();
+
+      await openPicker(tester, {first, second});
+      // Row 1 is Search: hide. Row 2 is Map: show.
+      await choose(tester, 1, StaticTranslations.instance.hide_from_places_bulk_hide);
+      await choose(tester, 2, StaticTranslations.instance.hide_from_places_bulk_show);
+      await tapLabel(tester, StaticTranslations.instance.save);
+
+      // Timeline is absent from both sets: it was left unchanged, so `first` keeps it and `second`
+      // does not gain it. That is the whole point of the add/remove shape.
+      final ids =
+          verify(
+                () => assetService.updateHiddenFromBulk(
+                  captureAny(),
+                  add: {AssetSurface.search},
+                  remove: {AssetSurface.map},
+                ),
+              ).captured.single
+              as List<String>;
+
+      // Compared unordered: the selection is a set, so the order it reaches the service in is not
+      // something this test should pin.
+      expect(ids.toSet(), {first.id, second.id});
+    });
+
+    testWidgets('never replaces the whole set for a selection', (tester) async {
+      final (first, second) = await twoMismatched();
+
+      await openPicker(tester, {first, second});
+      await choose(tester, 0, StaticTranslations.instance.hide_from_places_bulk_hide);
+      await tapLabel(tester, StaticTranslations.instance.save);
+
+      verifyNever(() => assetService.updateHiddenFrom(any(), any()));
+    });
+
+    testWidgets('changes nothing when no place was set', (tester) async {
+      final (first, second) = await twoMismatched();
+
+      await openPicker(tester, {first, second});
+      await tapLabel(tester, StaticTranslations.instance.save);
+
+      verifyNever(
+        () => assetService.updateHiddenFromBulk(
+          any(),
+          add: any(named: 'add'),
+          remove: any(named: 'remove'),
+        ),
+      );
+    });
+
+    testWidgets('asks for confirmation before hiding a selection from every place', (tester) async {
+      final (first, second) = await twoMismatched();
+
+      await openPicker(tester, {first, second});
+      for (var row = 0; row < AssetSurface.values.length; row++) {
+        await choose(tester, row, StaticTranslations.instance.hide_from_places_bulk_hide);
+      }
+      await tapLabel(tester, StaticTranslations.instance.save);
+
+      expect(find.text(StaticTranslations.instance.hide_from_places_all_confirm_title), findsOneWidget);
+      verifyNever(
+        () => assetService.updateHiddenFromBulk(
+          any(),
+          add: any(named: 'add'),
+          remove: any(named: 'remove'),
+        ),
+      );
+
+      await tapLabel(tester, StaticTranslations.instance.hide_from_places_all_confirm_action);
+
+      final ids =
+          verify(
+                () => assetService.updateHiddenFromBulk(
+                  captureAny(),
+                  add: Set.of(AssetSurface.values),
+                  remove: const <AssetSurface>{},
+                ),
+              ).captured.single
+              as List<String>;
+
+      expect(ids.toSet(), {first.id, second.id});
+    });
+
+    testWidgets('does not apply anything when the all-places confirmation is declined', (tester) async {
+      final (first, second) = await twoMismatched();
+
+      await openPicker(tester, {first, second});
+      for (var row = 0; row < AssetSurface.values.length; row++) {
+        await choose(tester, row, StaticTranslations.instance.hide_from_places_bulk_hide);
+      }
+      await tapLabel(tester, StaticTranslations.instance.save);
+      await tapLabel(tester, StaticTranslations.instance.cancel);
+
+      verifyNever(
+        () => assetService.updateHiddenFromBulk(
+          any(),
+          add: any(named: 'add'),
+          remove: any(named: 'remove'),
+        ),
+      );
     });
   });
 }

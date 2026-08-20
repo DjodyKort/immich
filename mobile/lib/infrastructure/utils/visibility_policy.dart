@@ -22,16 +22,31 @@ import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.drift.
 abstract final class VisibilityPolicy {
   const VisibilityPolicy._();
 
-  /// The `asset.visibility` values an album view admits.
+  /// The `asset.visibility` values an album view admits without a PIN.
   ///
   /// The same default set the server applies to album buckets. `locked` is absent, which is the only
   /// thing keeping a locked album's contents off screen without a PIN. `hidden` is absent too, which
   /// keeps motion-photo video parts out of album views as a side effect.
   static const albumAssetVisibility = [AssetVisibility.timeline, AssetVisibility.archive];
 
-  /// [albumAssetVisibility] as a predicate on an album's assets.
-  static Expression<bool> albumAssets($RemoteAssetEntityTable asset) =>
-      albumAssetVisibility.map(asset.visibility.equalsValue).reduce((a, b) => a | b);
+  /// What an album view admits once the session has cleared the PIN/biometric flow.
+  ///
+  /// `locked` is added and nothing else: a locked album contains only locked assets, so without this an
+  /// elevated user opening one saw an empty album — which is what mobile did until this existed, and the
+  /// reason locked albums were web-only. `hidden` stays out in both branches; it is the motion-part
+  /// marker here, not a confidentiality state, and elevating a session is no reason to start showing
+  /// video halves of live photos.
+  static const albumAssetVisibilityElevated = [...albumAssetVisibility, AssetVisibility.locked];
+
+  /// The admitted-visibility predicate for an album's assets.
+  ///
+  /// [isElevated] is threaded in from the caller, mirroring the server's `PolicyContext`, rather than read
+  /// from global state inside a query — the same choice [albumListing] makes, and for the same reason: a
+  /// query that reaches for ambient auth state is a query whose result depends on when it ran.
+  static Expression<bool> albumAssets($RemoteAssetEntityTable asset, {required bool isElevated}) =>
+      (isElevated ? albumAssetVisibilityElevated : albumAssetVisibility)
+          .map(asset.visibility.equalsValue)
+          .reduce((a, b) => a | b);
 
   /// Which albums a listing may show.
   ///
@@ -46,8 +61,21 @@ abstract final class VisibilityPolicy {
   /// special-cased `null` to mean "no clause" should now just always apply the returned expression.
   /// [isElevated] is threaded in from the caller — mirroring the server's `PolicyContext` — rather than
   /// read from global state inside a query.
-  static Expression<bool> albumListing($RemoteAlbumEntityTable album, {required bool isElevated, bool hidden = false}) {
+  /// [lockedOnly] inverts the locked clause for the locked folder's own album section: instead of hiding
+  /// locked albums it shows nothing else. Without elevation it matches **nothing** rather than everything,
+  /// so a caller that forgets to elevate renders an empty section instead of leaking the whole list.
+  static Expression<bool> albumListing(
+    $RemoteAlbumEntityTable album, {
+    required bool isElevated,
+    bool hidden = false,
+    bool lockedOnly = false,
+  }) {
     final visibility = album.isHidden.equals(hidden);
+
+    if (lockedOnly) {
+      return isElevated ? visibility & album.isLocked.equals(true) : const Constant(false);
+    }
+
     return isElevated ? visibility : visibility & album.isLocked.equals(false);
   }
 
@@ -92,6 +120,30 @@ abstract final class VisibilityPolicy {
     }
 
     return surfaceBit.entries.where((entry) => mask & entry.value != 0).map((entry) => entry.key).toList();
+  }
+
+  /// [mask] with [add] switched on and [remove] switched off, leaving every other bit alone.
+  ///
+  /// What makes a multi-asset edit safe. The assets in a selection need not be withheld from the same
+  /// places, so computing one replacement set for all of them would discard the difference; adjusting
+  /// each asset's own mask by the surfaces the user actually named does not. Mirrors the arithmetic
+  /// `AssetRepository.updateAllHiddenFrom` performs server-side, so the local row and the stored row
+  /// agree without reading the answer back — which matters because `PUT /assets` returns nothing.
+  ///
+  /// A surface in both sets would be ambiguous; the server rejects that outright, so it cannot arrive
+  /// here from a successful call. Add is applied first regardless, matching the server's `| add` then
+  /// `& ~remove`. Normalises back to `null` rather than `0`, keeping "withheld from nothing" to the one
+  /// spelling [maskFor] produces.
+  static int? adjustMask(int? mask, {required Set<AssetSurface> add, required Set<AssetSurface> remove}) {
+    var next = mask ?? 0;
+    for (final surface in add) {
+      next |= surfaceBit[surface]!;
+    }
+    for (final surface in remove) {
+      next &= ~surfaceBit[surface]!;
+    }
+
+    return next == 0 ? null : next;
   }
 
   /// The asset is not withheld from [surface].

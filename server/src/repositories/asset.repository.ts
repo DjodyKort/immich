@@ -659,6 +659,38 @@ export class AssetRepository {
   }
 
   /**
+   * Adjusts the `hiddenFrom` mask of many assets without replacing it.
+   *
+   * Done as bitwise arithmetic inside one statement rather than read-modify-write, which matters for
+   * more than tidiness: a selection can hold assets that are withheld from different places, so
+   * reading a mask and writing it back would either flatten them all to one value or need a
+   * statement per distinct mask, and either way it would race a concurrent edit of the same rows.
+   * `| add` then `& ~remove` leaves every bit the caller did not name exactly as it was, which is
+   * what makes a bulk edit safe here.
+   *
+   * A mask of 0 is normalised back to `null` so rows keep the single "no exclusions" representation
+   * the enum's implicit readers depend on -- `hiddenFrom is not null` is what the Hidden view uses
+   * to decide membership, and a stored 0 would put a fully-unhidden asset in it forever.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID], 1, 2] })
+  @Chunked()
+  async updateAllHiddenFrom(ids: string[], addMask: number, removeMask: number): Promise<void> {
+    if (ids.length === 0 || (addMask === 0 && removeMask === 0)) {
+      return;
+    }
+
+    await this.db
+      .updateTable('asset')
+      .set({
+        hiddenFrom: sql<number | null>`nullif((coalesce(${sql.ref('asset.hiddenFrom')}, 0) | ${sql.lit(
+          addMask,
+        )}) & ~${sql.lit(removeMask)}, 0)`,
+      })
+      .where('id', '=', anyUuid(ids))
+      .execute();
+  }
+
+  /**
    * Which of the given asset IDs currently have Locked visibility -- used to detect a transition
    * *away* from Locked (e.g. via the single-asset "remove from locked folder" toggle) so callers
    * can decide whether album-membership cleanup is needed, without touching assets whose

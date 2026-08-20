@@ -150,6 +150,48 @@ class RemoteAssetRepository extends DatabaseAccessor<Drift> with $RemoteAssetRep
     });
   }
 
+  /// Switches [add] on and [remove] off for each of [ids], leaving their other exclusions alone.
+  ///
+  /// The multi-asset counterpart of [updateHiddenFrom], and deliberately not expressible as one
+  /// companion: the new value depends on each row's current value, so this reads the masks and writes
+  /// them back adjusted. Rows are grouped by resulting mask, so a selection of a hundred assets that
+  /// were all withheld from the same places costs one statement, not a hundred.
+  ///
+  /// [VisibilityPolicy.adjustMask] performs the same arithmetic the server does, so the local rows match
+  /// what was stored without reading the answer back — `PUT /assets` does not return the assets.
+  Future<void> adjustHiddenFrom(
+    List<String> ids, {
+    required Set<AssetSurface> add,
+    required Set<AssetSurface> remove,
+  }) async {
+    if (ids.isEmpty || (add.isEmpty && remove.isEmpty)) {
+      return;
+    }
+
+    final query = _db.remoteAssetEntity.selectOnly()
+      ..addColumns([_db.remoteAssetEntity.id, _db.remoteAssetEntity.hiddenFrom])
+      ..where(_db.remoteAssetEntity.id.isIn(ids));
+
+    final rows = await query
+        .map((row) => (row.read(_db.remoteAssetEntity.id)!, row.read(_db.remoteAssetEntity.hiddenFrom)))
+        .get();
+
+    final grouped = <int?, List<String>>{};
+    for (final (id, mask) in rows) {
+      grouped.putIfAbsent(VisibilityPolicy.adjustMask(mask, add: add, remove: remove), () => []).add(id);
+    }
+
+    return _db.batch((batch) {
+      for (final MapEntry(key: mask, value: groupIds) in grouped.entries) {
+        batch.update(
+          _db.remoteAssetEntity,
+          RemoteAssetEntityCompanion(hiddenFrom: Value(mask)),
+          where: (e) => e.id.isIn(groupIds),
+        );
+      }
+    });
+  }
+
   Future<void> trash(List<String> ids) {
     return _db.batch((batch) async {
       for (final id in ids) {

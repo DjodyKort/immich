@@ -23,6 +23,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getLockedAssetIds: vitest.fn().mockResolvedValue(new Set()),
     getLibraryAssetCount: vitest.fn(),
     updateAll: vitest.fn(),
+    updateAllHiddenFrom: vitest.fn(),
     getByLibraryIdAndOriginalPath: vitest.fn(),
     deleteAll: vitest.fn(),
     update: vitest.fn(),

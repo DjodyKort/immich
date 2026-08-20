@@ -49,11 +49,34 @@ const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({
   duplicateId: z.string().nullish().describe('Duplicate ID'),
   dateTimeRelative: z.int().optional().describe('Relative time offset in minutes'),
   timeZone: z.string().optional().describe('Time zone (IANA timezone)'),
+  hiddenFromAdd: z
+    .array(AssetSurfaceSchema)
+    .optional()
+    .describe(
+      'Surfaces to add to each asset\'s exclusions, leaving its other exclusions alone. Use this rather than `hiddenFrom` for a multi-asset selection: `hiddenFrom` replaces the whole set, so applying it to assets that are withheld from different places silently discards the difference. Mutually exclusive with `hiddenFrom`.',
+    ),
+  hiddenFromRemove: z
+    .array(AssetSurfaceSchema)
+    .optional()
+    .describe(
+      'Surfaces to remove from each asset\'s exclusions, leaving its other exclusions alone. The counterpart of `hiddenFromAdd`; a surface named in both is rejected. Mutually exclusive with `hiddenFrom`.',
+    ),
 });
 
 const AssetBulkUpdateSchema = AssetBulkUpdateBaseSchema.pipe(
   IsNotSiblingOf(AssetBulkUpdateBaseSchema, 'dateTimeRelative', ['dateTimeOriginal']),
-).meta({ id: 'AssetBulkUpdateDto' });
+)
+  // `hiddenFrom` replaces and the other two adjust, so honouring both at once would mean picking an
+  // order and calling it obvious. Rejecting the combination is the honest option.
+  .refine((data) => data.hiddenFrom === undefined || (!data.hiddenFromAdd && !data.hiddenFromRemove), {
+    error: 'hiddenFrom replaces the whole set and cannot be combined with hiddenFromAdd or hiddenFromRemove',
+  })
+  // Add wins over remove in the SQL, so an overlap would quietly do something other than either
+  // reading of it.
+  .refine((data) => !data.hiddenFromAdd?.some((surface) => data.hiddenFromRemove?.includes(surface)), {
+    error: 'A surface cannot appear in both hiddenFromAdd and hiddenFromRemove',
+  })
+  .meta({ id: 'AssetBulkUpdateDto' });
 
 const UpdateAssetSchema = UpdateAssetBaseSchema.extend({
   livePhotoVideoId: z.uuidv4().nullish().describe('Live photo video ID'),
