@@ -141,6 +141,41 @@ void main() {
     });
   });
 
+  group('locked folder', () {
+    test('withholds a locked asset hidden from the timeline surface', () async {
+      // The locked folder is the timeline with visibility pinned to locked, and the server's buckets
+      // for it resolve to Surface.Timeline, so the same bit has to empty it here. This view was
+      // unmasked once, which meant a photo hidden from the locked folder on the web still showed on
+      // the phone.
+      final user = await ctx.newUser();
+      final visible = await ctx.newRemoteAsset(ownerId: user.id, visibility: AssetVisibility.locked);
+      final hidden = await ctx.newRemoteAsset(
+        ownerId: user.id,
+        visibility: AssetVisibility.locked,
+        hiddenFrom: const [AssetSurface.timeline],
+      );
+
+      final assets = await sut.locked(user.id, .day).assetSource(0, 10);
+      expect(assets.map((asset) => (asset as RemoteAsset).id), [visible.id]);
+      expect(assets.map((asset) => (asset as RemoteAsset).id), isNot(contains(hidden.id)));
+    });
+
+    test('still lists it in the Hidden view, so hiding it from the folder is not losing it', () async {
+      // The server's equivalent guarantee is "still in my locked album", which mobile cannot assert:
+      // its album queries admit only timeline and archive visibility, so a locked asset never appears
+      // in a mobile album view at all (see 'does not expose locked assets in an album view' above).
+      // The Hidden view is the route that does hold here, and it takes no surface bit by design.
+      final user = await ctx.newUser();
+      final hidden = await ctx.newRemoteAsset(
+        ownerId: user.id,
+        hiddenFrom: const [AssetSurface.timeline],
+      );
+
+      final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
+      expect(assets.map((asset) => (asset as RemoteAsset).id), [hidden.id]);
+    });
+  });
+
   group('hidden assets view', () {
     test('shows only assets withheld from at least one surface', () async {
       final user = await ctx.newUser();
