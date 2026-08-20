@@ -1,4 +1,5 @@
 import type {
+  AssetSurface,
   AssetTypeEnum,
   AssetVisibility,
   TagResponseDto,
@@ -95,6 +96,14 @@ export type AssetV1 = {
     stackId: string | null;
     duplicateId: string | null;
     visibility: AssetVisibility;
+    /**
+     * The surfaces this asset is withheld from, independent of `visibility`.
+     *
+     * Always the full set, never a delta. Setting it through `changes` replaces the whole set, so an
+     * action that means "also hide from search" has to union this with its own config -- see
+     * `assetHideFrom` in plugin-core.
+     */
+    hiddenFrom: AssetSurface[];
     isEdited: boolean;
     tags: TagResponseDto[];
     exifInfo: {

@@ -361,6 +361,9 @@ export const columns = {
     'asset.isExternal',
     'asset.isEdited',
     'asset.isFavorite',
+    // The raw bitmask. Translated to `AssetSurface` names before it reaches a plugin, because the
+    // bit numbering is internal and must stay free to change; see WorkflowRepository.toAssetV1.
+    'asset.hiddenFrom',
   ],
   assetFiles: ['asset_file.id', 'asset_file.path', 'asset_file.type', 'asset_file.isEdited'],
   assetFilesForThumbnail: [

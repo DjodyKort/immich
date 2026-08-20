@@ -5,15 +5,32 @@ import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database';
 import { DummyValue, GenerateSql } from 'src/decorators';
 import { WorkflowGetLogsDto, WorkflowSearchDto } from 'src/dtos/workflow.dto';
+import { AssetSurface } from 'src/enum';
 import { DB } from 'src/schema';
 import { WorkflowLogTable } from 'src/schema/tables/workflow-log.table';
 import { WorkflowQueueTable } from 'src/schema/tables/workflow-queue';
 import { WorkflowStepTable } from 'src/schema/tables/workflow-step.table';
 import { WorkflowTable } from 'src/schema/tables/workflow.table';
 import { withTags } from 'src/utils/database';
-import { excludeMotionParts } from 'src/utils/visibility-policy';
+import { excludeMotionParts, fromHiddenFromMask } from 'src/utils/visibility-policy';
 
 export type WorkflowStepUpsert = Omit<Insertable<WorkflowStepTable>, 'workflowId' | 'order'>;
+
+/**
+ * Replaces the raw `hiddenFrom` bitmask with the user-facing surface names a plugin speaks in.
+ *
+ * `SURFACE_BIT` values are internal and persisted, and the only reason they can still be reasoned about
+ * is that nothing outside `visibility-policy.ts` knows them. Handing the integer to a plugin -- which
+ * may be third-party, and whose config is stored -- would pin the numbering forever, exactly the trap
+ * mobile avoided by having sync carry names. So the boundary converts, in one place shared by every
+ * read path, including the ones whose results are serialised into the workflow queue.
+ */
+const toAssetV1 = <T extends { hiddenFrom: number | null }>(
+  asset: T,
+): Omit<T, 'hiddenFrom'> & { hiddenFrom: AssetSurface[] } => ({
+  ...asset,
+  hiddenFrom: fromHiddenFromMask(asset.hiddenFrom),
+});
 
 @Injectable()
 export class WorkflowRepository {
@@ -179,12 +196,16 @@ export class WorkflowRepository {
     await this.db.deleteFrom('workflow').where('id', '=', id).execute();
   }
 
-  getForAssetV1(assetId: string) {
-    return this.assetV1Query(this.db.selectFrom('asset').where('id', '=', assetId)).executeTakeFirstOrThrow();
+  async getForAssetV1(assetId: string) {
+    const asset = await this.assetV1Query(
+      this.db.selectFrom('asset').where('id', '=', assetId),
+    ).executeTakeFirstOrThrow();
+
+    return toAssetV1(asset);
   }
 
-  getForAlbumAssetV1(after: string) {
-    return this.db
+  async getForAlbumAssetV1(after: string) {
+    const rows = await this.db
       .selectFrom('album_asset')
       .select(['albumId', 'assetId', 'album_asset.updateId'])
       .orderBy('album_asset.updateId', 'asc')
@@ -196,6 +217,10 @@ export class WorkflowRepository {
         ),
       )
       .execute();
+
+    // `jsonObjectFrom` is nullable, and was before this mapping existed; keep that shape rather than
+    // asserting it away.
+    return rows.map((row) => ({ ...row, asset: row.asset === null ? null : toAssetV1(row.asset) }));
   }
 
   /**
@@ -211,8 +236,8 @@ export class WorkflowRepository {
    * table -- it is a replay of a past event, gated only by what could have happened.
    */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
-  getForAlbumAssetV1Backfill(ownerId: string, after: string) {
-    return this.db
+  async getForAlbumAssetV1Backfill(ownerId: string, after: string) {
+    const rows = await this.db
       .selectFrom('album_asset')
       .select(['albumId', 'assetId', 'album_asset.updateId'])
       .where((eb) =>
@@ -234,6 +259,10 @@ export class WorkflowRepository {
         ),
       )
       .execute();
+
+    // `jsonObjectFrom` is nullable, and was before this mapping existed; keep that shape rather than
+    // asserting it away.
+    return rows.map((row) => ({ ...row, asset: row.asset === null ? null : toAssetV1(row.asset) }));
   }
 
   addToQueue(dto: Insertable<WorkflowQueueTable>[]) {

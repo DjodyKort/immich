@@ -179,6 +179,7 @@ select
           "asset"."isExternal",
           "asset"."isEdited",
           "asset"."isFavorite",
+          "asset"."hiddenFrom",
           (
             select
               coalesce(json_agg(agg), '[]')
