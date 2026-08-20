@@ -47,7 +47,7 @@ export class ServerService extends BaseService {
 
     return {
       version,
-      versionUrl: `https://github.com/immich-app/immich/releases/tag/${version}`,
+      versionUrl: `${this.getReleaseUrl()}/tag/${version}`,
       licensed: !!licensed,
       ...buildMetadata,
       ...buildVersions,
@@ -55,13 +55,27 @@ export class ServerService extends BaseService {
   }
 
   getApkLinks(): ServerApkLinksDto {
-    const baseUrl = `https://github.com/immich-app/immich/releases/download/v${serverVersion.toString()}`;
+    const baseUrl = `${this.getReleaseUrl()}/download/v${serverVersion.toString()}`;
     return {
       arm64v8a: `${baseUrl}/app-arm64-v8a-release.apk`,
       armeabiv7a: `${baseUrl}/app-armeabi-v7a-release.apk`,
       universal: `${baseUrl}/app-release.apk`,
       x86_64: `${baseUrl}/app-x86_64-release.apk`,
     };
+  }
+
+  /**
+   * Where this build's releases live, for the "download the app" links and the version link.
+   *
+   * Both used to hardcode `immich-app/immich`, which is wrong for anyone not running an official
+   * image: a fork's server told its clients to fetch the *upstream* APK for its own version number,
+   * so the app they installed was never the one the server was built from. `IMMICH_REPOSITORY_URL` is
+   * already the knob for this - `server/Dockerfile` sets it to the upstream URL - so official builds
+   * resolve to exactly the strings they did before, and only a deployment that overrides it moves.
+   */
+  private getReleaseUrl(): string {
+    const { buildMetadata } = this.configRepository.getEnv();
+    return `${buildMetadata.repositoryUrl || 'https://github.com/immich-app/immich'}/releases`;
   }
 
   async getStorage(): Promise<ServerStorageResponseDto> {
