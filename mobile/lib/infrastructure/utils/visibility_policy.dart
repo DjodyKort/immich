@@ -46,11 +46,7 @@ abstract final class VisibilityPolicy {
   /// special-cased `null` to mean "no clause" should now just always apply the returned expression.
   /// [isElevated] is threaded in from the caller — mirroring the server's `PolicyContext` — rather than
   /// read from global state inside a query.
-  static Expression<bool> albumListing(
-    $RemoteAlbumEntityTable album, {
-    required bool isElevated,
-    bool hidden = false,
-  }) {
+  static Expression<bool> albumListing($RemoteAlbumEntityTable album, {required bool isElevated, bool hidden = false}) {
     final visibility = album.isHidden.equals(hidden);
     return isElevated ? visibility : visibility & album.isLocked.equals(false);
   }

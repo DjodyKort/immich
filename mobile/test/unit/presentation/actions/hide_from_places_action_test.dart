@@ -172,14 +172,18 @@ void main() {
       verifyNever(() => assetService.updateHiddenFrom(any(), any()));
     });
 
-    testWidgets('is hidden for a locked asset', (tester) async {
+    testWidgets('is offered for a locked asset, which the locked folder needs', (tester) async {
+      // Was hidden here, on the reasoning that a locked asset is already off all six surfaces so every
+      // switch would be a no-op. The locked folder is the timeline with visibility pinned to locked, so
+      // the timeline bit decides whether a locked photo appears there - see the locked folder group in
+      // test/medium/repositories/timeline_repository_test.dart.
       await tester.pumpTestWidget(
         context,
         const ActionIconButton(action: HideFromPlacesAction(source: .timeline)),
         overrides: context.selected({owned(visibility: .locked)}),
       );
 
-      expect(find.byType(ImmichIconButton), findsNothing);
+      expect(find.byType(ImmichIconButton), findsOneWidget);
     });
 
     testWidgets('is hidden for a trashed asset', (tester) async {

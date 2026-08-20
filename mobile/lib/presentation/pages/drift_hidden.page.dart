@@ -67,10 +67,7 @@ class _HiddenAlbumsSection extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              context.t.hidden_albums,
-              style: context.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
+            Text(context.t.hidden_albums, style: context.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             for (final album in albums)
               Padding(
