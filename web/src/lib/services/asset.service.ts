@@ -321,6 +321,10 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
       modalManager.show(AssetHiddenFromModal, {
         assetIds: [asset.id],
         hiddenFrom: asset.hiddenFrom,
+        // Without these the switches would read the asset's own setting only, so a photo hidden by its
+        // album would show every switch off while being hidden.
+        hiddenFromInherited: asset.hiddenFromInherited,
+        hiddenFromShown: asset.hiddenFromShown,
         locked: asset.visibility === AssetVisibility.Locked,
       }),
   };

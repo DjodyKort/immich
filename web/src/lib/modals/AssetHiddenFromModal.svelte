@@ -1,7 +1,12 @@
 <script lang="ts">
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { hideFromPlaces, toHiddenFromAdjustment, type HideFromIntent } from '$lib/utils/hidden-from';
+  import {
+    hideFromPlaceLabels,
+    hideFromPlaces,
+    toHiddenFromAdjustment,
+    type HideFromIntent,
+  } from '$lib/utils/hidden-from';
   import { AssetSurface, updateAsset, updateAssets } from '@immich/sdk';
   import { Alert, Button, Field, FormModal, modalManager, Select, Stack, Switch, Text, toastManager } from '@immich/ui';
   import { mdiEyeOffOutline } from '@mdi/js';
@@ -18,6 +23,17 @@
      */
     hiddenFrom?: AssetSurface[];
     /**
+     * What the asset's albums withhold it from, and what it already overrides. Single-asset only, same
+     * reason as `hiddenFrom`.
+     *
+     * These turn the timeline row from a two-state switch into a real three-state choice for a photo in
+     * a rule-bearing album: leave the album's rule alone, hide it here as well, or show it here despite
+     * the album. Without them the switch would appear off while the photo was in fact hidden, and
+     * turning it on and off again would look like a no-op.
+     */
+    hiddenFromInherited?: AssetSurface[];
+    hiddenFromShown?: AssetSurface[];
+    /**
      * Whether every asset here has Locked visibility. Only relabels the timeline row: for a locked
      * asset that switch governs the locked folder, not the main timeline, because the locked folder is
      * the timeline with visibility pinned to locked. The other five rows keep their copy -- a locked
@@ -27,7 +43,14 @@
     locked?: boolean;
   }
 
-  let { onClose, assetIds, hiddenFrom = [], locked = false }: Props = $props();
+  let {
+    onClose,
+    assetIds,
+    hiddenFrom = [],
+    hiddenFromInherited = [],
+    hiddenFromShown = [],
+    locked = false,
+  }: Props = $props();
 
   /**
    * A selection is edited as a set of per-place *intentions*, not as a set of places.
@@ -46,46 +69,33 @@
   // guarantee that only the places actually set are ever sent.
   const surfaces = hideFromPlaces;
 
-  // Single-asset editing keeps the switches: the true state is known, so replacing the whole set is
-  // exactly what the user sees themselves doing.
+  /** Which places an album withholds this photo from. Drives the extra copy on those rows. */
+  const inherited = new Set(hiddenFromInherited);
+
+  /**
+   * The switches show the **effective** state, not just the asset's own setting.
+   *
+   * For a photo in an album with a rule, "hide from the timeline as well" and "follow the album" are the
+   * same outcome, so a three-way control would offer two options that do the same thing. One switch
+   * meaning "hidden here" is the honest control; which column expresses it is this modal's problem, not
+   * the user's. Reading the effective state is also what stops the switch from sitting in the off
+   * position while the photo is in fact hidden.
+   */
   let selected = $state<Record<string, boolean>>(
-    Object.fromEntries(surfaces.map((surface) => [surface, hiddenFrom.includes(surface)])),
+    Object.fromEntries(
+      surfaces.map((surface) => [
+        surface,
+        hiddenFrom.includes(surface) || (inherited.has(surface) && !hiddenFromShown.includes(surface)),
+      ]),
+    ),
   );
 
   let intents = $state<Record<string, HideFromIntent>>(
     Object.fromEntries(surfaces.map((surface) => [surface, 'unchanged'])),
   );
 
-  const labels = $derived(
-    new Map([
-      [
-        AssetSurface.Timeline,
-        {
-          label: locked ? $t('hide_from_place_locked_folder') : $t('hide_from_place_timeline'),
-          description: locked
-            ? $t('hide_from_place_locked_folder_description')
-            : $t('hide_from_place_timeline_description'),
-        },
-      ],
-      [
-        AssetSurface.Search,
-        { label: $t('hide_from_place_search'), description: $t('hide_from_place_search_description') },
-      ],
-      [AssetSurface.Map, { label: $t('hide_from_place_map'), description: $t('hide_from_place_map_description') }],
-      [
-        AssetSurface.People,
-        { label: $t('hide_from_place_people'), description: $t('hide_from_place_people_description') },
-      ],
-      [
-        AssetSurface.Memories,
-        { label: $t('hide_from_place_memories'), description: $t('hide_from_place_memories_description') },
-      ],
-      [
-        AssetSurface.Folders,
-        { label: $t('hide_from_place_folders'), description: $t('hide_from_place_folders_description') },
-      ],
-    ]),
-  );
+  // The six label/description pairs live in $lib/utils/hidden-from, shared with album settings.
+  const labels = $derived(hideFromPlaceLabels($t, { locked }));
 
   const intentOptions = $derived([
     { label: $t('hide_from_places_bulk_unchanged'), value: 'unchanged' },
@@ -146,10 +156,17 @@
         // not drop its assets, and one whose surface was set to "show" must not either.
         eventManager.emit('AssetsHiddenFrom', { assetIds, hiddenFrom: toHide });
       } else {
-        // The API replaces the whole set here, which is what the switches mean: an empty array is how
-        // "show everywhere again" is expressed.
-        const nextHiddenFrom = surfaces.filter((surface) => selected[surface]);
-        const response = await updateAsset({ id: assetIds[0], updateAssetDto: { hiddenFrom: nextHiddenFrom } });
+        // The API replaces both sets here, so this sends the minimal representation of what the
+        // switches now say. A place the album already withholds
+        // needs no own bit, and a place turned off that the album withholds needs an override -- so each
+        // place ends up in exactly one of the two columns, or neither. Writing it this way means
+        // reopening the modal shows the same switches back.
+        const nextHiddenFrom = surfaces.filter((surface) => selected[surface] && !inherited.has(surface));
+        const nextShown = surfaces.filter((surface) => !selected[surface] && inherited.has(surface));
+        const response = await updateAsset({
+          id: assetIds[0],
+          updateAssetDto: { hiddenFrom: nextHiddenFrom, hiddenFromShown: nextShown },
+        });
         // Refreshes the open viewer and its detail panel with the value the server actually stored.
         eventManager.emit('AssetUpdate', response);
         // Emitted after AssetUpdate on purpose: that event upserts into the timeline, and a page whose
@@ -184,7 +201,17 @@
 
     {#each surfaces as surface (surface)}
       {@const copy = labels.get(surface)!}
-      <Field label={copy.label} description={copy.description}>
+      <!--
+        A row the album withholds says so, because otherwise a switch that is on for a reason the user
+        did not set here looks like their own setting - and turning it off is an override rather than a
+        plain un-hide, which is worth knowing before doing it.
+      -->
+      <Field
+        label={copy.label}
+        description={inherited.has(surface)
+          ? `${copy.description} ${$t('album_hidden_from_inherited_note')}`
+          : copy.description}
+      >
         {#if bulk}
           <Select
             value={intents[surface]}

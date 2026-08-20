@@ -102,7 +102,17 @@ const SyncAssetV2Schema = z
     hiddenFrom: z
       .array(AssetSurfaceSchema)
       .describe(
-        'Surfaces this asset is withheld from. Carried as surface names rather than as the internal bitmask, so a client may store the set however it likes without pinning itself to the bit numbering.',
+        "Surfaces this asset is withheld from by its own setting. Carried as surface names rather than as the internal bitmask, so a client may store the set however it likes without pinning itself to the bit numbering. Does not include what the asset's albums withhold it from -- see `hiddenFromInherited`.",
+      ),
+    hiddenFromInherited: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        "Surfaces the asset's albums withhold it from. Synced rather than derived on the client: the server already recomputes and rewrites it on every membership or rule change, so the row is being sent regardless, and having one authority for the arithmetic is worth more than saving a field.",
+      ),
+    hiddenFromShown: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        'Surfaces the asset is explicitly shown on despite an album rule. Cancels `hiddenFromInherited` only; it has no bearing on `hiddenFrom`.',
       ),
     livePhotoVideoId: z.string().nullable().describe('Live photo video ID'),
     stackId: z.string().nullable().describe('Stack ID'),

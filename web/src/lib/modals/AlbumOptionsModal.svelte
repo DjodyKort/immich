@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumHiddenFromFields from '$lib/components/album-page/AlbumHiddenFromFields.svelte';
   import AlbumSharedLink from '$lib/components/album-page/AlbumSharedLink.svelte';
   import HeaderActionButton from '$lib/components/HeaderActionButton.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -123,6 +124,13 @@
           >
             <Switch checked={album.isLocked} onCheckedChange={(checked) => handleSetAlbumLocked(album, checked)} />
           </Field>
+          <!--
+            The third member of the family, and the one that acts on the contents rather than the album.
+            Read-only for non-owners: the rule reaches assets an editor does not own, so the server
+            refuses them, and showing the state without the ability to change it is more honest than
+            hiding it.
+          -->
+          <AlbumHiddenFromFields {album} {readOnly} />
         </div>
       </div>
 

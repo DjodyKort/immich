@@ -23,10 +23,15 @@ import { fromAck, serialize, SerializeOptions, toAck } from 'src/utils/sync';
 import { fromHiddenFromMask } from 'src/utils/visibility-policy';
 
 type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
-type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash' | 'hiddenFrom'> & {
+type AssetLike = Omit<
+  SyncAssetV2,
+  'checksum' | 'thumbhash' | 'hiddenFrom' | 'hiddenFromInherited' | 'hiddenFromShown'
+> & {
   checksum: Buffer<ArrayBufferLike>;
   thumbhash: Buffer<ArrayBufferLike> | null;
   hiddenFrom: number | null;
+  hiddenFromInherited: number | null;
+  hiddenFromShown: number | null;
 };
 
 const COMPLETE_ID = 'complete';
@@ -40,11 +45,20 @@ const MAX_DURATION = Duration.fromObject({ days: MAX_DAYS });
  * change; shipping the integers would make a client's own stored data depend on it forever. Names cost
  * a translation here and buy every client the freedom to number its own bits however it likes.
  */
-const mapSyncAssetV2 = ({ checksum, thumbhash, hiddenFrom, ...data }: AssetLike): SyncAssetV2 => ({
+const mapSyncAssetV2 = ({
+  checksum,
+  thumbhash,
+  hiddenFrom,
+  hiddenFromInherited,
+  hiddenFromShown,
+  ...data
+}: AssetLike): SyncAssetV2 => ({
   ...data,
   checksum: hexOrBufferToBase64(checksum),
   thumbhash: thumbhash ? hexOrBufferToBase64(thumbhash) : null,
   hiddenFrom: fromHiddenFromMask(hiddenFrom),
+  hiddenFromInherited: fromHiddenFromMask(hiddenFromInherited),
+  hiddenFromShown: fromHiddenFromMask(hiddenFromShown),
 });
 
 const isEntityBackfillComplete = (createId: string, checkpoint: SyncAck | undefined): boolean =>
