@@ -390,6 +390,17 @@ where
   "album_asset"."albumId" = $1
   and "album_asset"."assetId" in ($2)
 
+-- AlbumRepository.getMemberAssetsForLockChange
+select
+  "asset"."id",
+  "asset"."ownerId"
+from
+  "album_asset"
+  inner join "asset" on "asset"."id" = "album_asset"."assetId"
+where
+  "album_asset"."albumId" = $1
+  and "asset"."deletedAt" is null
+
 -- AlbumRepository.addAssetIds
 insert into
   "album_asset"
