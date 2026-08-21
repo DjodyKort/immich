@@ -29,23 +29,22 @@
 
   const labels = $derived(hideFromPlaceLabels($t, { locked: album.isLocked }));
 
-  // Derived from the album rather than held as local state, so an update from elsewhere (this modal is
-  // reachable while the album page is open behind it) is reflected instead of being overwritten by a
-  // stale snapshot on the next toggle.
-  const hidden = $derived(new Set(album.hiddenFrom));
+  // Read straight off the album rather than held as local state, so an update from elsewhere (this modal
+  // is reachable while the album page is open behind it) is reflected instead of being overwritten by a
+  // stale snapshot on the next toggle. An array rather than a Set: six members make `includes` a
+  // non-question, and a Set here would have to be a `SvelteSet` to satisfy `prefer-svelte-reactivity`
+  // for no gain.
+  const hidden = $derived(album.hiddenFrom);
 
   const handleToggle = async (surface: AssetSurface, checked: boolean) => {
-    const next = new Set(hidden);
-    if (checked) {
-      next.add(surface);
-    } else {
-      next.delete(surface);
-    }
+    // The route replaces the whole set, so send the full list in the shared display order rather than
+    // whatever order the server last returned.
+    const next = hideFromPlaces.filter((place) => (place === surface ? checked : hidden.includes(place)));
 
     try {
       const response = await setAlbumHiddenFrom({
         id: album.id,
-        albumSetHiddenFromDto: { hiddenFrom: hideFromPlaces.filter((place) => next.has(place)) },
+        albumSetHiddenFromDto: { hiddenFrom: next },
       });
       // Same event the other rows emit, so the album page and the album lists behind this modal pick the
       // new rule up without a reload.
@@ -72,14 +71,14 @@
       disabled={readOnly}
     >
       <Switch
-        checked={hidden.has(surface)}
+        checked={hidden.includes(surface)}
         onCheckedChange={(checked) => handleToggle(surface, checked)}
         disabled={readOnly}
       />
     </Field>
   {/each}
 
-  {#if hidden.size === 0}
+  {#if hidden.length === 0}
     <Text size="small" color="muted">{$t('album_hidden_from_none')}</Text>
   {/if}
 </Stack>
