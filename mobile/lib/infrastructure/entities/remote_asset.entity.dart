@@ -53,6 +53,18 @@ class RemoteAssetEntity extends Table with DriftDefaultsMixin, AssetEntityMixin 
   /// the queries that read it are no-ops until something sets it.
   IntColumn get hiddenFrom => integer().nullable()();
 
+  /// What this asset's albums withhold it from, as the same kind of bitmask.
+  ///
+  /// Mirrors the server's derived column rather than being computed here. The server recomputes and
+  /// rewrites it on every membership or rule change, so the row is synced anyway, and one authority for
+  /// the arithmetic beats two that can disagree between syncs.
+  IntColumn get hiddenFromInherited => integer().nullable()();
+
+  /// Surfaces this asset is explicitly shown on despite an album rule.
+  ///
+  /// Cancels [hiddenFromInherited] only, never [hiddenFrom] - see `VisibilityPolicy.notHiddenFrom`.
+  IntColumn get hiddenFromShown => integer().nullable()();
+
   TextColumn get stackId => text().nullable()();
 
   TextColumn get libraryId => text().nullable()();

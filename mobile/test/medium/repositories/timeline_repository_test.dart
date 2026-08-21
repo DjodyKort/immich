@@ -394,4 +394,86 @@ void main() {
       expect(buckets.single.assetCount, 1);
     });
   });
+
+  /// Album-level rules, inherited onto the asset and overridable per photo.
+  ///
+  /// The arithmetic mirrors the server's `EFFECTIVE_HIDDEN_FROM` exactly:
+  /// `hiddenFrom | (hiddenFromInherited & ~hiddenFromShown)`. Diverging here would mean the same photo
+  /// appearing on the phone and not on the web, which is the failure this file exists to catch.
+  group('album-inherited hiding', () {
+    test('withholds an asset its album withholds, with no setting of its own', () async {
+      final user = await ctx.newUser();
+      final visible = await ctx.newRemoteAsset(ownerId: user.id);
+      final inherited = await ctx.newRemoteAsset(ownerId: user.id, hiddenFromInherited: const [AssetSurface.timeline]);
+
+      final timeline = await sut.main([user.id], .day).assetSource(0, 10);
+      expect(timeline.map((asset) => (asset as RemoteAsset).id), [visible.id]);
+      expect(timeline.map((asset) => (asset as RemoteAsset).id), isNot(contains(inherited.id)));
+    });
+
+    test('shows it again when the photo overrides the album', () async {
+      // The escape hatch, and the reason hiddenFromShown exists: album rules combine by union, so no
+      // other album can reveal a photo one of them hid.
+      final user = await ctx.newUser();
+      final asset = await ctx.newRemoteAsset(
+        ownerId: user.id,
+        hiddenFromInherited: const [AssetSurface.timeline],
+        hiddenFromShown: const [AssetSurface.timeline],
+      );
+
+      final timeline = await sut.main([user.id], .day).assetSource(0, 10);
+      expect(timeline.map((a) => (a as RemoteAsset).id), [asset.id]);
+    });
+
+    test('keeps the asset hidden when the override names a different surface', () async {
+      final user = await ctx.newUser();
+      final asset = await ctx.newRemoteAsset(
+        ownerId: user.id,
+        hiddenFromInherited: const [AssetSurface.timeline],
+        hiddenFromShown: const [AssetSurface.search],
+      );
+
+      final timeline = await sut.main([user.id], .day).assetSource(0, 10);
+      expect(timeline, isEmpty);
+      expect(asset.id, isNotEmpty);
+    });
+
+    test("an override cannot cancel the photo's own hiding", () async {
+      // The point of bracketing the override around the inherited term alone. If the formula were
+      // (own | inherited) & ~shown, this photo would reappear on the timeline it was explicitly hidden
+      // from, because of a bit that only ever meant "despite the album".
+      final user = await ctx.newUser();
+      await ctx.newRemoteAsset(
+        ownerId: user.id,
+        hiddenFrom: const [AssetSurface.timeline],
+        hiddenFromShown: const [AssetSurface.timeline],
+      );
+
+      final timeline = await sut.main([user.id], .day).assetSource(0, 10);
+      expect(timeline, isEmpty);
+    });
+
+    test('lists an album-hidden asset in the Hidden view', () async {
+      // Hiding is never a one-way door, and an album rule is no less able to lose a photo than a manual
+      // exclusion, so the effective mask decides membership here rather than the asset's own setting.
+      final user = await ctx.newUser();
+      final inherited = await ctx.newRemoteAsset(ownerId: user.id, hiddenFromInherited: const [AssetSurface.timeline]);
+      await ctx.newRemoteAsset(ownerId: user.id);
+
+      final hidden = await sut.hidden(user.id, .day).assetSource(0, 10);
+      expect(hidden.map((a) => (a as RemoteAsset).id), [inherited.id]);
+    });
+
+    test('drops it from the Hidden view once fully overridden', () async {
+      final user = await ctx.newUser();
+      await ctx.newRemoteAsset(
+        ownerId: user.id,
+        hiddenFromInherited: const [AssetSurface.timeline],
+        hiddenFromShown: const [AssetSurface.timeline],
+      );
+
+      final hidden = await sut.hidden(user.id, .day).assetSource(0, 10);
+      expect(hidden, isEmpty);
+    });
+  });
 }

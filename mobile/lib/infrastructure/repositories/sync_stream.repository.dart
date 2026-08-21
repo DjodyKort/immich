@@ -9,6 +9,7 @@ import 'package:immich_mobile/domain/models/asset_edit.model.dart';
 import 'package:immich_mobile/domain/models/memory.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
 import 'package:immich_mobile/domain/models/user_metadata.model.dart';
+import 'package:immich_mobile/extensions/asset_surface_extensions.dart';
 import 'package:immich_mobile/extensions/string_extensions.dart';
 import 'package:immich_mobile/infrastructure/entities/asset_edit.entity.drift.dart';
 import 'package:immich_mobile/infrastructure/entities/asset_face.entity.drift.dart';
@@ -33,10 +34,8 @@ import 'package:immich_mobile/infrastructure/repositories/sync_stream.repository
 import 'package:immich_mobile/infrastructure/utils/exif.converter.dart';
 import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 import 'package:logging/logging.dart';
-import 'package:openapi/api.dart'
-    as api
-    show AlbumUserRole, AssetEditAction, AssetSurface, AssetVisibility, UserMetadataKey;
-import 'package:openapi/api.dart' hide AlbumUserRole, AssetEditAction, AssetSurface, AssetVisibility, UserMetadataKey;
+import 'package:openapi/api.dart' as api show AlbumUserRole, AssetEditAction, AssetVisibility, UserMetadataKey;
+import 'package:openapi/api.dart' hide AlbumUserRole, AssetEditAction, AssetVisibility, UserMetadataKey;
 
 @DriftAccessor()
 class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepositoryMixin {
@@ -260,6 +259,10 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
             visibility: Value(asset.visibility.toAssetVisibility()),
             // Sync speaks surface names; the mask is mobile's own encoding, assigned in one place.
             hiddenFrom: Value(VisibilityPolicy.maskFor(asset.hiddenFrom.map((s) => s.toAssetSurface()))),
+            hiddenFromInherited: Value(
+              VisibilityPolicy.maskFor(asset.hiddenFromInherited.map((s) => s.toAssetSurface())),
+            ),
+            hiddenFromShown: Value(VisibilityPolicy.maskFor(asset.hiddenFromShown.map((s) => s.toAssetSurface()))),
             livePhotoVideoId: Value(asset.livePhotoVideoId),
             stackId: Value(asset.stackId),
             libraryId: Value(asset.libraryId),
@@ -508,6 +511,7 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
             isActivityEnabled: Value(album.isActivityEnabled),
             isLocked: Value(album.isLocked),
             isHidden: Value(album.isHidden),
+            hiddenFrom: Value(VisibilityPolicy.maskFor(album.hiddenFrom.map((s) => s.toAssetSurface()))),
             order: Value(album.order.toAlbumAssetOrder()),
             thumbnailAssetId: Value(album.thumbnailAssetId),
             createdAt: Value(album.createdAt),
@@ -977,21 +981,6 @@ extension on api.AssetVisibility {
     api.AssetVisibility.hidden => AssetVisibility.hidden,
     api.AssetVisibility.archive => AssetVisibility.archive,
     api.AssetVisibility.locked => AssetVisibility.locked,
-  };
-}
-
-/// The wire vocabulary for per-surface hiding, translated into mobile's own.
-///
-/// Exhaustive by construction: a surface added on the server fails to compile here rather than being
-/// silently dropped on the floor, which for a *hiding* rule would mean showing what should be hidden.
-extension on api.AssetSurface {
-  AssetSurface toAssetSurface() => switch (this) {
-    api.AssetSurface.timeline => AssetSurface.timeline,
-    api.AssetSurface.search => AssetSurface.search,
-    api.AssetSurface.map => AssetSurface.map,
-    api.AssetSurface.people => AssetSurface.people,
-    api.AssetSurface.memories => AssetSurface.memories,
-    api.AssetSurface.folders => AssetSurface.folders,
   };
 }
 

@@ -36,9 +36,11 @@ LEFT JOIN
 WHERE
 	rae.deleted_at IS NULL
 	AND rae.visibility = 0 -- timeline visibility
-	-- Withheld from the timeline per asset. Bit 1 is VisibilityPolicy.surfaceBit[AssetSurface.timeline];
-	-- a .drift file cannot read a Dart constant, so the literal is pinned by a test instead.
-	AND (rae.hidden_from IS NULL OR rae.hidden_from & 1 = 0)
+	-- Withheld from the timeline, by the asset itself or by an album it is in. Mirrors
+	-- VisibilityPolicy.notHiddenFrom: hidden_from | (hidden_from_inherited & ~hidden_from_shown). A .drift
+	-- file cannot call the Dart helper, so this is the one place the rule is written twice; the literal
+	-- bit 1 is VisibilityPolicy.surfaceBit[AssetSurface.timeline] and both are pinned by tests.
+	AND (COALESCE(rae.hidden_from, 0) | (COALESCE(rae.hidden_from_inherited, 0) & ~COALESCE(rae.hidden_from_shown, 0))) & 1 = 0
 	AND rae.owner_id IN :user_ids
 	AND (
 		rae.stack_id IS NULL
@@ -113,9 +115,11 @@ FROM
 	WHERE
 		rae.deleted_at IS NULL
 		AND rae.visibility = 0 -- timeline visibility
-		-- Withheld from the timeline per asset. Bit 1 is VisibilityPolicy.surfaceBit[AssetSurface.timeline];
-		-- a .drift file cannot read a Dart constant, so the literal is pinned by a test instead.
-		AND (rae.hidden_from IS NULL OR rae.hidden_from & 1 = 0)
+		-- Withheld from the timeline, by the asset itself or by an album it is in. Mirrors
+		-- VisibilityPolicy.notHiddenFrom: hidden_from | (hidden_from_inherited & ~hidden_from_shown). A .drift
+		-- file cannot call the Dart helper, so this is the one place the rule is written twice; the literal
+		-- bit 1 is VisibilityPolicy.surfaceBit[AssetSurface.timeline] and both are pinned by tests.
+		AND (COALESCE(rae.hidden_from, 0) | (COALESCE(rae.hidden_from_inherited, 0) & ~COALESCE(rae.hidden_from_shown, 0))) & 1 = 0
 		AND rae.owner_id in :user_ids
 		AND (
 			rae.stack_id IS NULL

@@ -76,6 +76,7 @@ RemoteAlbum createRemoteAlbum({
     isActivityEnabled: isActivityEnabled,
     isHidden: isHidden,
     isLocked: isLocked,
+    hiddenFrom: const {},
     isShared: isShared,
     order: AlbumAssetOrder.asc,
     assetCount: 0,

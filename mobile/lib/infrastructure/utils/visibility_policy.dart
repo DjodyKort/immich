@@ -146,18 +146,63 @@ abstract final class VisibilityPolicy {
     return next == 0 ? null : next;
   }
 
-  /// The asset is not withheld from [surface].
+  /// The asset is not withheld from [surface], by its own setting or by any album it is in.
   ///
   /// The predicate every local query standing in for one of the six surfaces adds. `null` — every row
-  /// before this column existed, and every asset the user has not touched — passes, so a query gains
+  /// before these columns existed, and every asset the user has not touched — passes, so a query gains
   /// this clause without changing what it returns.
+  ///
+  /// The effective rule, matching the server's `EFFECTIVE_HIDDEN_FROM` exactly:
+  ///
+  /// ```
+  /// hiddenFrom | (hiddenFromInherited & ~hiddenFromShown)
+  /// ```
+  ///
+  /// The override is bracketed around the inherited term alone, deliberately. It exists because album
+  /// rules combine by union and so can never *reveal* a photo another album hid, and it has no business
+  /// cancelling the asset's own `hiddenFrom` — bracketing it this way makes "explicitly hidden and
+  /// explicitly shown" unrepresentable rather than something to resolve. Diverging from the server here
+  /// would mean the same photo appearing on one client and not the other.
   static Expression<bool> notHiddenFrom($RemoteAssetEntityTable asset, AssetSurface surface) =>
-      notHiddenFromMask(asset.hiddenFrom, surface);
+      notHiddenFromMask(asset.hiddenFrom, asset.hiddenFromInherited, asset.hiddenFromShown, surface);
 
-  /// [notHiddenFrom] against a `hidden_from` expression that is not a plain column reference — a
-  /// [Subquery] alias, for instance. Same rule, reached from a shape the table overload cannot express.
-  static Expression<bool> notHiddenFromMask(Expression<int> hiddenFrom, AssetSurface surface) {
+  /// The asset is withheld from something, by its own setting or by an album — the Hidden view's
+  /// membership test.
+  ///
+  /// Asks about the effective mask, so a photo whose every inherited exclusion is overridden back on is
+  /// not hidden by anything and correctly drops out of that view.
+  static Expression<bool> hasExclusions($RemoteAssetEntityTable asset) =>
+      _effectiveMask(asset.hiddenFrom, asset.hiddenFromInherited, asset.hiddenFromShown).equals(0).not();
+
+  /// [notHiddenFrom] against expressions that are not plain column references — [Subquery] aliases, for
+  /// instance. Same rule, reached from a shape the table overload cannot express.
+  ///
+  /// Takes all three masks rather than just the first: a caller that passed only `hiddenFrom` would
+  /// silently ignore album rules, which is the kind of divergence this module exists to prevent.
+  static Expression<bool> notHiddenFromMask(
+    Expression<int> hiddenFrom,
+    Expression<int> hiddenFromInherited,
+    Expression<int> hiddenFromShown,
+    AssetSurface surface,
+  ) {
     final int bit = surfaceBit[surface]!;
-    return hiddenFrom.isNull() | hiddenFrom.bitwiseAnd(Constant(bit)).equals(0);
+    return _effectiveMask(hiddenFrom, hiddenFromInherited, hiddenFromShown).bitwiseAnd(Constant(bit)).equals(0);
+  }
+
+  /// The effective mask, shared by the predicates below.
+  ///
+  /// `coalesce` rather than null checks: each column is nullable and null means "nothing", so one
+  /// arithmetic expression covers every combination — the same shape the server's
+  /// `EFFECTIVE_HIDDEN_FROM` uses.
+  static Expression<int> _effectiveMask(
+    Expression<int> hiddenFrom,
+    Expression<int> hiddenFromInherited,
+    Expression<int> hiddenFromShown,
+  ) {
+    final own = coalesce([hiddenFrom, const Constant(0)]);
+    final inherited = coalesce([hiddenFromInherited, const Constant(0)]);
+    final shown = coalesce([hiddenFromShown, const Constant(0)]);
+
+    return own.bitwiseOr(inherited.bitwiseAnd(~shown));
   }
 }

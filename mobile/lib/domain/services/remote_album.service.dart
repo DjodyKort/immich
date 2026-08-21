@@ -334,6 +334,12 @@ class RemoteAlbumService {
     return _repository.setHidden(albumId, isHidden);
   }
 
+  Future<void> setHiddenFrom(String albumId, Set<AssetSurface> hiddenFrom) async {
+    final stored = await _albumApiRepository.setHiddenFrom(albumId, hiddenFrom);
+
+    return _repository.setHiddenFrom(albumId, stored);
+  }
+
   Future<int> getCount() {
     return _repository.getCount();
   }

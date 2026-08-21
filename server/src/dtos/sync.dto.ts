@@ -258,6 +258,11 @@ const SyncAlbumV2Schema = z
     isActivityEnabled: z.boolean().describe('Is activity enabled'),
     isLocked: z.boolean().describe('Album is locked and requires PIN elevation to view'),
     isHidden: z.boolean().describe('Album is kept out of the album list, but remains reachable directly'),
+    hiddenFrom: z
+      .array(AssetSurfaceSchema)
+      .describe(
+        "Surfaces this album's photos are withheld from. Distinct from `isHidden`, which hides the album itself and touches no photo. A client needs this only to render the album's own settings; the per-asset effect arrives already computed as `hiddenFromInherited` on each asset.",
+      ),
     order: AssetOrderSchema,
   })
   .meta({ id: 'SyncAlbumV2' });
@@ -285,7 +290,7 @@ class SyncAlbumUserV1 extends createZodDto(SyncAlbumUserV1Schema) {}
 @ExtraModel()
 class SyncAlbumV1 extends createZodDto(SyncAlbumV1Schema) {}
 @ExtraModel()
-class SyncAlbumV2 extends createZodDto(SyncAlbumV2Schema) {}
+export class SyncAlbumV2 extends createZodDto(SyncAlbumV2Schema) {}
 @ExtraModel()
 class SyncAlbumToAssetV1 extends createZodDto(SyncAlbumToAssetV1Schema) {}
 @ExtraModel()

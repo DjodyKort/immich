@@ -6,7 +6,8 @@ import 'package:immich_mobile/generated/translations.g.dart';
 
 /// The six places an asset can be withheld from, in the order a person meets them in the app rather
 /// than the order the enum happens to declare.
-const _places = [
+/// Shared with album settings, which needs the same ordering and the same six labels.
+const hideFromPlaces = [
   AssetSurface.timeline,
   AssetSurface.search,
   AssetSurface.map,
@@ -15,7 +16,7 @@ const _places = [
   AssetSurface.folders,
 ];
 
-String _placeLabel(BuildContext context, AssetSurface place) => switch (place) {
+String hideFromPlaceLabel(BuildContext context, AssetSurface place) => switch (place) {
   AssetSurface.timeline => context.t.hide_from_place_timeline,
   AssetSurface.search => context.t.hide_from_place_search,
   AssetSurface.map => context.t.hide_from_place_map,
@@ -24,7 +25,7 @@ String _placeLabel(BuildContext context, AssetSurface place) => switch (place) {
   AssetSurface.folders => context.t.hide_from_place_folders,
 };
 
-String _placeDescription(BuildContext context, AssetSurface place) => switch (place) {
+String hideFromPlaceDescription(BuildContext context, AssetSurface place) => switch (place) {
   AssetSurface.timeline => context.t.hide_from_place_timeline_description,
   AssetSurface.search => context.t.hide_from_place_search_description,
   AssetSurface.map => context.t.hide_from_place_map_description,
@@ -103,7 +104,7 @@ class _HideFromPlacesPicker extends HookWidget {
 
     void toggle(AssetSurface place, {required bool isHidden}) {
       selected.value = {
-        for (final candidate in _places)
+        for (final candidate in hideFromPlaces)
           if (candidate == place ? isHidden : selected.value.contains(candidate)) candidate,
       };
     }
@@ -111,13 +112,13 @@ class _HideFromPlacesPicker extends HookWidget {
     return _PickerScaffold(
       help: context.t.hide_from_places_help,
       rows: [
-        for (final place in _places)
+        for (final place in hideFromPlaces)
           SwitchListTile.adaptive(
             value: selected.value.contains(place),
             onChanged: (isHidden) => toggle(place, isHidden: isHidden),
-            title: Text(_placeLabel(context, place), style: context.textTheme.bodyLarge),
+            title: Text(hideFromPlaceLabel(context, place), style: context.textTheme.bodyLarge),
             subtitle: Text(
-              _placeDescription(context, place),
+              hideFromPlaceDescription(context, place),
               style: context.textTheme.bodySmall?.copyWith(color: context.colorScheme.onSurfaceVariant),
             ),
             visualDensity: VisualDensity.compact,
@@ -138,7 +139,7 @@ class _HideFromPlacesBulkPicker extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final intents = useState<Map<AssetSurface, _Intent>>({for (final place in _places) place: _Intent.keep});
+    final intents = useState<Map<AssetSurface, _Intent>>({for (final place in hideFromPlaces) place: _Intent.keep});
 
     void set(AssetSurface place, _Intent intent) {
       intents.value = {...intents.value, place: intent};
@@ -149,9 +150,9 @@ class _HideFromPlacesBulkPicker extends HookWidget {
     return _PickerScaffold(
       help: context.t.hide_from_places_bulk_help(count: total),
       rows: [
-        for (final place in _places)
+        for (final place in hideFromPlaces)
           ListTile(
-            title: Text(_placeLabel(context, place), style: context.textTheme.bodyLarge),
+            title: Text(hideFromPlaceLabel(context, place), style: context.textTheme.bodyLarge),
             subtitle: Text(
               // The current state rather than the place's description: on a selection, "how many of
               // these are already hidden here" is the thing a person cannot otherwise know.
@@ -185,18 +186,18 @@ class _HideFromPlacesBulkPicker extends HookWidget {
           ),
       ],
       resetLabel: context.t.hide_from_places_bulk_reset,
-      onReset: anyChange ? () => intents.value = {for (final place in _places) place: _Intent.keep} : null,
+      onReset: anyChange ? () => intents.value = {for (final place in hideFromPlaces) place: _Intent.keep} : null,
       // Saving with nothing set would be a request that changes nothing, so Save is inert until there is
       // something to apply - the same rule the web modal follows.
       onSave: anyChange
           ? () => context.pop(
               HideFromPlacesEdit(
                 add: {
-                  for (final place in _places)
+                  for (final place in hideFromPlaces)
                     if (intents.value[place] == _Intent.hide) place,
                 },
                 remove: {
-                  for (final place in _places)
+                  for (final place in hideFromPlaces)
                     if (intents.value[place] == _Intent.show) place,
                 },
               ),

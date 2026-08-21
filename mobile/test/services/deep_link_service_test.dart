@@ -58,6 +58,7 @@ final _album = RemoteAlbum(
   isActivityEnabled: true,
   isHidden: false,
   isLocked: false,
+  hiddenFrom: const {},
   isShared: true,
   order: AlbumAssetOrder.asc,
   assetCount: 1,

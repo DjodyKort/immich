@@ -19,6 +19,7 @@ import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dar
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/common/confirm_dialog.dart';
+import 'package:immich_mobile/widgets/common/hide_from_places_picker.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 import 'package:immich_mobile/widgets/common/user_circle_avatar.dart';
 
@@ -34,6 +35,7 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
     final activityEnabled = useState(album.isActivityEnabled);
     final hidden = useState(album.isHidden);
     final locked = useState(album.isLocked);
+    final hiddenFrom = useState(album.hiddenFrom);
     final isOwner = album.ownerId == userId;
     final owner = isOwner ? ref.watch(currentUserProvider) : null;
     final allUsers = isOwner ? null : ref.watch(driftUsersProvider);
@@ -321,6 +323,50 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
                   style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
                 ),
               ),
+            // The third member of the family, and the only one that acts on the contents: hide_album
+            // keeps the album out of the album list and touches no photo, lock_album moves album and
+            // photos behind the PIN, and this leaves the album where it is and takes its photos off the
+            // places named. Owner only, because the rule reaches assets an editor does not own and the
+            // server refuses them.
+            if (isOwner) ...[
+              buildSectionTitle(context.t.album_hidden_from),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  context.t.album_hidden_from_description,
+                  style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
+                ),
+              ),
+              const SizedBox(height: 8),
+              for (final surface in hideFromPlaces)
+                SwitchListTile.adaptive(
+                  value: hiddenFrom.value.contains(surface),
+                  onChanged: (bool value) async {
+                    final next = {...hiddenFrom.value};
+                    if (value) {
+                      next.add(surface);
+                    } else {
+                      next.remove(surface);
+                    }
+                    // Optimistic, like every other switch here: the notifier reports failures as a toast
+                    // and the next sync corrects the row either way.
+                    hiddenFrom.value = next;
+                    await ref.read(remoteAlbumProvider.notifier).setHiddenFrom(album.id, next);
+                  },
+                  activeThumbColor: hiddenFrom.value.contains(surface)
+                      ? context.primaryColor
+                      : context.themeData.disabledColor,
+                  dense: true,
+                  title: Text(
+                    hideFromPlaceLabel(context, surface),
+                    style: context.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Text(
+                    hideFromPlaceDescription(context, surface),
+                    style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
+                  ),
+                ),
+            ],
             buildSectionTitle(context.t.shared_album_section_people_title),
             if (isOwner) ...[
               ListTile(

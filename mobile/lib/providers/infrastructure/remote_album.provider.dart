@@ -326,6 +326,22 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     ref.invalidate(hiddenRemoteAlbumsProvider);
   }
 
+  /// Sets where this album's photos appear.
+  ///
+  /// Unlike [setHidden] this changes no listing membership, so the cached album list needs no surgery -
+  /// but every timeline the affected photos appear in does, and those read the asset rows rather than
+  /// this state. The server recomputes each member's inherited mask and the next sync brings the rows
+  /// down; nothing here can shortcut that without computing the same arithmetic twice.
+  Future<void> setHiddenFrom(String albumId, Set<AssetSurface> hiddenFrom) async {
+    await _remoteAlbumService.setHiddenFrom(albumId, hiddenFrom);
+
+    state = state.copyWith(
+      albums: state.albums
+          .map((album) => album.id == albumId ? album.copyWith(hiddenFrom: hiddenFrom) : album)
+          .toList(),
+    );
+  }
+
   /// Moves the album, and every asset in it, into or out of the locked folder.
   ///
   /// Refreshes rather than patching state, unlike [setHidden]: this changes the visibility of every member
