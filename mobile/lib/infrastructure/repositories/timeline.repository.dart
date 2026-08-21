@@ -447,7 +447,9 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     filter: (row) =>
         row.deletedAt.isNull() &
         row.ownerId.equals(userId) &
-        row.hiddenFrom.isNotNull() &
+        // Effective, not just the asset's own setting: a photo hidden only by its album's rule belongs
+        // here too, since this view is the guarantee that hiding never loses a photo.
+        VisibilityPolicy.hasExclusions(row) &
         (row.visibility.equalsValue(AssetVisibility.timeline) | row.visibility.equalsValue(AssetVisibility.archive)),
     origin: TimelineOrigin.hidden,
     groupBy: groupBy,

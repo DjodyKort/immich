@@ -393,6 +393,15 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
     await query.write(RemoteAlbumEntityCompanion(isHidden: Value(isHidden)));
   }
 
+  /// Mirrors the album's rule locally. The per-asset effect is **not** written here: the server
+  /// recomputes every member's `hiddenFromInherited` and the next sync brings those rows down, so
+  /// computing it a second time on this side is how the two ends start disagreeing.
+  Future<void> setHiddenFrom(String albumId, Set<AssetSurface> hiddenFrom) async {
+    final query = _db.update(_db.remoteAlbumEntity)..where((row) => row.id.equals(albumId));
+
+    await query.write(RemoteAlbumEntityCompanion(hiddenFrom: Value(VisibilityPolicy.maskFor(hiddenFrom))));
+  }
+
   Stream<RemoteAlbum?> watchAlbum(String albumId) {
     final query =
         _db.remoteAlbumEntity.select().join([
@@ -611,6 +620,8 @@ extension on RemoteAlbumEntityData {
       isActivityEnabled: isActivityEnabled,
       isHidden: isHidden,
       isLocked: isLocked,
+      // The stored bitmask is a local encoding; the domain layer only ever sees surface names.
+      hiddenFrom: VisibilityPolicy.namesFor(hiddenFrom).toSet(),
       order: order,
       assetCount: assetCount,
       ownerName: ownerName,

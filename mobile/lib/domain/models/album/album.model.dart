@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 
 part 'album.model.freezed.dart';
 
@@ -33,6 +34,10 @@ abstract class RemoteAlbum with _$RemoteAlbum {
     // ever a query filter; it stopped being one when locking an existing album became possible.
     required bool isHidden,
     required bool isLocked,
+
+    /// The surfaces this album's photos are withheld from. Six switches on the options screen, so it
+    /// needs its current value here for the same reason the two flags above do.
+    required Set<AssetSurface> hiddenFrom,
     required AlbumAssetOrder order,
     required int assetCount,
     required String ownerName,

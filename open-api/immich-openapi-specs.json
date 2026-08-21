@@ -24497,6 +24497,13 @@
             "description": "Album description",
             "type": "string"
           },
+          "hiddenFrom": {
+            "description": "Surfaces this album's photos are withheld from. Distinct from `isHidden`, which hides the album itself and touches no photo. A client needs this only to render the album's own settings; the per-asset effect arrives already computed as `hiddenFromInherited` on each asset.",
+            "items": {
+              "$ref": "#/components/schemas/AssetSurface"
+            },
+            "type": "array"
+          },
           "id": {
             "description": "Album ID",
             "format": "uuid",
@@ -24538,6 +24545,7 @@
         "required": [
           "createdAt",
           "description",
+          "hiddenFrom",
           "id",
           "isActivityEnabled",
           "isHidden",

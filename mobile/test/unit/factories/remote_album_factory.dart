@@ -33,6 +33,7 @@ class RemoteAlbumFactory {
       isActivityEnabled: isActivityEnabled,
       isHidden: isHidden,
       isLocked: isLocked,
+      hiddenFrom: const {},
       order: order,
       assetCount: assetCount,
       ownerName: ownerName ?? 'owner_$albumId',

@@ -2977,6 +2977,8 @@ export type SyncAlbumV2 = {
     createdAt: string;
     /** Album description */
     description: string;
+    /** Surfaces this album's photos are withheld from. Distinct from `isHidden`, which hides the album itself and touches no photo. A client needs this only to render the album's own settings; the per-asset effect arrives already computed as `hiddenFromInherited` on each asset. */
+    hiddenFrom: AssetSurface[];
     /** Album ID */
     id: string;
     /** Is activity enabled */

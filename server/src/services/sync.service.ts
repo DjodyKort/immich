@@ -8,6 +8,7 @@ import { AuthDto } from 'src/dtos/auth.dto';
 import {
   SyncAckDeleteDto,
   SyncAckSetDto,
+  SyncAlbumV2,
   syncAlbumV2ToV1,
   SyncAssetV2,
   SyncItem,
@@ -59,6 +60,19 @@ const mapSyncAssetV2 = ({
   hiddenFrom: fromHiddenFromMask(hiddenFrom),
   hiddenFromInherited: fromHiddenFromMask(hiddenFromInherited),
   hiddenFromShown: fromHiddenFromMask(hiddenFromShown),
+});
+
+type AlbumLike = Omit<SyncAlbumV2, 'hiddenFrom' | 'description'> & {
+  hiddenFrom: number | null;
+  description: string | null;
+};
+
+/** Same name-not-bits boundary as {@link mapSyncAssetV2}, for the album's own rule. */
+const mapSyncAlbumV2 = ({ hiddenFrom, description, ...data }: AlbumLike): SyncAlbumV2 => ({
+  ...data,
+  // TODO: return null instead of '' in v4
+  description: description ?? '',
+  hiddenFrom: fromHiddenFromMask(hiddenFrom),
 });
 
 const isEntityBackfillComplete = (createId: string, checkpoint: SyncAck | undefined): boolean =>
@@ -483,7 +497,7 @@ export class SyncService extends BaseService {
         type: upsertType,
         ids: [updateId],
         // TODO: return null instead of '' in v4
-        data: syncAlbumV2ToV1({ ...data, description: data.description ?? '' }, albumUsers),
+        data: syncAlbumV2ToV1(mapSyncAlbumV2(data), albumUsers),
       });
     }
   }
@@ -502,7 +516,7 @@ export class SyncService extends BaseService {
       await send(response, {
         type: upsertType,
         ids: [updateId],
-        data: { ...data, description: data.description ?? '' },
+        data: mapSyncAlbumV2(data),
       });
     }
   }

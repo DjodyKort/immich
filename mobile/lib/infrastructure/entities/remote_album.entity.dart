@@ -32,6 +32,16 @@ class RemoteAlbumEntity extends Table with DriftDefaultsMixin {
   /// hiding can never lose an album.
   BoolColumn get isHidden => boolean().withDefault(const Constant(false))();
 
+  /// Mirrors `album.hiddenFrom`: the surfaces this album's **photos** are withheld from, as a bitmask
+  /// over `VisibilityPolicy.surfaceBit`.
+  ///
+  /// A third, independent thing from [isLocked] and [isHidden], and the only one that acts on the
+  /// contents: [isHidden] keeps the album out of the album list and touches no photo, while this leaves
+  /// the album where it is and takes its photos off the surfaces named. Stored here so the album's own
+  /// settings screen can render its switches; the per-asset effect arrives separately, already computed,
+  /// in `remote_asset_entity.hidden_from_inherited`.
+  IntColumn get hiddenFrom => integer().nullable()();
+
   IntColumn get order => intEnum<AlbumAssetOrder>()();
 
   @override

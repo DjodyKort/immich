@@ -1,10 +1,12 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
+import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
+import 'package:immich_mobile/extensions/asset_surface_extensions.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
 import 'package:immich_mobile/repositories/api.repository.dart';
 // ignore: import_rule_openapi
-import 'package:openapi/api.dart' hide AlbumUserRole;
+import 'package:openapi/api.dart' hide AlbumUserRole, AssetSurface;
 
 final driftAlbumApiRepositoryProvider = Provider(
   (ref) => DriftAlbumApiRepository(ref.watch(apiServiceProvider).albumsApi),
@@ -137,6 +139,15 @@ class DriftAlbumApiRepository extends ApiRepository {
     return response.isHidden;
   }
 
+  /// Its own route, like [setLocked], because the server rewrites derived state on every member asset and
+  /// must not be able to half-apply alongside a rename. Replaces the whole set; empty clears the rule.
+  Future<Set<AssetSurface>> setHiddenFrom(String albumId, Set<AssetSurface> hiddenFrom) async {
+    final response = await checkNull(
+      _api.setAlbumHiddenFrom(albumId, AlbumSetHiddenFromDto(hiddenFrom: hiddenFrom.map((s) => s.toDto()).toList())),
+    );
+    return response.hiddenFrom.map((s) => s.toAssetSurface()).toSet();
+  }
+
   /// Its own route rather than a field on `updateAlbumInfo`, because the server rewrites the visibility of
   /// every asset in the album and their memberships elsewhere. See `AlbumService.setLocked`.
   Future<bool> setLocked(String albumId, bool isLocked) async {
@@ -159,6 +170,7 @@ extension on AlbumResponseDto {
       isActivityEnabled: isActivityEnabled,
       isHidden: isHidden,
       isLocked: isLocked,
+      hiddenFrom: hiddenFrom.map((s) => s.toAssetSurface()).toSet(),
       order: order.orElse(null) == AssetOrder.asc ? AlbumAssetOrder.asc : AlbumAssetOrder.desc,
       assetCount: assetCount,
       isShared: albumUsers.length > 2,

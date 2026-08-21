@@ -3,6 +3,7 @@ import 'package:http/http.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/asset_edit.model.dart' hide AssetEditAction;
 import 'package:immich_mobile/domain/models/stack.model.dart';
+import 'package:immich_mobile/extensions/asset_surface_extensions.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
 import 'package:immich_mobile/repositories/api.repository.dart';
 import 'package:immich_mobile/utils/option.dart';
@@ -80,15 +81,6 @@ class AssetApiRepository extends ApiRepository {
     return _api.downloadAssetWithHttpInfo(id, edited: edited);
   }
 
-  api.AssetSurface _mapSurface(AssetSurface surface) => switch (surface) {
-    AssetSurface.timeline => api.AssetSurface.timeline,
-    AssetSurface.search => api.AssetSurface.search,
-    AssetSurface.map => api.AssetSurface.map,
-    AssetSurface.people => api.AssetSurface.people,
-    AssetSurface.memories => api.AssetSurface.memories,
-    AssetSurface.folders => api.AssetSurface.folders,
-  };
-
   api.AssetVisibility _mapVisibility(AssetVisibility visibility) => switch (visibility) {
     AssetVisibility.timeline => api.AssetVisibility.timeline,
     AssetVisibility.hidden => api.AssetVisibility.hidden,
@@ -157,7 +149,7 @@ class AssetApiRepository extends ApiRepository {
     final response = await checkNull(
       _api.updateAsset(
         assetId,
-        UpdateAssetDto(hiddenFrom: Optional.present(surfaces.map(_mapSurface).toList(growable: false))),
+        UpdateAssetDto(hiddenFrom: Optional.present(surfaces.map((s) => s.toDto()).toList(growable: false))),
       ),
     );
 
@@ -179,8 +171,8 @@ class AssetApiRepository extends ApiRepository {
       AssetBulkUpdateDto(
         ids: ids,
         hiddenFrom: _leaveHiddenFromAlone,
-        hiddenFromAdd: Optional.present(add.map(_mapSurface).toList(growable: false)),
-        hiddenFromRemove: Optional.present(remove.map(_mapSurface).toList(growable: false)),
+        hiddenFromAdd: Optional.present(add.map((s) => s.toDto()).toList(growable: false)),
+        hiddenFromRemove: Optional.present(remove.map((s) => s.toDto()).toList(growable: false)),
       ),
     );
   }
@@ -234,19 +226,4 @@ extension on AssetEdit {
       ),
     };
   }
-}
-
-/// The wire vocabulary for per-surface hiding, translated into mobile's own.
-///
-/// Exhaustive by construction: a surface added on the server fails to compile here rather than being
-/// silently dropped, which for a *hiding* rule would mean showing what should be hidden.
-extension on api.AssetSurface {
-  AssetSurface toAssetSurface() => switch (this) {
-    api.AssetSurface.timeline => AssetSurface.timeline,
-    api.AssetSurface.search => AssetSurface.search,
-    api.AssetSurface.map => AssetSurface.map,
-    api.AssetSurface.people => AssetSurface.people,
-    api.AssetSurface.memories => AssetSurface.memories,
-    api.AssetSurface.folders => AssetSurface.folders,
-  };
 }

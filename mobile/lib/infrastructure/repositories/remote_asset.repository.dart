@@ -111,7 +111,12 @@ class RemoteAssetRepository extends DatabaseAccessor<Drift> with $RemoteAssetRep
                 asset.ref(_db.remoteAssetEntity.visibility).equals(AssetVisibility.timeline.index) &
                 // The server folds its search-suggestion surface into AssetSurface.search, so a city only
                 // reachable through a withheld asset stops being offered here too.
-                VisibilityPolicy.notHiddenFromMask(asset.ref(_db.remoteAssetEntity.hiddenFrom), AssetSurface.search),
+                VisibilityPolicy.notHiddenFromMask(
+                  asset.ref(_db.remoteAssetEntity.hiddenFrom),
+                  asset.ref(_db.remoteAssetEntity.hiddenFromInherited),
+                  asset.ref(_db.remoteAssetEntity.hiddenFromShown),
+                  AssetSurface.search,
+                ),
           )
           ..groupBy([_db.remoteExifEntity.city])
           ..orderBy([OrderingTerm.asc(_db.remoteExifEntity.city)]);

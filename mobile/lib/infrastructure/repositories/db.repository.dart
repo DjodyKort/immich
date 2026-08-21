@@ -161,7 +161,7 @@ class Drift extends $Drift {
   }
 
   @override
-  int get schemaVersion => 34;
+  int get schemaVersion => 35;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -369,6 +369,16 @@ class Drift extends $Drift {
               },
               from33To34: (m, v34) async {
                 await m.addColumn(v34.remoteAlbumEntity, v34.remoteAlbumEntity.isHidden);
+              },
+              from34To35: (m, v35) async {
+                // The album-inheritance columns. All three nullable with no default, for the same reason
+                // hiddenFrom was: every existing row reads as "withheld from nothing", so the queries
+                // that consult them keep returning exactly what they returned before. The values arrive
+                // from the next sync -- nothing is backfilled locally, because the server is the only
+                // authority for what an album imposes.
+                await m.addColumn(v35.remoteAssetEntity, v35.remoteAssetEntity.hiddenFromInherited);
+                await m.addColumn(v35.remoteAssetEntity, v35.remoteAssetEntity.hiddenFromShown);
+                await m.addColumn(v35.remoteAlbumEntity, v35.remoteAlbumEntity.hiddenFrom);
               },
             ),
           ),
