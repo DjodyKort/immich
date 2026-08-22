@@ -11,6 +11,7 @@ import 'package:immich_mobile/domain/services/remote_album.service.dart';
 import 'package:immich_mobile/models/albums/album_search.model.dart';
 import 'package:immich_mobile/providers/album/album_sort_by_options.provider.dart';
 import 'package:immich_mobile/providers/album/pending_album_uploads.provider.dart';
+import 'package:immich_mobile/providers/background_sync.provider.dart';
 import 'package:immich_mobile/providers/backup/asset_upload_progress.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
@@ -206,6 +207,21 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     return result;
   }
 
+  /// Locks the assets and adds them to a locked album, in one server call.
+  ///
+  /// Syncs afterwards for the same reason [setLocked] does: the server changed each asset's visibility
+  /// and removed it from every other album, so the timeline it came from, that other album and the
+  /// locked folder are all holding stale rows.
+  Future<({int added, int failed})> addLockedAssets(String albumId, List<String> assetIds) async {
+    final result = await _remoteAlbumService.addLockedAssets(albumId: albumId, assetIds: assetIds);
+    if (result.added > 0) {
+      await _refreshAlbumInState(albumId);
+      ref.invalidate(lockedRemoteAlbumsProvider);
+      await _syncMemberAssets();
+    }
+    return result;
+  }
+
   /// Links a freshly-uploaded local asset to an album using its new remote ID,
   /// upserting a placeholder remote asset row so the local DB join survives
   /// until the next sync catches up.
@@ -340,6 +356,8 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
           .map((album) => album.id == albumId ? album.copyWith(hiddenFrom: hiddenFrom) : album)
           .toList(),
     );
+
+    await _syncMemberAssets();
   }
 
   /// Moves the album, and every asset in it, into or out of the locked folder.
@@ -354,6 +372,29 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
 
     ref.invalidate(lockedRemoteAlbumsProvider);
     ref.invalidate(hiddenRemoteAlbumsProvider);
+
+    await _syncMemberAssets();
+  }
+
+  /// Pull down the member asset rows the server just rewrote.
+  ///
+  /// Both operations above change state on every photo in the album -- `hiddenFromInherited` via the
+  /// database triggers, or `visibility` outright -- and the timelines read those asset rows, not the
+  /// album state patched above. Until this existed the only thing that brought them down was the next
+  /// scheduled sync, so the change appeared to need an app restart.
+  ///
+  /// A sync rather than local arithmetic, deliberately. The server is the single authority on the
+  /// inherited mask; recomputing it here would be a second implementation of the same rule that can
+  /// disagree between syncs. The server also emits `AlbumUpdate`, so other devices are told the same
+  /// way -- this call is only so the device that made the change does not wait for its own round trip.
+  Future<void> _syncMemberAssets() async {
+    try {
+      await ref.read(backgroundSyncProvider).syncRemote();
+    } catch (error, stack) {
+      // A failed sync is not a failed edit: the server already accepted it, and the next sync will
+      // bring the rows down. Log rather than surfacing an error for a change that did happen.
+      _logger.warning('Could not refresh assets after an album visibility change', error, stack);
+    }
   }
 }
 

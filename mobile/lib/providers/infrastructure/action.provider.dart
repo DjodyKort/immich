@@ -97,6 +97,30 @@ class ActionNotifier extends Notifier<void> {
     }
   }
 
+  /// Locks the selected assets and puts them in [album], which must already be locked.
+  ///
+  /// Deliberately does not accept local assets. [addToAlbum] uploads those first; here that would mean
+  /// uploading a photo and locking it in one gesture, which is a bigger promise than the button makes,
+  /// and the upload path has no notion of landing an asset straight into the locked folder. Remote
+  /// assets only, and the count reported is what actually moved.
+  Future<ActionResult> addToLockedAlbum(ActionSource source, RemoteAlbum album) async {
+    final remoteIds = RemoteAlbumService.categorizeCandidates(
+      _getAssets(source).toList(growable: false),
+    ).remoteAssetIds;
+
+    if (remoteIds.isEmpty) {
+      return const ActionResult(count: 0, success: true);
+    }
+
+    try {
+      final result = await ref.read(remoteAlbumProvider.notifier).addLockedAssets(album.id, remoteIds);
+      return ActionResult(count: result.added, success: true);
+    } catch (error, stack) {
+      _logger.severe('Failed to move assets into locked album ${album.id}', error, stack);
+      return ActionResult(count: 0, success: false, error: error.toString());
+    }
+  }
+
   Future<ActionResult> addToAlbum(ActionSource source, RemoteAlbum album) async {
     final selected = _getAssets(source).toList(growable: false);
     if (selected.isEmpty) {

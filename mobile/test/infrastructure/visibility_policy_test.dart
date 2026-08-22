@@ -109,9 +109,10 @@ void main() {
     }
 
     Future<Set<String>> idsMatching({required bool isElevated, bool hidden = false}) async {
-      final rows = await (db.remoteAlbumEntity.select()
-            ..where((album) => VisibilityPolicy.albumListing(album, isElevated: isElevated, hidden: hidden)))
-          .get();
+      final rows =
+          await (db.remoteAlbumEntity.select()
+                ..where((album) => VisibilityPolicy.albumListing(album, isElevated: isElevated, hidden: hidden)))
+              .get();
       return rows.map((row) => row.id).toSet();
     }
 

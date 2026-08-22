@@ -203,6 +203,52 @@ void main() {
     });
   });
 
+  // `isShared` decides whether the lock switch in album options is offered at all, so an album that
+  // reports itself shared when it is not makes locking and unlocking impossible from the phone.
+  // Every read path that builds a `RemoteAlbum` has to agree; they are separate queries and the
+  // aggregate was wrong in all four at once.
+  group('isShared', () {
+    test('is false for an album with only its owner', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final asset = await ctx.newRemoteAsset(ownerId: user.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: asset.id);
+
+      expect((await sut.getAll()).single.isShared, isFalse, reason: 'getAll');
+      expect((await sut.get(album.id))?.isShared, isFalse, reason: 'get');
+      expect((await sut.watchAlbum(album.id).first)?.isShared, isFalse, reason: 'watchAlbum');
+      expect((await sut.getAlbumsContainingAsset(asset.id)).single.isShared, isFalse, reason: 'containing');
+    });
+
+    test('is true once another user is a member', () async {
+      final user = await ctx.newUser();
+      final other = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final asset = await ctx.newRemoteAsset(ownerId: user.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: asset.id);
+      await ctx.newRemoteAlbumUser(albumId: album.id, userId: other.id);
+
+      expect((await sut.getAll()).single.isShared, isTrue, reason: 'getAll');
+      expect((await sut.get(album.id))?.isShared, isTrue, reason: 'get');
+      expect((await sut.watchAlbum(album.id).first)?.isShared, isTrue, reason: 'watchAlbum');
+      expect((await sut.getAlbumsContainingAsset(asset.id)).single.isShared, isTrue, reason: 'containing');
+    });
+
+    // The owner is still resolved from the album's own owner row, not from whichever member the
+    // unfiltered join happens to yield first.
+    test('reports the owner, not another member', () async {
+      final user = await ctx.newUser();
+      final other = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      await ctx.newRemoteAlbumUser(albumId: album.id, userId: other.id);
+
+      final result = await sut.get(album.id);
+
+      expect(result?.ownerId, user.id);
+      expect(result?.ownerName, user.name);
+    });
+  });
+
   group('getSortedAlbumIds', () {
     late String userId;
 

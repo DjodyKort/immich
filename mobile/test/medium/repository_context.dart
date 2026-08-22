@@ -225,6 +225,18 @@ class MediumRepositoryContext {
     return album;
   }
 
+  /// Adds a member to an album. [newRemoteAlbum] already inserts the owner, so this is how a test
+  /// makes an album *shared* — the distinction `RemoteAlbum.isShared` reports.
+  Future<void> newRemoteAlbumUser({
+    required String albumId,
+    required String userId,
+    AlbumUserRole role = AlbumUserRole.editor,
+  }) {
+    return db
+        .into(db.remoteAlbumUserEntity)
+        .insert(RemoteAlbumUserEntityCompanion(albumId: .new(albumId), userId: .new(userId), role: .new(role)));
+  }
+
   Future<void> newRemoteAlbumAsset({required String albumId, required String assetId}) {
     return db
         .into(db.remoteAlbumAssetEntity)
