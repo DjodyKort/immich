@@ -141,6 +141,29 @@ jobs:
       # a test problem. Authenticating with the run's own token raises the limit and costs nothing.
       - name: Log in to ghcr.io
         run: echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+      # The login above was supposed to be the fix for that 404 and is not sufficient on its own: a
+      # dispatch run hit it again while authenticated, for a tag that verifiably exists, one minute
+      # into the job. Testcontainers pulls the image itself and gives up on the first failure, taking
+      # the whole suite with it -- so a registry blip reads as a server test failure.
+      #
+      # Pulling here first, with backoff, turns that into a slower run instead of a red one. The tag
+      # is read out of globalSetup.ts rather than repeated, so it cannot drift from the one the suite
+      # actually asks for; if that grep ever stops matching, the step fails loudly rather than
+      # silently pulling nothing.
+      - name: Pre-pull the Postgres image
+        run: |
+          set -euo pipefail
+          image=$(sed -n "s/.*new GenericContainer('\([^']*\)').*/\1/p" test/medium/globalSetup.ts)
+          if [ -z "$image" ]; then
+            echo "::error::could not read the Testcontainers image from test/medium/globalSetup.ts" && exit 1
+          fi
+          echo "pulling $image"
+          for attempt in 1 2 3; do
+            if docker pull "$image"; then exit 0; fi
+            echo "::warning::pull failed (attempt $attempt of 3), retrying"
+            sleep $((attempt * 15))
+          done
+          echo "::error::could not pull $image after 3 attempts" && exit 1
       - run: mise run ci-medium
 
   web:
