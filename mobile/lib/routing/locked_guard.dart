@@ -1,81 +1,42 @@
 import 'dart:async';
 
 import 'package:auto_route/auto_route.dart';
-import 'package:flutter/services.dart';
-import 'package:immich_mobile/constants/constants.dart';
+import 'package:immich_mobile/models/auth/session_elevation.model.dart';
 import 'package:immich_mobile/routing/router.dart';
-import 'package:immich_mobile/services/api.service.dart';
-import 'package:immich_mobile/services/local_auth.service.dart';
-import 'package:immich_mobile/services/secure_storage.service.dart';
-import 'package:local_auth/error_codes.dart' as auth_error;
-import 'package:logging/logging.dart';
-// ignore: import_rule_openapi
-import 'package:openapi/api.dart';
+import 'package:immich_mobile/services/session_elevation.service.dart';
 
+/// Gates the locked folder's routes on an elevated session.
+///
+/// The sequence itself lives in [SessionElevationService]; this is only the translation from its answer
+/// into navigation. Keeping the two apart is what makes the sequence testable -- and it means a second
+/// caller that wants to elevate does not have to reimplement it.
 class LockedGuard extends AutoRouteGuard {
-  final ApiService _apiService;
-  final SecureStorageService _secureStorageService;
-  final LocalAuthService _localAuth;
-  final _log = Logger("AuthGuard");
+  final SessionElevationService _elevation;
 
-  LockedGuard(this._apiService, this._secureStorageService, this._localAuth);
+  LockedGuard(this._elevation);
 
   @override
   Future<void> onNavigation(NavigationResolver resolver, StackRouter router) async {
-    final authStatus = await _apiService.authenticationApi.getAuthStatus();
+    final (result: result, needsPinCreation: needsPinCreation) = await _elevation.elevate();
 
-    if (authStatus == null) {
-      resolver.next(false);
-      return;
-    }
-
-    /// Check if a pincode has been created but this user. Show the form to create if not exist
-    if (!authStatus.pinCode) {
+    // Pushed before acting on `result`, and without short-circuiting, which is the shape this guard has
+    // always had: an account with no PIN gets the create-PIN form, and the rest of the sequence still
+    // runs and decides navigation. Note that means a brand-new account is pushed the create form and
+    // then the entry form, since it can be neither elevated nor holding a stored PIN -- pre-existing,
+    // preserved here rather than quietly changed as part of an extraction.
+    if (needsPinCreation) {
       unawaited(router.push(PinAuthRoute(createPinCode: true)));
     }
 
-    if (authStatus.isElevated) {
-      resolver.next(true);
-      return;
-    }
-
-    /// Check if the user has the pincode saved in secure storage, meaning
-    /// the user has enabled the biometric authentication
-    final securePinCode = await _secureStorageService.read(kSecuredPinCode);
-    if (securePinCode == null) {
-      unawaited(router.push(PinAuthRoute()));
-      return;
-    }
-
-    try {
-      final bool isAuth = await _localAuth.authenticate();
-
-      if (!isAuth) {
+    switch (result) {
+      case SessionElevation.granted:
+        resolver.next(true);
+      case SessionElevation.pinEntryRequired:
+        // Deliberately leaves the resolver unresolved: the PIN form navigates onward itself when it
+        // succeeds, and resolving false here would pop it straight back off.
+        unawaited(router.push(PinAuthRoute()));
+      case SessionElevation.denied:
         resolver.next(false);
-        return;
-      }
-
-      await _apiService.authenticationApi.unlockAuthSession(SessionUnlockDto(pinCode: Optional.present(securePinCode)));
-
-      resolver.next(true);
-    } on PlatformException catch (error) {
-      switch (error.code) {
-        case auth_error.notAvailable:
-          _log.severe("notAvailable: $error");
-        case auth_error.notEnrolled:
-          _log.severe("not enrolled");
-        default:
-          _log.severe("error");
-      }
-
-      resolver.next(false);
-    } on ApiException {
-      // PIN code has changed, need to re-enter to access
-      await _secureStorageService.delete(kSecuredPinCode);
-      unawaited(router.push(PinAuthRoute()));
-    } catch (error) {
-      _log.severe("Failed to access locked page", error);
-      resolver.next(false);
     }
   }
 }

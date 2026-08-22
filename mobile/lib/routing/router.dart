@@ -72,6 +72,7 @@ import 'package:immich_mobile/presentation/pages/profile/profile_picture_crop.pa
 import 'package:immich_mobile/presentation/pages/search/drift_search.page.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_viewer.page.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
+import 'package:immich_mobile/repositories/auth_api.repository.dart';
 import 'package:immich_mobile/routing/auth_guard.dart';
 import 'package:immich_mobile/routing/duplicate_guard.dart';
 import 'package:immich_mobile/routing/locked_guard.dart';
@@ -79,6 +80,7 @@ import 'package:immich_mobile/services/api.service.dart';
 import 'package:immich_mobile/services/auth.service.dart';
 import 'package:immich_mobile/services/local_auth.service.dart';
 import 'package:immich_mobile/services/secure_storage.service.dart';
+import 'package:immich_mobile/services/session_elevation.service.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 part 'router.gr.dart';
@@ -107,7 +109,9 @@ class AppRouter extends RootStackRouter {
   ) {
     _authGuard = AuthGuard(apiService, authService);
     _duplicateGuard = const DuplicateGuard();
-    _lockedGuard = LockedGuard(apiService, secureStorageService, localAuthService);
+    _lockedGuard = LockedGuard(
+      SessionElevationService(AuthApiRepository(apiService), secureStorageService, localAuthService),
+    );
   }
 
   @override
