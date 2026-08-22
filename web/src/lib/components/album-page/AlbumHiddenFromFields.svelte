@@ -14,7 +14,7 @@
 <script lang="ts">
   import { hideFromPlaceLabels, hideFromPlaces } from '$lib/utils/hidden-from';
   import { handleError } from '$lib/utils/handle-error';
-  import { eventManager } from '$lib/managers/event-manager.svelte';
+  import { notifyAlbumVisibilityChanged } from '$lib/services/album.service';
   import { AssetSurface, setAlbumHiddenFrom, type AlbumResponseDto } from '@immich/sdk';
   import { Field, Stack, Switch, Text, toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
@@ -46,12 +46,7 @@
         id: album.id,
         albumSetHiddenFromDto: { hiddenFrom: next },
       });
-      // Same event the other rows emit, so the album page and the album lists behind this modal pick the
-      // new rule up without a reload.
-      eventManager.emit('AlbumUpdate', response);
-      // And this one so the timelines re-read. The rule moves an unknown set of photos on or off the
-      // timeline, search and the rest; nothing in the response says which, so the manager reloads.
-      eventManager.emit('AlbumVisibilityChange', response);
+      notifyAlbumVisibilityChanged(response);
       toastManager.primary($t('album_hidden_from_saved'));
     } catch (error) {
       handleError(error, $t('errors.unable_to_save_album'));
