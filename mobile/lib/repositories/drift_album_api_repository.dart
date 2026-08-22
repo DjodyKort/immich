@@ -57,14 +57,13 @@ class DriftAlbumApiRepository extends ApiRepository {
     return (removed: removed, failed: failed);
   }
 
-  Future<({List<String> added, List<String> failed})> addAssets(
-    String albumId,
-    Iterable<String> assetIds, {
-    Future<void>? abortTrigger,
-  }) async {
-    final response = await checkNull(
-      _api.addAssetsToAlbum(albumId, BulkIdsDto(ids: assetIds.toList()), abortTrigger: abortTrigger),
-    );
+  /// Splits an add-assets response into what landed and what did not.
+  ///
+  /// A duplicate is neither: the asset is in the album, which is what the caller asked for, so counting
+  /// it as a failure would report an error for a request that achieved its goal. Shared by [addAssets]
+  /// and [addLockedAssets], which get the same `BulkIdResponseDto[]` from two different routes -- the
+  /// loop was written out twice and the two must agree about what "failed" means.
+  ({List<String> added, List<String> failed}) _partitionAdded(List<BulkIdResponseDto> response) {
     final List<String> added = [];
     final List<String> failed = [];
     for (final dto in response) {
@@ -76,6 +75,17 @@ class DriftAlbumApiRepository extends ApiRepository {
     }
 
     return (added: added, failed: failed);
+  }
+
+  Future<({List<String> added, List<String> failed})> addAssets(
+    String albumId,
+    Iterable<String> assetIds, {
+    Future<void>? abortTrigger,
+  }) async {
+    final response = await checkNull(
+      _api.addAssetsToAlbum(albumId, BulkIdsDto(ids: assetIds.toList()), abortTrigger: abortTrigger),
+    );
+    return _partitionAdded(response);
   }
 
   /// Locks [assetIds] and adds them to a locked album, as one server-side operation.
@@ -91,17 +101,7 @@ class DriftAlbumApiRepository extends ApiRepository {
     final response = await checkNull(
       _api.addLockedAssetsToAlbum(albumId, BulkIdsDto(ids: assetIds.toList()), abortTrigger: abortTrigger),
     );
-    final List<String> added = [];
-    final List<String> failed = [];
-    for (final dto in response) {
-      if (dto.success) {
-        added.add(dto.id);
-      } else if (dto.error.orElse(null) != BulkIdErrorReason.duplicate) {
-        failed.add(dto.id);
-      }
-    }
-
-    return (added: added, failed: failed);
+    return _partitionAdded(response);
   }
 
   Future<RemoteAlbum> updateAlbum(

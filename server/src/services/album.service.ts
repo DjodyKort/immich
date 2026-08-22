@@ -19,6 +19,7 @@ import { MapMarkerResponseDto } from 'src/dtos/map.dto';
 import { AlbumUserRole, AssetVisibility, JobName, Permission } from 'src/enum';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository';
 import { BaseService } from 'src/services/base.service';
+import { requireElevatedPermission } from 'src/utils/access';
 import { LockedAlbumError } from 'src/utils/album.util';
 import { addAssets, removeAssets } from 'src/utils/asset.util';
 import { asDateTimeString } from 'src/utils/date';
@@ -227,9 +228,7 @@ export class AlbumService extends BaseService {
     // Required in both directions. Locking without it would let a session that cannot itself open the
     // locked folder put photos beyond its own reach; unlocking without it would be a way to empty
     // someone's locked folder from an unelevated session.
-    if (!auth.session?.hasElevatedPermission) {
-      throw new BadRequestException('Locking or unlocking an album requires an elevated session');
-    }
+    requireElevatedPermission(auth);
 
     // Owner only: handing an editor the ability to move the owner's photos into a locked folder they
     // cannot open is not a power sharing should confer.
@@ -353,9 +352,7 @@ export class AlbumService extends BaseService {
 
     // Required for the same reason `setLocked` requires it: this puts photos somewhere the session
     // would not otherwise be able to reach them.
-    if (!auth.session?.hasElevatedPermission) {
-      throw new BadRequestException('Moving assets into a locked album requires an elevated session');
-    }
+    requireElevatedPermission(auth);
 
     const album = await this.findOwnedOrFail(auth, id, 'Only the album owner can add to a locked album');
 
