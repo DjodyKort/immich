@@ -1,8 +1,9 @@
 import { Kysely } from 'kysely';
-import { AssetVisibility } from 'src/enum';
+import { AssetSurface, AssetVisibility } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
+import { EventRepository } from 'src/repositories/event.repository';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { UserRepository } from 'src/repositories/user.repository';
 import { DB } from 'src/schema';
@@ -31,7 +32,7 @@ const setup = (db?: Kysely<DB>) =>
   newMediumService(AlbumService, {
     database: db || defaultDatabase,
     real: [AccessRepository, AlbumRepository, AssetRepository, UserRepository],
-    mock: [LoggingRepository],
+    mock: [LoggingRepository, EventRepository],
   });
 
 beforeAll(async () => {
@@ -140,5 +141,41 @@ describe('album list visibility', () => {
       expect(names(await sut.getAll(notElevated, { assetId: asset.id }))).toEqual([]);
       expect(names(await sut.getAll(elevated, { assetId: asset.id }))).toEqual(['private']);
     });
+  });
+});
+
+// An album's rule reaches every photo in it, through the database triggers that recompute
+// `hiddenFromInherited`. Those asset rows are what the timelines read, so every client holding them
+// has to be told to re-read -- `AlbumUpdate` is the existing mechanism for that and this was the one
+// album mutation that skipped it. The symptom was a rule change needing an app restart to show up.
+describe('telling clients a rule changed', () => {
+  it('should emit AlbumUpdate when the rule changes', async () => {
+    const { sut, ctx } = setup();
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+
+    await sut.setHiddenFrom(auth, album.id, { hiddenFrom: [AssetSurface.Timeline] });
+
+    expect(ctx.getMock(EventRepository).emit).toHaveBeenCalledWith('AlbumUpdate', {
+      id: album.id,
+      userIds: [user.id],
+      recipientIds: [],
+    });
+  });
+
+  // Nothing changed, so nothing to re-read. `setHiddenFrom` returns early on an unchanged mask, and
+  // that early return has to keep the event quiet or every no-op save would sync every client.
+  it('should stay quiet when the rule is already what was asked for', async () => {
+    const { sut, ctx } = setup();
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+
+    await sut.setHiddenFrom(auth, album.id, { hiddenFrom: [] });
+
+    expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
   });
 });

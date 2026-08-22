@@ -1,9 +1,11 @@
 import { Kysely } from 'kysely';
+import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto';
 import { AlbumUserRole, AssetVisibility, SharedLinkType } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
+import { EventRepository } from 'src/repositories/event.repository';
 import { JobRepository } from 'src/repositories/job.repository';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository';
@@ -29,8 +31,8 @@ import { getKyselyDB } from 'test/utils';
 
 let defaultDatabase: Kysely<DB>;
 
-const setup = (db?: Kysely<DB>) =>
-  newMediumService(AlbumService, {
+const setup = (db?: Kysely<DB>) => {
+  const made = newMediumService(AlbumService, {
     database: db || defaultDatabase,
     real: [
       AccessRepository,
@@ -40,8 +42,17 @@ const setup = (db?: Kysely<DB>) =>
       SharedLinkRepository,
       UserRepository,
     ],
-    mock: [LoggingRepository, JobRepository],
+    mock: [LoggingRepository, JobRepository, EventRepository],
   });
+
+  // Every successful path through setLocked queues sidecar writes and emits AlbumUpdate, so give both
+  // an implementation here rather than per-test - a test that builds its own fixtures instead of
+  // calling `seed` would otherwise fail on the mock, not on the behaviour it is asserting.
+  made.ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+  made.ctx.getMock(EventRepository).emit.mockResolvedValue();
+
+  return made;
+};
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
@@ -51,8 +62,6 @@ type Ctx = Awaited<ReturnType<typeof setup>>['ctx'];
 
 /** An owned album with two owned, ordinary assets - the normal starting point. */
 const seed = async (ctx: Ctx) => {
-  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
-
   const { user } = await ctx.newUser();
   const { album } = await ctx.newAlbum({ ownerId: user.id });
   const { asset: first } = await ctx.newAsset({ ownerId: user.id });
@@ -230,7 +239,6 @@ describe('locking an existing album', () => {
 
   it('should lock an empty album without complaint', async () => {
     const { sut, ctx } = setup();
-    ctx.getMock(JobRepository).queueAll.mockResolvedValue();
     const { user } = await ctx.newUser();
     const { album } = await ctx.newAlbum({ ownerId: user.id });
     const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
@@ -238,5 +246,132 @@ describe('locking an existing album', () => {
     await sut.setLocked(elevated, album.id, { isLocked: true });
 
     await expect(isLocked(ctx, album.id)).resolves.toBe(true);
+  });
+
+  // Locking rewrites the visibility of every member asset, so every client holding those rows is now
+  // wrong. `AlbumUpdate` is what tells them: it becomes the `on_album_update` websocket message, which
+  // mobile maps onto a sync. Without it the change needed an app restart to appear.
+  it('should tell the clients the album changed', async () => {
+    const { sut, ctx } = setup();
+    const { user, album, elevated } = await seed(ctx);
+
+    await sut.setLocked(elevated, album.id, { isLocked: true });
+
+    expect(ctx.getMock(EventRepository).emit).toHaveBeenCalledWith('AlbumUpdate', {
+      id: album.id,
+      userIds: [user.id],
+      // Empty on purpose: this field drives the "album updated" email, and the owner does not need
+      // mailing about their own edit.
+      recipientIds: [],
+    });
+  });
+
+  // A locked album may only hold locked assets, and locking an asset evicts it from every album -- so
+  // "put this timeline photo in my locked album" was two operations that could not be expressed
+  // together. This route is the one operation, and these assert the whole of it: the photo ends up
+  // locked, in this album, and out of the album it came from.
+  describe('moving timeline assets straight into a locked album', () => {
+    it('should lock the assets, add them, and take them out of their other albums', async () => {
+      const { sut, ctx } = setup();
+      const { user, album, assets, elevated } = await seed(ctx);
+      const { album: locked } = await ctx.newAlbum({ ownerId: user.id, isLocked: true });
+
+      const results = await sut.addLockedAssets(elevated, locked.id, { ids: [assets[0].id] });
+
+      expect(results).toEqual([{ id: assets[0].id, success: true }]);
+      await expect(visibilityOf(ctx, assets[0].id)).resolves.toBe(AssetVisibility.Locked);
+      await expect(ctx.get(AlbumRepository).getAssetIds(locked.id, [assets[0].id])).resolves.toEqual(
+        new Set([assets[0].id]),
+      );
+      // The invariant that makes locking mean anything: album membership grants asset reads, so the
+      // photo must not still be reachable through the ordinary album it came from.
+      await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [assets[0].id])).resolves.toEqual(new Set());
+    });
+
+    it('should refuse without an elevated session', async () => {
+      const { sut, ctx } = setup();
+      const { user, assets, plain } = await seed(ctx);
+      const { album: locked } = await ctx.newAlbum({ ownerId: user.id, isLocked: true });
+
+      // Two gates catch this and the access layer gets there first: `AlbumAssetCreate` resolves through
+      // `excludeLockedAlbumsUnlessElevated`, so an unelevated session cannot see the locked album at
+      // all. The explicit elevation check below it is what would answer if that ever widened. Matching
+      // either keeps the test about the refusal rather than about which layer won.
+      await expect(sut.addLockedAssets(plain, locked.id, { ids: [assets[0].id] })).rejects.toThrow(
+        /elevated session|albumAsset\.create access/,
+      );
+
+      await expect(visibilityOf(ctx, assets[0].id)).resolves.toBe(AssetVisibility.Timeline);
+    });
+
+    // The ordinary add endpoint exists for this and locks nothing. Falling back to it here would make
+    // the route a way to lock photos by accident.
+    it('should refuse an album that is not locked', async () => {
+      const { sut, ctx } = setup();
+      const { album, assets, elevated } = await seed(ctx);
+
+      await expect(sut.addLockedAssets(elevated, album.id, { ids: [assets[0].id] })).rejects.toThrow('not locked');
+
+      await expect(visibilityOf(ctx, assets[0].id)).resolves.toBe(AssetVisibility.Timeline);
+    });
+
+    // Locking someone else's photo hides it from them. Refuse the request rather than dropping the
+    // offending asset from the results, which would report partial success as success.
+    it('should refuse assets the caller does not own, without moving the ones they do', async () => {
+      const { sut, ctx } = setup();
+      const { user, assets, elevated } = await seed(ctx);
+      const { user: other } = await ctx.newUser();
+      const { asset: theirs } = await ctx.newAsset({ ownerId: other.id });
+      const { album: locked } = await ctx.newAlbum({ ownerId: user.id, isLocked: true });
+
+      await expect(sut.addLockedAssets(elevated, locked.id, { ids: [assets[0].id, theirs.id] })).rejects.toThrow(
+        'assets you own',
+      );
+
+      await expect(visibilityOf(ctx, assets[0].id)).resolves.toBe(AssetVisibility.Timeline);
+      await expect(visibilityOf(ctx, theirs.id)).resolves.toBe(AssetVisibility.Timeline);
+    });
+
+    it('should report an asset already in the album as a duplicate rather than failing', async () => {
+      const { sut, ctx } = setup();
+      const { user, assets, elevated } = await seed(ctx);
+      const { album: locked } = await ctx.newAlbum({ ownerId: user.id, isLocked: true });
+      await sut.addLockedAssets(elevated, locked.id, { ids: [assets[0].id] });
+
+      const results = await sut.addLockedAssets(elevated, locked.id, { ids: [assets[0].id] });
+
+      expect(results).toEqual([{ id: assets[0].id, success: false, error: BulkIdErrorReason.DUPLICATE }]);
+    });
+  });
+
+  // The refusal above only held at the moment of locking. `Permission.AlbumShare` resolves through
+  // `forViewer`, so an elevated owner passed it for a locked album and could invite someone afterwards -
+  // producing the one state the clients then refused to unlock.
+  it('should refuse to share an album that is already locked', async () => {
+    const { sut, ctx } = setup();
+    const { album, elevated } = await seed(ctx);
+    const { user: guest } = await ctx.newUser();
+    await sut.setLocked(elevated, album.id, { isLocked: true });
+
+    await expect(
+      sut.addUsers(elevated, album.id, { albumUsers: [{ userId: guest.id, role: AlbumUserRole.Viewer }] }),
+    ).rejects.toThrow('A locked album cannot be shared');
+  });
+
+  // Sharing blocks locking, never unlocking, and both clients now follow that. Pinned because the state
+  // still exists on any instance that predates the refusal above, and it must not be a dead end: the way
+  // out of a shared locked album is to unlock it.
+  it('should still unlock an album that is shared', async () => {
+    const { sut, ctx } = setup();
+    const { album, assets, elevated } = await seed(ctx);
+    const { user: guest } = await ctx.newUser();
+    await sut.setLocked(elevated, album.id, { isLocked: true });
+    // Straight to the fixture rather than through addUsers, which now refuses exactly this.
+    await ctx.newAlbumUser({ albumId: album.id, userId: guest.id, role: AlbumUserRole.Viewer });
+
+    await sut.setLocked(elevated, album.id, { isLocked: false });
+
+    await expect(isLocked(ctx, album.id)).resolves.toBe(false);
+    await expect(visibilityOf(ctx, assets[0].id)).resolves.toBe(AssetVisibility.Timeline);
   });
 });

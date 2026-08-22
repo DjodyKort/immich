@@ -159,6 +159,22 @@ export class AlbumController {
     return this.service.addAssets(auth, id, dto);
   }
 
+  @Put(':id/locked-assets')
+  @Authenticated({ permission: Permission.AlbumAssetCreate })
+  @Endpoint({
+    summary: 'Move assets into a locked album',
+    description:
+      'Lock the given assets and add them to a locked album, as one operation. Requires an elevated session, an album you own that is already locked, and assets you own. The assets are set to Locked visibility and removed from every other album. Distinct from the ordinary add-assets endpoint, which locks nothing and would be refused for a locked album; doing both as two calls can half-apply and leave assets locked but in no album.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  addLockedAssetsToAlbum(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: BulkIdsDto,
+  ): Promise<BulkIdResponseDto[]> {
+    return this.service.addLockedAssets(auth, id, dto);
+  }
+
   @Put('assets')
   @Authenticated({ permission: Permission.AlbumAssetCreate })
   @Endpoint({

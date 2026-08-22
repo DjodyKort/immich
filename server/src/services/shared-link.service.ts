@@ -14,6 +14,7 @@ import {
 import { Permission, SharedLinkType } from 'src/enum';
 import { BaseService } from 'src/services/base.service';
 import { findOrFail, getExternalDomain, OpenGraphTags } from 'src/utils/misc';
+import { forViewer } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class SharedLinkService extends BaseService {
@@ -73,6 +74,17 @@ export class SharedLinkService extends BaseService {
           throw new BadRequestException('Invalid albumId');
         }
         await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [dto.albumId] });
+
+        // A link is the other way into an album, so it has to refuse what `AlbumService.addUsers`
+        // refuses. `Permission.AlbumShare` resolves through `forViewer(auth)` and an elevated owner
+        // therefore passes it, which is correct for removing a user from a locked album but not for
+        // handing one out. The link would fail closed on use -- it carries no session, so it is never
+        // elevated -- but leaving the user holding a link that quietly does nothing is worse than
+        // saying no here.
+        const album = await this.albumRepository.getById(dto.albumId, { withAssets: false }, forViewer(auth));
+        if (album?.isLocked) {
+          throw new BadRequestException('A locked album cannot be shared. Unlock it first');
+        }
         break;
       }
 
