@@ -15,12 +15,26 @@ import 'package:immich_mobile/widgets/forms/pin_verification_form.dart';
 class PinAuthPage extends HookConsumerWidget {
   final bool createPinCode;
 
-  const PinAuthPage({super.key, this.createPinCode = false});
+  /// Hand the outcome back to whoever pushed this page, instead of opening the locked folder.
+  ///
+  /// The page's original job -- and still its default -- is the locked folder's front door: clear the
+  /// PIN, land in the folder. A caller that needs only the *session elevated*, such as moving photos
+  /// into a locked album, wants the user returned to where they were standing, so it pushes with this
+  /// set and awaits a `bool`. Defaulting to false keeps `LockedGuard`'s two push sites untouched.
+  final bool popOnSuccess;
+
+  const PinAuthPage({super.key, this.createPinCode = false, this.popOnSuccess = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final localAuthState = ref.watch(localAuthProvider);
     final showPinRegistrationForm = useState(createPinCode);
+
+    // The one place either success path ends, so the two cannot drift apart. Both mean the same thing --
+    // the session is now elevated -- and differ only in where the user should be left.
+    void finish() {
+      unawaited(popOnSuccess ? context.maybePop(true) : context.replaceRoute(const DriftLockedFolderRoute()));
+    }
 
     Future<void> registerBiometric(String pinCode) async {
       final isRegistered = await ref.read(localAuthProvider.notifier).registerBiometric(context, pinCode);
@@ -37,7 +51,7 @@ class PinAuthPage extends HookConsumerWidget {
         ),
       );
 
-      unawaited(context.replaceRoute(const DriftLockedFolderRoute()));
+      finish();
     }
 
     Future<void> enableBiometricAuth() {
@@ -81,14 +95,7 @@ class PinAuthPage extends HookConsumerWidget {
                 ? Center(child: PinRegistrationForm(onDone: () => showPinRegistrationForm.value = false))
                 : Column(
                     children: [
-                      Center(
-                        child: PinVerificationForm(
-                          autoFocus: true,
-                          onSuccess: (_) {
-                            unawaited(context.replaceRoute(const DriftLockedFolderRoute()));
-                          },
-                        ),
-                      ),
+                      Center(child: PinVerificationForm(autoFocus: true, onSuccess: (_) => finish())),
                       const SizedBox(height: 24),
                       if (localAuthState.canAuthenticate) ...[
                         Padding(
