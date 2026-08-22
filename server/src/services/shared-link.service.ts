@@ -13,6 +13,7 @@ import {
 } from 'src/dtos/shared-link.dto';
 import { Permission, SharedLinkType } from 'src/enum';
 import { BaseService } from 'src/services/base.service';
+import { LockedAlbumError } from 'src/utils/album.util';
 import { findOrFail, getExternalDomain, OpenGraphTags } from 'src/utils/misc';
 import { forViewer } from 'src/utils/visibility-policy';
 
@@ -83,7 +84,7 @@ export class SharedLinkService extends BaseService {
         // saying no here.
         const album = await this.albumRepository.getById(dto.albumId, { withAssets: false }, forViewer(auth));
         if (album?.isLocked) {
-          throw new BadRequestException('A locked album cannot be shared. Unlock it first');
+          throw new BadRequestException(LockedAlbumError.CannotBeShared);
         }
         break;
       }
