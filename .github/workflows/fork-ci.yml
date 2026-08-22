@@ -238,6 +238,52 @@ jobs:
       - run: mise run format
       - run: mise run test
 
+  # The only job that compiles the app. Everything in `mobile` above runs on the Dart VM, so Gradle,
+  # R8, manifest merging, plugin registration and the NDK are all unexercised by it -- a broken
+  # AndroidManifest passes `analyze` and the full test suite without a murmur. Before this job existed
+  # the first thing to compile the app was fork-release-mobile.yml, on a tag push, which meant finding
+  # a build break against a tag: the worst possible moment.
+  #
+  # --release, not --debug, and that is the point of running it here rather than only locally.
+  # `immich-ci mobile:apk` builds debug because it has to be fast enough to sit in the local gate
+  # (~30s warm); debug skips R8, so shrinker and obfuscation failures survive it. This is ~4.5 minutes
+  # and catches them, in parallel with the other jobs.
+  #
+  # No keystore, deliberately. `mobile/android/app/build.gradle` falls back to debug signing when
+  # android/key.jks is absent (`hasKeystore`), which is exactly right for a compile check and exactly
+  # wrong for anything installable -- so nothing here is uploaded. Releasable APKs come from
+  # fork-release-mobile.yml, which fails loudly if KEY_JKS is missing rather than debug-signing.
+  mobile-build:
+    name: Mobile (build)
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      # The public mise action, not immich-app/devtools/actions/use-mise: that one needs a token from
+      # an app this fork does not have. Same substitution the rest of this file makes.
+      - uses: jdx/mise-action@v3
+        with:
+          working_directory: ./mobile
+      - name: Install dependencies
+        run: mise //mobile:install:ci
+      - name: Perform codegen
+        run: mise //mobile:codegen
+      - name: Build the APK
+        working-directory: ./mobile
+        run: flutter build apk --release
+
   upstream-drift:
     name: Upstream drift (informational)
     if: ${{ github.repository != 'immich-app/immich' }}
