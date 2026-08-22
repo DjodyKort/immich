@@ -140,7 +140,7 @@ describe('locking an existing album', () => {
     const { sut, ctx } = setup();
     const { album, assets, plain } = await seed(ctx);
 
-    await expect(sut.setLocked(plain, album.id, { isLocked: true })).rejects.toThrow('elevated session');
+    await expect(sut.setLocked(plain, album.id, { isLocked: true })).rejects.toThrow('Elevated permission');
 
     await expect(isLocked(ctx, album.id)).resolves.toBe(false);
     await expect(visibilityOf(ctx, assets[0].id)).resolves.toBe(AssetVisibility.Timeline);
@@ -150,15 +150,16 @@ describe('locking an existing album', () => {
   //
   // Two gates catch this, and which one fires depends on the album. The `AlbumUpdate` access check
   // already refuses a *locked* album to an unelevated session, so that is what answers here; the explicit
-  // elevation check is what answers when locking an ordinary one. Asserting either message rather than
-  // the specific one keeps this test about the refusal instead of about which layer got there first.
+  // `requireElevatedPermission` is what answers when locking an ordinary one. Asserting either message
+  // rather than the specific one keeps this test about the refusal instead of about which layer got
+  // there first.
   it('should refuse to unlock without an elevated session', async () => {
     const { sut, ctx } = setup();
     const { album, assets, elevated, plain } = await seed(ctx);
     await sut.setLocked(elevated, album.id, { isLocked: true });
 
     await expect(sut.setLocked(plain, album.id, { isLocked: false })).rejects.toThrow(
-      /elevated session|album\.update access/,
+      /Elevated permission|album\.update access/,
     );
 
     await expect(isLocked(ctx, album.id)).resolves.toBe(true);
@@ -295,10 +296,10 @@ describe('locking an existing album', () => {
 
       // Two gates catch this and the access layer gets there first: `AlbumAssetCreate` resolves through
       // `excludeLockedAlbumsUnlessElevated`, so an unelevated session cannot see the locked album at
-      // all. The explicit elevation check below it is what would answer if that ever widened. Matching
-      // either keeps the test about the refusal rather than about which layer won.
+      // all. The `requireElevatedPermission` below it is what would answer if that ever widened.
+      // Matching either keeps the test about the refusal rather than about which layer won.
       await expect(sut.addLockedAssets(plain, locked.id, { ids: [assets[0].id] })).rejects.toThrow(
-        /elevated session|albumAsset\.create access/,
+        /Elevated permission|albumAsset\.create access/,
       );
 
       await expect(visibilityOf(ctx, assets[0].id)).resolves.toBe(AssetVisibility.Timeline);
