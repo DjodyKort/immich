@@ -16,8 +16,18 @@ const hideFromPlaces = [
   AssetSurface.folders,
 ];
 
-String hideFromPlaceLabel(BuildContext context, AssetSurface place) => switch (place) {
-  AssetSurface.timeline => context.t.hide_from_place_timeline,
+/// [locked] relabels the timeline row, and only that row.
+///
+/// The locked folder *is* the timeline with visibility pinned to locked, so for an asset that lives
+/// there the timeline switch governs the locked folder rather than the main one -- one surface, two
+/// names, and the name a person knows it by depends on where the asset is. The other five rows keep
+/// their copy: a locked photo's search and map masks mean exactly what they say.
+///
+/// Mobile said "Main timeline" here where web has said "Locked folder" since the shared table landed
+/// (`web/src/lib/utils/hidden-from.ts`), so the same switch was described two ways depending on which
+/// client you opened. This is the mobile half of that table.
+String hideFromPlaceLabel(BuildContext context, AssetSurface place, {bool locked = false}) => switch (place) {
+  AssetSurface.timeline => locked ? context.t.hide_from_place_locked_folder : context.t.hide_from_place_timeline,
   AssetSurface.search => context.t.hide_from_place_search,
   AssetSurface.map => context.t.hide_from_place_map,
   AssetSurface.people => context.t.hide_from_place_people,
@@ -25,8 +35,9 @@ String hideFromPlaceLabel(BuildContext context, AssetSurface place) => switch (p
   AssetSurface.folders => context.t.hide_from_place_folders,
 };
 
-String hideFromPlaceDescription(BuildContext context, AssetSurface place) => switch (place) {
-  AssetSurface.timeline => context.t.hide_from_place_timeline_description,
+String hideFromPlaceDescription(BuildContext context, AssetSurface place, {bool locked = false}) => switch (place) {
+  AssetSurface.timeline =>
+    locked ? context.t.hide_from_place_locked_folder_description : context.t.hide_from_place_timeline_description,
   AssetSurface.search => context.t.hide_from_place_search_description,
   AssetSurface.map => context.t.hide_from_place_map_description,
   AssetSurface.people => context.t.hide_from_place_people_description,
@@ -45,6 +56,7 @@ String hideFromPlaceDescription(BuildContext context, AssetSurface place) => swi
 Future<Set<AssetSurface>?> showHideFromPlacesPicker({
   required BuildContext context,
   required Set<AssetSurface> hiddenFrom,
+  bool locked = false,
 }) {
   return showModalBottomSheet<Set<AssetSurface>>(
     context: context,
@@ -52,7 +64,7 @@ Future<Set<AssetSurface>?> showHideFromPlacesPicker({
     useSafeArea: true,
     backgroundColor: context.colorScheme.surfaceContainer,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (_) => _HideFromPlacesPicker(hiddenFrom: hiddenFrom),
+    builder: (_) => _HideFromPlacesPicker(hiddenFrom: hiddenFrom, locked: locked),
   );
 }
 
@@ -79,6 +91,7 @@ Future<HideFromPlacesEdit?> showHideFromPlacesBulkPicker({
   required BuildContext context,
   required Map<AssetSurface, int> hiddenCounts,
   required int total,
+  bool locked = false,
 }) {
   return showModalBottomSheet<HideFromPlacesEdit>(
     context: context,
@@ -86,7 +99,7 @@ Future<HideFromPlacesEdit?> showHideFromPlacesBulkPicker({
     useSafeArea: true,
     backgroundColor: context.colorScheme.surfaceContainer,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (_) => _HideFromPlacesBulkPicker(hiddenCounts: hiddenCounts, total: total),
+    builder: (_) => _HideFromPlacesBulkPicker(hiddenCounts: hiddenCounts, total: total, locked: locked),
   );
 }
 
@@ -94,9 +107,10 @@ Future<HideFromPlacesEdit?> showHideFromPlacesBulkPicker({
 enum _Intent { keep, hide, show }
 
 class _HideFromPlacesPicker extends HookWidget {
-  const _HideFromPlacesPicker({required this.hiddenFrom});
+  const _HideFromPlacesPicker({required this.hiddenFrom, required this.locked});
 
   final Set<AssetSurface> hiddenFrom;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -116,9 +130,9 @@ class _HideFromPlacesPicker extends HookWidget {
           SwitchListTile.adaptive(
             value: selected.value.contains(place),
             onChanged: (isHidden) => toggle(place, isHidden: isHidden),
-            title: Text(hideFromPlaceLabel(context, place), style: context.textTheme.bodyLarge),
+            title: Text(hideFromPlaceLabel(context, place, locked: locked), style: context.textTheme.bodyLarge),
             subtitle: Text(
-              hideFromPlaceDescription(context, place),
+              hideFromPlaceDescription(context, place, locked: locked),
               style: context.textTheme.bodySmall?.copyWith(color: context.colorScheme.onSurfaceVariant),
             ),
             visualDensity: VisualDensity.compact,
@@ -132,10 +146,11 @@ class _HideFromPlacesPicker extends HookWidget {
 }
 
 class _HideFromPlacesBulkPicker extends HookWidget {
-  const _HideFromPlacesBulkPicker({required this.hiddenCounts, required this.total});
+  const _HideFromPlacesBulkPicker({required this.hiddenCounts, required this.total, required this.locked});
 
   final Map<AssetSurface, int> hiddenCounts;
   final int total;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -152,7 +167,7 @@ class _HideFromPlacesBulkPicker extends HookWidget {
       rows: [
         for (final place in hideFromPlaces)
           ListTile(
-            title: Text(hideFromPlaceLabel(context, place), style: context.textTheme.bodyLarge),
+            title: Text(hideFromPlaceLabel(context, place, locked: locked), style: context.textTheme.bodyLarge),
             subtitle: Text(
               // The current state rather than the place's description: on a selection, "how many of
               // these are already hidden here" is the thing a person cannot otherwise know.
