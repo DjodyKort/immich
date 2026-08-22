@@ -75,6 +75,11 @@ export const createMockStackAsset = (ownerId: string): AssetResponseDto => {
     width: 3000,
     height: 4000,
     isEdited: false,
+    // Withheld from nothing, matching what the server reports for an untouched asset.
+    hiddenFrom: [],
+    hiddenFromInherited: [],
+    hiddenFromShown: [],
+    hiddenFromEffective: [],
   };
 };
 

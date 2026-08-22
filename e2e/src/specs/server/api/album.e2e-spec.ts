@@ -502,6 +502,13 @@ describe('/albums', () => {
         assetCount: 0,
         isActivityEnabled: true,
         order: AssetOrder.Desc,
+        // A new album is in the album list, outside the locked folder, and imposes no rule on its
+        // photos. Asserted rather than ignored because this is a deep equality check: leaving them out
+        // is what made it fail once the fields existed, and stating the defaults is the point of the
+        // test.
+        isHidden: false,
+        isLocked: false,
+        hiddenFrom: [],
       });
     });
 
