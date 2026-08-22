@@ -19,23 +19,26 @@ class LockedGuard extends AutoRouteGuard {
   Future<void> onNavigation(NavigationResolver resolver, StackRouter router) async {
     final (result: result, needsPinCreation: needsPinCreation) = await _elevation.elevate();
 
-    // Pushed before acting on `result`, and without short-circuiting, which is the shape this guard has
-    // always had: an account with no PIN gets the create-PIN form, and the rest of the sequence still
-    // runs and decides navigation. Note that means a brand-new account is pushed the create form and
-    // then the entry form, since it can be neither elevated nor holding a stored PIN -- pre-existing,
-    // preserved here rather than quietly changed as part of an extraction.
-    if (needsPinCreation) {
-      unawaited(router.push(PinAuthRoute(createPinCode: true)));
-    }
-
     switch (result) {
       case SessionElevation.granted:
         resolver.next(true);
       case SessionElevation.pinEntryRequired:
+        // One push, not two. `needsPinCreation` used to be handled by an unconditional push above this
+        // switch that then fell through into it, so a brand-new account -- which can be neither
+        // elevated nor holding a stored PIN, and therefore always lands here -- got the create form
+        // with the entry form stacked behind it. Dismiss the first and you are looking at a second
+        // screen asking for a PIN that was never set.
+        //
+        // `PinAuthPage` already does both in the right order when asked to create one: it shows the
+        // registration form and swaps itself to the verification form when that finishes. This is the
+        // same single push `MoveToLockedAlbumAction` makes, so the two callers now agree.
+        //
         // Deliberately leaves the resolver unresolved: the PIN form navigates onward itself when it
         // succeeds, and resolving false here would pop it straight back off.
-        unawaited(router.push(PinAuthRoute()));
+        unawaited(router.push(PinAuthRoute(createPinCode: needsPinCreation)));
       case SessionElevation.denied:
+        // No form for an account with no PIN either. `denied` is a refusal, and a create-PIN screen
+        // pushed over one reads as "set a PIN to continue" when continuing is not on offer.
         resolver.next(false);
     }
   }
