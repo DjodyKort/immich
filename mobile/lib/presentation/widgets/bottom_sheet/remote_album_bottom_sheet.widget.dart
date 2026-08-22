@@ -22,9 +22,18 @@ import 'package:immich_mobile/presentation/actions/stack.action.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_selector.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/base_bottom_sheet.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/action.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 
+/// The selection sheet for a single album.
+///
+/// Adapts to a locked album rather than being a second widget for it. A locked album may only hold
+/// locked assets and an ordinary one may only hold unlocked assets, so an unfiltered album list here
+/// offered a locked album's contents a choice of destinations the server refuses -- and the create
+/// button beside it built an *unlocked* album out of locked assets, which the server assembles empty.
+/// Both are decided by [RemoteAlbum.isLocked] on the album being viewed, because that is what decides
+/// the visibility of everything selectable in it.
 class RemoteAlbumBottomSheet extends ConsumerStatefulWidget {
   final RemoteAlbum album;
   const RemoteAlbumBottomSheet({super.key, required this.album});
@@ -51,6 +60,7 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
   @override
   Widget build(BuildContext context) {
     final ownsAlbum = ref.watch(currentUserProvider)?.id == widget.album.ownerId;
+    final isLocked = widget.album.isLocked;
 
     Future<void> addToAlbum(RemoteAlbum album) async {
       final result = await ref.read(actionProvider.notifier).addToAlbum(ActionSource.timeline, album);
@@ -70,6 +80,13 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
             ? context.t.add_to_album_bottom_sheet_already_exists(album: album.name)
             : context.t.add_to_album_bottom_sheet_added(album: album.name),
       );
+
+      // The locked folder's album section reads its own provider, so a locked album that just gained
+      // members keeps showing its old count until this is invalidated. Same reason the locked folder's
+      // sheet does it.
+      if (album.isLocked) {
+        ref.invalidate(lockedRemoteAlbumsProvider);
+      }
     }
 
     Future<void> onKeyboardExpand() {
@@ -112,7 +129,14 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
         ],
       ],
       slivers: ownsAlbum
-          ? [const AddToAlbumHeader(), AlbumSelector(onAlbumSelected: addToAlbum, onKeyboardExpanded: onKeyboardExpand)]
+          ? [
+              AddToAlbumHeader(createLocked: isLocked),
+              AlbumSelector(
+                onAlbumSelected: addToAlbum,
+                onKeyboardExpanded: onKeyboardExpand,
+                albumFilter: isLocked ? (album) => album.isLocked : null,
+              ),
+            ]
           : null,
     );
   }
