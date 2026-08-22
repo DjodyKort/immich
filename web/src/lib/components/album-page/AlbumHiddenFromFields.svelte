@@ -49,6 +49,9 @@
       // Same event the other rows emit, so the album page and the album lists behind this modal pick the
       // new rule up without a reload.
       eventManager.emit('AlbumUpdate', response);
+      // And this one so the timelines re-read. The rule moves an unknown set of photos on or off the
+      // timeline, search and the rest; nothing in the response says which, so the manager reloads.
+      eventManager.emit('AlbumVisibilityChange', response);
       toastManager.primary($t('album_hidden_from_saved'));
     } catch (error) {
       handleError(error, $t('errors.unable_to_save_album'));

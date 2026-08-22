@@ -47,6 +47,12 @@ export type Events = {
   AlbumAddAssets: [{ assetIds: string[]; albumIds: string[] }];
   AlbumCreate: [AlbumResponseDto];
   AlbumUpdate: [AlbumResponseDto];
+  /**
+   * The album's photos moved on or off a surface -- its `hiddenFrom` rule changed, or it was locked
+   * or unlocked. Separate from `AlbumUpdate` because that also fires for renames, and the timeline
+   * reload this triggers is a full re-read: worth it for a rule change, wasteful for a title edit.
+   */
+  AlbumVisibilityChange: [AlbumResponseDto];
   AlbumDelete: [AlbumResponseDto];
   AlbumShare: [];
   AlbumUserUpdate: [{ albumId: string; userId: string; role: AlbumUserRole }];
