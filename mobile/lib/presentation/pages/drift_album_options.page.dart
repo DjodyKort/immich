@@ -308,10 +308,14 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
             // the switch above it confirms first and names what will happen. Disabled while the album is
             // shared, because the server refuses that case and saying so up front beats a toast after the
             // tap. Assets owned by someone else are not knowable here, so that one stays a server error.
+            //
+            // Sharing blocks the *locking* direction only. `AlbumService.setLocked` checks it inside
+            // `if (dto.isLocked)`, so unlocking a shared album is deliberately allowed -- and gating both
+            // directions would leave a locked album that later became shared with no way back out.
             if (isOwner)
               SwitchListTile.adaptive(
                 value: locked.value,
-                onChanged: album.isShared ? null : (bool value) async => setLocked(value),
+                onChanged: !locked.value && album.isShared ? null : (bool value) async => setLocked(value),
                 activeThumbColor: locked.value ? context.primaryColor : context.themeData.disabledColor,
                 dense: true,
                 title: Text(
@@ -319,7 +323,9 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
                   style: context.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 subtitle: Text(
-                  album.isShared ? context.t.lock_album_error_shared : context.t.lock_album_description,
+                  !locked.value && album.isShared
+                      ? context.t.lock_album_error_shared
+                      : context.t.lock_album_description,
                   style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
                 ),
               ),

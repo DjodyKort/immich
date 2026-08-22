@@ -78,6 +78,32 @@ class DriftAlbumApiRepository extends ApiRepository {
     return (added: added, failed: failed);
   }
 
+  /// Locks [assetIds] and adds them to a locked album, as one server-side operation.
+  ///
+  /// Not [addAssets] with a lock beforehand: a locked album may only contain locked assets, and locking
+  /// an asset evicts it from every album, so the two-call version has a window where the photos are
+  /// locked and in no album at all. Requires an elevated session; the server refuses otherwise.
+  Future<({List<String> added, List<String> failed})> addLockedAssets(
+    String albumId,
+    Iterable<String> assetIds, {
+    Future<void>? abortTrigger,
+  }) async {
+    final response = await checkNull(
+      _api.addLockedAssetsToAlbum(albumId, BulkIdsDto(ids: assetIds.toList()), abortTrigger: abortTrigger),
+    );
+    final List<String> added = [];
+    final List<String> failed = [];
+    for (final dto in response) {
+      if (dto.success) {
+        added.add(dto.id);
+      } else if (dto.error.orElse(null) != BulkIdErrorReason.duplicate) {
+        failed.add(dto.id);
+      }
+    }
+
+    return (added: added, failed: failed);
+  }
+
   Future<RemoteAlbum> updateAlbum(
     String albumId,
     UserDto owner, {

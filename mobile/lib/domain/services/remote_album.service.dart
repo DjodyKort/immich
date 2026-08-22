@@ -201,6 +201,20 @@ class RemoteAlbumService {
     return (added: album.added.length, failed: album.failed.length);
   }
 
+  /// Locks the assets and adds them to a locked album, in one server call.
+  ///
+  /// The local rows are left to sync rather than patched here: the server changes each asset's
+  /// `visibility` *and* removes it from every other album, so the timelines, the album it came from and
+  /// the locked folder are all stale afterwards. Patching that by hand would be a second implementation
+  /// of a rule the server already owns. The caller triggers the sync.
+  Future<({int added, int failed})> addLockedAssets({required String albumId, required List<String> assetIds}) async {
+    final result = await _albumApiRepository.addLockedAssets(albumId, assetIds);
+
+    await _repository.addAssets(albumId, result.added);
+
+    return (added: result.added.length, failed: result.failed.length);
+  }
+
   /// !TODO The name here is not clear as we have addAssets method above,
   /// which is only add remote assets to album, for the next PR, we will allow
   /// adding local assets from album from the timeline as well with this flow.

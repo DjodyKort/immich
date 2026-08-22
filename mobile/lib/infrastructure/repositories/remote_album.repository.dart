@@ -23,6 +23,46 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
 
   Drift get _db => attachedDatabase;
 
+  /// The joins every `RemoteAlbum` read shares: the album's members, and separately its owner.
+  ///
+  /// `remote_album_user` is joined twice because the query asks it two different questions — how many
+  /// people can see this album, and which of them owns it. The owner join is **aliased** so that its
+  /// `role = owner` condition filters only its own rows.
+  ///
+  /// Sharing one table instance between the two is what went wrong: the owner-filtered inner join
+  /// dropped every other member before `count(distinct userId)` could see them, so the count was always
+  /// exactly 1 and `isShared` was `true` for every album, shared or not. Upstream only used that to
+  /// decide whether to offer the comments button; this fork also gates the album lock switch on it, so
+  /// the switch was permanently disabled and captioned "Stop sharing this album before locking it".
+  /// Pinned by the `isShared` group in `test/medium/repositories/remote_album_repository_test.dart`.
+  List<Join> _ownerAndMemberJoins() {
+    final owner = _db.remoteAlbumUserEntity.createAlias('album_owner');
+
+    return [
+      leftOuterJoin(
+        _db.remoteAlbumUserEntity,
+        _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id),
+        useColumns: false,
+      ),
+      innerJoin(
+        owner,
+        owner.albumId.equalsExp(_db.remoteAlbumEntity.id) & owner.role.equalsValue(AlbumUserRole.owner),
+        useColumns: false,
+      ),
+      innerJoin(_db.userEntity, _db.userEntity.id.equalsExp(owner.userId), useColumns: false),
+    ];
+  }
+
+  /// How many people the album is visible to, taken over the unfiltered member join above.
+  Expression<int> get _memberCount => _db.remoteAlbumUserEntity.userId.count(distinct: true);
+
+  /// Whether anyone besides the owner can see the album.
+  ///
+  /// The count includes the owner's own row, so the threshold is 1. Reading it as `> 0` is the bug
+  /// described on [_ownerAndMemberJoins]; keeping the comparison here means there is one place to be
+  /// wrong rather than four.
+  static bool _sharedFrom(int? memberCount) => (memberCount ?? 0) > 1;
+
   /// Lists albums for the UI.
   ///
   /// [isElevated] says whether the caller's session has cleared the PIN/biometric flow; it is threaded
@@ -40,6 +80,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
     // join condition (instead of the where clause) keeps albums whose assets are all trashed
     // in the result, the same way truly empty albums are kept
     final assetCount = _db.remoteAssetEntity.id.count(distinct: true);
+    final memberCount = _memberCount;
 
     final query = _db.remoteAlbumEntity.select().join([
       leftOuterJoin(
@@ -53,23 +94,12 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
             _db.remoteAssetEntity.deletedAt.isNull(),
         useColumns: false,
       ),
-      leftOuterJoin(
-        _db.remoteAlbumUserEntity,
-        _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id),
-        useColumns: false,
-      ),
-      innerJoin(
-        _db.userEntity,
-        _db.userEntity.id.equalsExp(_db.remoteAlbumUserEntity.userId) &
-            _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id) &
-            _db.remoteAlbumUserEntity.role.equalsValue(AlbumUserRole.owner),
-        useColumns: false,
-      ),
+      ..._ownerAndMemberJoins(),
     ]);
     query
       ..addColumns([assetCount])
       ..addColumns([_db.userEntity.name, _db.userEntity.id])
-      ..addColumns([_db.remoteAlbumUserEntity.userId.count(distinct: true)])
+      ..addColumns([memberCount])
       ..groupBy([_db.remoteAlbumEntity.id]);
 
     query.where(
@@ -100,7 +130,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
                 assetCount: row.read(assetCount) ?? 0,
                 ownerId: row.read(_db.userEntity.id)!,
                 ownerName: row.read(_db.userEntity.name)!,
-                isShared: row.read(_db.remoteAlbumUserEntity.userId.count(distinct: true))! > 0,
+                isShared: _sharedFrom(row.read(memberCount)),
               ),
         )
         .get();
@@ -108,6 +138,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
 
   Future<RemoteAlbum?> get(String albumId) {
     final assetCount = _db.remoteAssetEntity.id.count(distinct: true);
+    final memberCount = _memberCount;
 
     final query =
         _db.remoteAlbumEntity.select().join([
@@ -122,23 +153,12 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
                   _db.remoteAssetEntity.deletedAt.isNull(),
               useColumns: false,
             ),
-            leftOuterJoin(
-              _db.remoteAlbumUserEntity,
-              _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id),
-              useColumns: false,
-            ),
-            innerJoin(
-              _db.userEntity,
-              _db.userEntity.id.equalsExp(_db.remoteAlbumUserEntity.userId) &
-                  _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id) &
-                  _db.remoteAlbumUserEntity.role.equalsValue(AlbumUserRole.owner),
-              useColumns: false,
-            ),
+            ..._ownerAndMemberJoins(),
           ])
           ..where(_db.remoteAlbumEntity.id.equals(albumId))
           ..addColumns([assetCount])
           ..addColumns([_db.userEntity.name, _db.userEntity.id])
-          ..addColumns([_db.remoteAlbumUserEntity.userId.count(distinct: true)])
+          ..addColumns([memberCount])
           ..groupBy([_db.remoteAlbumEntity.id]);
 
     return query
@@ -149,7 +169,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
                 assetCount: row.read(assetCount) ?? 0,
                 ownerId: row.read(_db.userEntity.id)!,
                 ownerName: row.read(_db.userEntity.name)!,
-                isShared: row.read(_db.remoteAlbumUserEntity.userId.count(distinct: true))! > 0,
+                isShared: _sharedFrom(row.read(memberCount)),
               ),
         )
         .getSingleOrNull();
@@ -403,6 +423,8 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
   }
 
   Stream<RemoteAlbum?> watchAlbum(String albumId) {
+    final memberCount = _memberCount;
+
     final query =
         _db.remoteAlbumEntity.select().join([
             leftOuterJoin(
@@ -415,22 +437,11 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
               _db.remoteAssetEntity.id.equalsExp(_db.remoteAlbumAssetEntity.assetId),
               useColumns: false,
             ),
-            leftOuterJoin(
-              _db.remoteAlbumUserEntity,
-              _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id),
-              useColumns: false,
-            ),
-            innerJoin(
-              _db.userEntity,
-              _db.userEntity.id.equalsExp(_db.remoteAlbumUserEntity.userId) &
-                  _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id) &
-                  _db.remoteAlbumUserEntity.role.equalsValue(AlbumUserRole.owner),
-              useColumns: false,
-            ),
+            ..._ownerAndMemberJoins(),
           ])
           ..where(_db.remoteAlbumEntity.id.equals(albumId))
           ..addColumns([_db.userEntity.name, _db.userEntity.id])
-          ..addColumns([_db.remoteAlbumUserEntity.userId.count(distinct: true)])
+          ..addColumns([memberCount])
           ..groupBy([_db.remoteAlbumEntity.id]);
 
     return query.map((row) {
@@ -439,7 +450,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
           .toDto(
             ownerId: row.read(_db.userEntity.id)!,
             ownerName: row.read(_db.userEntity.name)!,
-            isShared: row.read(_db.remoteAlbumUserEntity.userId.count(distinct: true))! > 0,
+            isShared: _sharedFrom(row.read(memberCount)),
           );
 
       return album;
@@ -560,6 +571,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
     }
 
     final assetCount = _db.remoteAssetEntity.id.count(distinct: true);
+    final memberCount = _memberCount;
     final query =
         _db.remoteAlbumEntity.select().join([
             leftOuterJoin(
@@ -573,22 +585,11 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
                   _db.remoteAssetEntity.deletedAt.isNull(),
               useColumns: false,
             ),
-            leftOuterJoin(
-              _db.remoteAlbumUserEntity,
-              _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id),
-              useColumns: false,
-            ),
-            innerJoin(
-              _db.userEntity,
-              _db.userEntity.id.equalsExp(_db.remoteAlbumUserEntity.userId) &
-                  _db.remoteAlbumUserEntity.albumId.equalsExp(_db.remoteAlbumEntity.id) &
-                  _db.remoteAlbumUserEntity.role.equalsValue(AlbumUserRole.owner),
-              useColumns: false,
-            ),
+            ..._ownerAndMemberJoins(),
           ])
           ..where(_db.remoteAlbumEntity.id.isIn(albumIds))
           ..addColumns([assetCount])
-          ..addColumns([_db.remoteAlbumUserEntity.userId.count(distinct: true)])
+          ..addColumns([memberCount])
           ..addColumns([_db.userEntity.name, _db.userEntity.id])
           ..groupBy([_db.remoteAlbumEntity.id]);
 
@@ -599,7 +600,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
               .toDto(
                 ownerId: row.read(_db.userEntity.id)!,
                 ownerName: row.read(_db.userEntity.name) ?? '',
-                isShared: row.read(_db.remoteAlbumUserEntity.userId.count(distinct: true))! > 0,
+                isShared: _sharedFrom(row.read(memberCount)),
                 assetCount: row.read(assetCount) ?? 0,
               ),
         )
