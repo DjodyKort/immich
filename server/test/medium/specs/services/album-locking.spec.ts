@@ -271,6 +271,62 @@ describe('locking an existing album', () => {
   // "put this timeline photo in my locked album" was two operations that could not be expressed
   // together. This route is the one operation, and these assert the whole of it: the photo ends up
   // locked, in this album, and out of the album it came from.
+  // `POST /albums` with `isLocked`, which assembles a locked album out of assets that are already in
+  // the locked folder. The rest of this file is about `setLocked`, which converts an album that exists;
+  // this is the other way to end up with one.
+  describe('assembling a new locked album', () => {
+    it('should assemble one out of locked assets that are in no album', async () => {
+      const { sut, ctx } = setup();
+      const { assets, elevated } = await seed(ctx);
+      await ctx.get(AssetRepository).updateAll([assets[0].id], { visibility: AssetVisibility.Locked });
+
+      const album = await sut.create(elevated, { albumName: 'assembled', assetIds: [assets[0].id], isLocked: true });
+
+      expect(album).toMatchObject({ isLocked: true });
+      await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [assets[0].id])).resolves.toEqual(
+        new Set([assets[0].id]),
+      );
+    });
+
+    // The regression. An asset belongs to at most one locked album at a time -- `addAssets` and the
+    // bulk add-to-albums path have both enforced that from the start, via
+    // `getAssetIdsInOtherLockedAlbums`. This path never did, and `AlbumRepository.create` inserts its
+    // `album_asset` rows unconditionally, so building a second locked album out of the first one's
+    // contents put those assets in *both*.
+    //
+    // Not a theoretical reach: the locked folder lists every locked asset, members of locked albums
+    // included, and both clients offer "create a locked album from this selection" over that list.
+    it('should refuse assets that already belong to another locked album', async () => {
+      const { sut, ctx } = setup();
+      const { album, assets, elevated } = await seed(ctx);
+      await sut.setLocked(elevated, album.id, { isLocked: true });
+
+      await expect(
+        sut.create(elevated, { albumName: 'second home', assetIds: [assets[0].id], isLocked: true }),
+      ).rejects.toThrow(/already in a locked album/);
+
+      // The assertion that actually pins the invariant. Throwing and creating the album anyway would
+      // satisfy the line above; what matters is that the asset still has exactly one album.
+      const memberships = await ctx.database
+        .selectFrom('album_asset')
+        .select('albumId')
+        .where('assetId', '=', assets[0].id)
+        .execute();
+      expect(memberships.map(({ albumId }) => albumId)).toEqual([album.id]);
+    });
+
+    // The neighbouring refusal, kept next to it so the two cannot drift into disagreeing about which
+    // one fires first: an unlocked asset is refused for a different reason, and refused it stays.
+    it('should still refuse assets that are not locked at all', async () => {
+      const { sut, ctx } = setup();
+      const { assets, elevated } = await seed(ctx);
+
+      await expect(
+        sut.create(elevated, { albumName: 'premature', assetIds: [assets[0].id], isLocked: true }),
+      ).rejects.toThrow(/already locked/);
+    });
+  });
+
   describe('moving timeline assets straight into a locked album', () => {
     it('should lock the assets, add them, and take them out of their other albums', async () => {
       const { sut, ctx } = setup();

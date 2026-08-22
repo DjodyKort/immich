@@ -386,22 +386,29 @@ export class AlbumRepository {
    * `excludeAlbumId`. An asset can only ever be in one locked album at a time, so this is used to
    * reject adding an already-locked-album asset into a different locked album, rather than
    * silently moving it.
+   *
+   * `excludeAlbumId` is omitted when there is no album to exclude yet -- `AlbumService.create` runs
+   * this before the album it would exclude exists -- and the question is then simply "is any of
+   * these already in a locked album". A sentinel UUID would have worked and would have read as one.
    */
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.UUID] })
-  async getAssetIdsInOtherLockedAlbums(assetIds: string[], excludeAlbumId: string): Promise<Set<string>> {
+  async getAssetIdsInOtherLockedAlbums(assetIds: string[], excludeAlbumId?: string): Promise<Set<string>> {
     if (assetIds.length === 0) {
       return new Set();
     }
 
-    return this.db
+    let query = this.db
       .selectFrom('album_asset')
       .innerJoin('album', 'album.id', 'album_asset.albumId')
       .select('album_asset.assetId')
       .where('album_asset.assetId', 'in', assetIds)
-      .where('album.isLocked', '=', true)
-      .where('album.id', '!=', excludeAlbumId)
-      .execute()
-      .then((rows) => new Set(rows.map((row) => row.assetId)));
+      .where('album.isLocked', '=', true);
+
+    if (excludeAlbumId !== undefined) {
+      query = query.where('album.id', '!=', excludeAlbumId);
+    }
+
+    return query.execute().then((rows) => new Set(rows.map((row) => row.assetId)));
   }
 
   /**
