@@ -22,18 +22,26 @@ import 'package:immich_mobile/presentation/actions/stack.action.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_selector.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/base_bottom_sheet.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/action.provider.dart';
-import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 
 /// The selection sheet for a single album.
 ///
-/// Adapts to a locked album rather than being a second widget for it. A locked album may only hold
-/// locked assets and an ordinary one may only hold unlocked assets, so an unfiltered album list here
-/// offered a locked album's contents a choice of destinations the server refuses -- and the create
-/// button beside it built an *unlocked* album out of locked assets, which the server assembles empty.
-/// Both are decided by [RemoteAlbum.isLocked] on the album being viewed, because that is what decides
-/// the visibility of everything selectable in it.
+/// The add-to-album half is withheld inside a locked album, because there is nothing it could do that
+/// the server accepts. Every asset shown is already in this album, so adding it here is a duplicate;
+/// an asset may belong to **at most one locked album** (`getAssetIdsInOtherLockedAlbums`, rejected as
+/// `ALREADY_IN_LOCKED_ALBUM`), so every other locked album is a rejection; and an ordinary album may
+/// not hold a locked asset at all. The create button beside it is worse than useless there --
+/// `createAlbum` does not evict from other locked albums, so building one out of assets that are
+/// already in a locked album puts them in two, which is the invariant this rule exists to protect.
+///
+/// Moving between locked albums is a real thing to want and is [MoveToLockedAlbumAction]'s job, which
+/// goes through `POST /albums/:id/locked-assets`. That route calls `moveIntoLockedFolder`, which
+/// removes the assets from every other album in the same operation -- a move, atomically, rather than
+/// the remove-then-add this sheet would have had to fake.
+///
+/// The web reached the same conclusion first and for the same reason; see the `album.isLocked` guard
+/// in `routes/(user)/albums/[albumId=id]`.
 class RemoteAlbumBottomSheet extends ConsumerStatefulWidget {
   final RemoteAlbum album;
   const RemoteAlbumBottomSheet({super.key, required this.album});
@@ -80,13 +88,6 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
             ? context.t.add_to_album_bottom_sheet_already_exists(album: album.name)
             : context.t.add_to_album_bottom_sheet_added(album: album.name),
       );
-
-      // The locked folder's album section reads its own provider, so a locked album that just gained
-      // members keeps showing its old count until this is invalidated. Same reason the locked folder's
-      // sheet does it.
-      if (album.isLocked) {
-        ref.invalidate(lockedRemoteAlbumsProvider);
-      }
     }
 
     Future<void> onKeyboardExpand() {
@@ -128,15 +129,8 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
           ),
         ],
       ],
-      slivers: ownsAlbum
-          ? [
-              AddToAlbumHeader(createLocked: isLocked),
-              AlbumSelector(
-                onAlbumSelected: addToAlbum,
-                onKeyboardExpanded: onKeyboardExpand,
-                albumFilter: isLocked ? (album) => album.isLocked : null,
-              ),
-            ]
+      slivers: ownsAlbum && !isLocked
+          ? [const AddToAlbumHeader(), AlbumSelector(onAlbumSelected: addToAlbum, onKeyboardExpanded: onKeyboardExpand)]
           : null,
     );
   }

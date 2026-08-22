@@ -25,6 +25,11 @@ class _MockElevation extends Mock implements SessionElevationService {}
 ///
 /// The picker itself is not driven here. It needs `AlbumSelector` over `remoteAlbumProvider`, and what
 /// is worth pinning is which sessions and selections reach it at all.
+///
+/// The visibility cases below are one assertion each and look thin for it. They are not about the
+/// button: they are about which *views* offer this action, since `source` is `.timeline` in every
+/// sheet and an asset's own visibility is the only thing that distinguishes the locked folder and a
+/// locked album from the ordinary timeline.
 void main() {
   late PresentationContext context;
   late _MockElevation elevation;
@@ -75,15 +80,20 @@ void main() {
       expect(theButton(), findsOneWidget);
     });
 
-    // Assets already in the locked folder have the locked folder's own sheet, which carries a locked
-    // album selector. Offering this for them too would be two routes to one outcome.
-    testWidgets('is withheld when every selected asset is already locked', (tester) async {
+    // This used to be withheld, on the grounds that the locked views carry their own album selector.
+    // They do, and it cannot do this job: those selectors post to the ordinary add-assets route, and
+    // an asset may belong to at most one locked album, so for anything already in one every locked
+    // destination that route offers comes back `ALREADY_IN_LOCKED_ALBUM`. This action's route calls
+    // `moveIntoLockedFolder`, which removes the assets from every other album in the same operation,
+    // making it the only way to move photos *between* locked albums -- reachable from the locked
+    // folder and from inside a locked album, which are exactly the views that had it hidden.
+    testWidgets('is offered when every selected asset is already locked, to move it between albums', (tester) async {
       await pumpAction(tester, {owned(visibility: .locked)}, elevated: true);
 
-      expect(theButton(), findsNothing);
+      expect(theButton(), findsOneWidget);
     });
 
-    testWidgets('is offered for a mixed selection, for the assets that are not locked yet', (tester) async {
+    testWidgets('is offered for a mixed selection, which the one route locks and moves together', (tester) async {
       await pumpAction(tester, {owned(), owned(visibility: .locked)}, elevated: true);
 
       expect(theButton(), findsOneWidget);
