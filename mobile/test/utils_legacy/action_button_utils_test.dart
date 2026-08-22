@@ -224,6 +224,52 @@ void main() {
       });
     });
 
+    // The viewer's kebab menu had no entry for this at all, so moving a single photo into a locked
+    // album was reachable from the selection sheets and nowhere else. Selecting the one asset worked,
+    // which is what kept it looking like a preference rather than a gap.
+    group('moveToLockedAlbum button', () {
+      ActionButtonContext contextFor(BaseAsset asset, {bool isOwner = true, bool isInLockedView = false}) {
+        return ActionButtonContext(
+          asset: asset,
+          isOwner: isOwner,
+          isArchived: false,
+          isTrashEnabled: true,
+          isInLockedView: isInLockedView,
+          currentAlbum: null,
+          advancedTroubleshooting: false,
+          isStacked: false,
+          source: ActionSource.timeline,
+        );
+      }
+
+      test('should show for an owned timeline asset', () {
+        expect(ActionButtonType.moveToLockedAlbum.shouldShow(contextFor(createRemoteAsset())), isTrue);
+      });
+
+      // The case that separates this from `moveToLockFolder` beside it, which is gated on being *out*
+      // of the locked view. `POST /albums/:id/locked-assets` evicts from the old album, so from inside
+      // the locked folder or a locked album this is how a photo moves to a different locked album --
+      // the album selectors on those views cannot, since an asset may be in at most one locked album
+      // and the ordinary add-assets route refuses rather than moves.
+      test('should show inside the locked view, where it is the only way to move between albums', () {
+        final asset = createRemoteAsset(visibility: AssetVisibility.locked);
+
+        expect(ActionButtonType.moveToLockedAlbum.shouldShow(contextFor(asset, isInLockedView: true)), isTrue);
+      });
+
+      test('should not show for an asset owned by someone else', () {
+        final context = contextFor(createRemoteAsset(), isOwner: false);
+
+        expect(ActionButtonType.moveToLockedAlbum.shouldShow(context), isFalse);
+      });
+
+      // Nothing to move: a locked album holds remote assets, and the server is the only thing that can
+      // put one there.
+      test('should not show for a local-only asset', () {
+        expect(ActionButtonType.moveToLockedAlbum.shouldShow(contextFor(createLocalAsset())), isFalse);
+      });
+    });
+
     group('shareLink button', () {
       test('should show when not in locked view and asset has remote', () {
         final remoteAsset = createRemoteAsset();
