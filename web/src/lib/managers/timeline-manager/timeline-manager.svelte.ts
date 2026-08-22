@@ -123,6 +123,10 @@ export class TimelineManager extends VirtualScrollManager {
           }
         },
         AssetsUnarchive: (assets) => this.upsertAssets(assets),
+        // Its own event rather than `AlbumUpdate`, which also fires for renames and description
+        // edits: those change nothing about which photos are on a timeline, and a full reload for
+        // them would cost the scroll position for no reason.
+        AlbumVisibilityChange: () => void this.reload(),
       }),
     );
   }
@@ -281,6 +285,29 @@ export class TimelineManager extends VirtualScrollManager {
       return;
     }
 
+    await this.#reinitialize(options);
+  }
+
+  /**
+   * Re-read every bucket from the server, keeping the current options.
+   *
+   * For a change whose effect on the timeline cannot be enumerated client-side. An album's visibility
+   * rule is the case that needed it: it moves an unknown set of photos on or off the timeline, and
+   * nothing in the response says which. Every other timeline mutation names its assets and goes
+   * through `upsertAssets` / `removeAssets` instead, which is cheaper and keeps scroll position.
+   *
+   * `updateOptions` cannot serve this: it short-circuits when the options are unchanged, which they
+   * are here -- only the server's answer to them has changed.
+   */
+  async reload() {
+    if (!this.isInitialized) {
+      return;
+    }
+
+    await this.#reinitialize(this.#options);
+  }
+
+  async #reinitialize(options: TimelineManagerOptions) {
     this.suspendTransitions = true;
     try {
       await this.initTask.reset();

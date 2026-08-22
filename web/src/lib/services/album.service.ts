@@ -373,6 +373,9 @@ export const handleSetAlbumLocked = async (album: AlbumResponseDto, isLocked: bo
   try {
     const response = await setAlbumLocked({ id: album.id, albumSetLockedDto: { isLocked } });
     eventManager.emit('AlbumUpdate', response);
+    // Locking rewrites the visibility of every member asset, so every timeline showing them is now
+    // wrong. Same reload the album rule triggers, for the same reason: the set is not enumerable here.
+    eventManager.emit('AlbumVisibilityChange', response);
     toastManager.primary($t(isLocked ? 'lock_album_locked' : 'lock_album_unlocked'));
     return true;
   } catch (error) {

@@ -69,6 +69,17 @@
    */
   const isShared = $derived(album.albumUsers.length > 1 || sharedLinks.length > 0);
 
+  /**
+   * Sharing blocks the *locking* direction only.
+   *
+   * `AlbumService.setLocked` makes the check inside `if (dto.isLocked)` — unlocking a shared album is
+   * deliberately permitted, since the harm being prevented is handing someone else's session access to
+   * a locked album, and unlocking removes that exposure rather than creating it. Disabling both
+   * directions here made the web stricter than the server in the one direction where being stricter
+   * traps the user: an album that became shared after it was locked could never be unlocked again.
+   */
+  const lockBlockedByShare = $derived(!album.isLocked && isShared);
+
   onMount(async () => {
     sharedLinks = await getAllSharedLinks({ albumId: album.id });
   });
@@ -119,8 +130,8 @@
           -->
           <Field
             label={$t('lock_album')}
-            description={isShared ? $t('lock_album_error_shared') : $t('lock_album_description')}
-            disabled={readOnly || isShared}
+            description={lockBlockedByShare ? $t('lock_album_error_shared') : $t('lock_album_description')}
+            disabled={readOnly || lockBlockedByShare}
           >
             <Switch checked={album.isLocked} onCheckedChange={(checked) => handleSetAlbumLocked(album, checked)} />
           </Field>
