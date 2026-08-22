@@ -230,15 +230,9 @@ export class AlbumService extends BaseService {
       throw new BadRequestException('Locking or unlocking an album requires an elevated session');
     }
 
-    const album = await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth));
-
-    // `Permission.AlbumUpdate` is granted to editors too, and handing an editor the ability to move
-    // the owner's photos into a locked folder they cannot open is not a power sharing should confer.
-    // Ownership lives in `albumUsers` as the Owner role rather than a column on the album.
-    const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
-    if (owner?.user.id !== auth.user.id) {
-      throw new BadRequestException('Only the album owner can lock or unlock an album');
-    }
+    // Owner only: handing an editor the ability to move the owner's photos into a locked folder they
+    // cannot open is not a power sharing should confer.
+    const album = await this.findOwnedOrFail(auth, id, 'Only the album owner can lock or unlock an album');
 
     if (album.isLocked === dto.isLocked) {
       return mapAlbum(album);
@@ -294,6 +288,8 @@ export class AlbumService extends BaseService {
       assetIds.map((assetId) => ({ name: JobName.SidecarWrite, data: { id: assetId } })),
     );
 
+    await this.notifyAlbumChanged(album);
+
     return mapAlbum({ ...updated, assets: album.assets });
   }
 
@@ -317,12 +313,11 @@ export class AlbumService extends BaseService {
   async setHiddenFrom(auth: AuthDto, id: string, dto: AlbumSetHiddenFromDto): Promise<AlbumResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
 
-    const album = await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth));
-
-    const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
-    if (owner?.user.id !== auth.user.id) {
-      throw new BadRequestException("Only the album owner can change where an album's photos appear");
-    }
+    const album = await this.findOwnedOrFail(
+      auth,
+      id,
+      "Only the album owner can change where an album's photos appear",
+    );
 
     const hiddenFrom = toHiddenFromMask(dto.hiddenFrom);
     if (album.hiddenFrom === hiddenFrom) {
@@ -331,7 +326,83 @@ export class AlbumService extends BaseService {
 
     const updated = await this.albumRepository.update(album.id, { id: album.id, hiddenFrom }, auth.user.id);
 
+    await this.notifyAlbumChanged(album);
+
     return mapAlbum({ ...updated, assets: album.assets });
+  }
+
+  /**
+   * Lock the named assets and put them in this locked album, in one operation.
+   *
+   * The gap this closes: a locked album may only contain assets that are already locked, and locking an
+   * asset evicts it from every album it is in. So "put this timeline photo in my locked album" was two
+   * operations that could not be expressed together -- lock it (it leaves every album, including the one
+   * you wanted), then find it in the locked folder and add it. On the phone that meant leaving the
+   * timeline, entering the PIN, and hunting for the photo again.
+   *
+   * Its own route rather than a flag on `addAssets` for the reason `setLocked` is its own route: it
+   * rewrites asset visibility and other albums' membership, and half-applying that is unrecoverable
+   * without knowing what the previous state was. Doing it client-side as two calls is the version to
+   * avoid outright -- an interruption between them leaves photos locked and in no album at all, which
+   * is indistinguishable from having lost them.
+   *
+   * Two consequences the caller has to have agreed to, both inherent rather than fixable here. An
+   * asset that was **archived** returns to the *timeline* if the album is later unlocked, because
+   * `visibility` is one exclusive column and locking overwrote the archive state. And the asset leaves
+   * every other album, which is the invariant that keeps a locked photo unreachable through an
+   * ordinary album's membership.
+   */
+  async addLockedAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
+    await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
+
+    // Required for the same reason `setLocked` requires it: this puts photos somewhere the session
+    // would not otherwise be able to reach them.
+    if (!auth.session?.hasElevatedPermission) {
+      throw new BadRequestException('Moving assets into a locked album requires an elevated session');
+    }
+
+    const album = await this.findOwnedOrFail(auth, id, 'Only the album owner can add to a locked album');
+
+    // An ordinary album has `addAssets`, which does not lock anything. Refusing rather than falling
+    // back to it keeps this route from being a way to lock photos by accident.
+    if (!album.isLocked) {
+      throw new BadRequestException('This album is not locked. Use the ordinary add-assets endpoint');
+    }
+
+    // `Permission.AssetUpdate` rather than `AssetShare`: share hardcodes non-elevated access, so every
+    // already-locked asset in the request would be filtered out and silently dropped. Update respects
+    // elevation and is the right question anyway -- this changes the asset, it does not share it. Same
+    // reasoning as `create` and `addAssets` above.
+    const allowedIds = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
+
+    // Validate against what was asked for, not what survived the filter: otherwise an asset belonging
+    // to someone else is dropped from the result instead of failing the request, and the user is left
+    // believing photos moved that did not.
+    if (allowedIds.size !== dto.ids.length) {
+      throw new BadRequestException('A locked album can only contain assets you own');
+    }
+
+    const existing = await this.albumRepository.getAssetIds(id, dto.ids);
+    const toAdd = dto.ids.filter((assetId) => !existing.has(assetId));
+
+    if (toAdd.length > 0) {
+      await this.assetRepository.updateAll(toAdd, { visibility: AssetVisibility.Locked });
+      await this.albumRepository.removeAssetsFromOtherAlbums(toAdd, id);
+      await this.albumRepository.addAssetIds(id, toAdd);
+
+      // Same follow-up every visibility change queues, so the sidecars reflect the new state.
+      await this.jobRepository.queueAll(
+        toAdd.map((assetId) => ({ name: JobName.SidecarWrite, data: { id: assetId } })),
+      );
+
+      await this.notifyAlbumChanged(album);
+    }
+
+    return dto.ids.map((assetId) => ({
+      id: assetId,
+      success: !existing.has(assetId),
+      ...(existing.has(assetId) && { error: BulkIdErrorReason.DUPLICATE }),
+    }));
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -553,6 +624,15 @@ export class AlbumService extends BaseService {
 
     const album = await this.findOrFail(id, auth.user.id, { withAssets: false }, forViewer(auth));
 
+    // The mirror of `setLocked`'s "unshare the album before locking it". Without it the invariant that
+    // check enforces is only true at the moment of locking: an elevated owner could lock an album and
+    // then invite someone, producing a shared locked album -- which fails closed for the recipient, but
+    // is exactly the state the lock switch used to refuse to unlock. Refuse the sharing instead, since
+    // that is the half the user can still change their mind about.
+    if (album.isLocked) {
+      throw new BadRequestException('A locked album cannot be shared. Unlock it first');
+    }
+
     for (const { userId, role } of albumUsers) {
       if (role === AlbumUserRole.Owner) {
         throw new BadRequestException('Cannot add another owner');
@@ -618,5 +698,46 @@ export class AlbumService extends BaseService {
 
   private findOrFail(id: string, authUserId: string, options: AlbumInfoOptions, ctx: PolicyContext) {
     return findOrFail(() => this.albumRepository.getById(id, options, ctx, authUserId), 'Album');
+  }
+
+  /**
+   * The album, refusing anyone but its owner, with [message] naming the operation.
+   *
+   * `Permission.AlbumUpdate` is granted to editors too, so every operation that rewrites the album's
+   * *contents* rather than its label has to narrow to the owner on its own. Ownership lives in
+   * `albumUsers` as the Owner role rather than as a column on `album`, which is why this is a find
+   * rather than a predicate.
+   */
+  /**
+   * Tell every member's clients that the album changed, so they re-read instead of going stale.
+   *
+   * `AlbumUpdate` reaches the browser and the phone by two different routes, and both matter here.
+   * `NotificationService.onAlbumUpdate` turns it into the `on_album_update` websocket message; mobile
+   * maps that straight onto `backgroundSync.syncRemote`, and web's timeline listens for it. Without
+   * this, `setLocked` and `setHiddenFrom` -- the two operations with the largest fan-out onto member
+   * assets, since both rewrite state on every photo in the album -- were the only album mutations that
+   * told nobody. The visible symptom was having to restart the app before a rule change showed up.
+   *
+   * `recipientIds` stays empty on purpose: it drives the "album updated" *email*, which is for someone
+   * else adding photos to an album you share. Both callers here are owner-only operations on the
+   * owner's own album, so an email would be the owner mailing themselves.
+   */
+  private async notifyAlbumChanged(album: { id: string; albumUsers: { user: { id: string } }[] }) {
+    await this.eventRepository.emit('AlbumUpdate', {
+      id: album.id,
+      userIds: album.albumUsers.map(({ user }) => user.id),
+      recipientIds: [],
+    });
+  }
+
+  private async findOwnedOrFail(auth: AuthDto, id: string, message: string) {
+    const album = await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth));
+
+    const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
+    if (owner?.user.id !== auth.user.id) {
+      throw new BadRequestException(message);
+    }
+
+    return album;
   }
 }

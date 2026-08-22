@@ -489,6 +489,26 @@ describe(AlbumService.name, () => {
       expect(mocks.album.update).not.toHaveBeenCalled();
     });
 
+    // The mirror of setLocked's "unshare the album before locking it". Without this the invariant only
+    // held at the moment of locking, and the resulting shared locked album was the state the lock switch
+    // then refused to unlock.
+    it('should throw an error if the album is locked', async () => {
+      const album = AlbumFactory.create({ isLocked: true });
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const invitee = UserFactory.create();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      // Resolvable on purpose: with the invitee missing this would throw 'Invalid user' instead, and
+      // pass whether or not the locked-album refusal exists.
+      mocks.user.get.mockResolvedValue(invitee);
+
+      await expect(
+        sut.addUsers(AuthFactory.create(owner), album.id, { albumUsers: [{ userId: invitee.id }] }),
+      ).rejects.toThrow('A locked album cannot be shared. Unlock it first');
+      expect(mocks.albumUser.create).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
     it('should skip if the userId is already added', async () => {
       const userId = newUuid();
       const album = AlbumFactory.from().albumUser({ userId }).build();

@@ -4064,6 +4064,22 @@ export function setAlbumLocked({ id, albumSetLockedDto }: {
     })));
 }
 /**
+ * Move assets into a locked album
+ */
+export function addLockedAssetsToAlbum({ id, bulkIdsDto }: {
+    id: string;
+    bulkIdsDto: BulkIdsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BulkIdResponseDto[];
+    }>(`/albums/${encodeURIComponent(id)}/locked-assets`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: bulkIdsDto
+    })));
+}
+/**
  * Retrieve album map markers
  */
 export function getAlbumMapMarkers({ id, key, slug }: {

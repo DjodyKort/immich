@@ -8,7 +8,7 @@ import { AssetFactory } from 'test/factories/asset.factory';
 import { SharedLinkFactory } from 'test/factories/shared-link.factory';
 import { authStub } from 'test/fixtures/auth.stub';
 import { sharedLinkStub } from 'test/fixtures/shared-link.stub';
-import { getForSharedLink } from 'test/mappers';
+import { getForAlbum, getForSharedLink } from 'test/mappers';
 import { factory } from 'test/small.factory';
 import { newTestService, ServiceMocks } from 'test/utils';
 
@@ -136,6 +136,20 @@ describe(SharedLinkService.name, () => {
       await expect(
         sut.create(authStub.admin, { type: SharedLinkType.Individual, assetIds: ['asset-1'] }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // The other way into an album, so it refuses what `AlbumService.addUsers` refuses. `AlbumShare`
+    // resolves through `forViewer`, so an elevated owner passes the access check and only this stops
+    // them handing out a link to a locked album.
+    it('should not allow an album shared link for a locked album', async () => {
+      const album = AlbumFactory.create({ isLocked: true });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(
+        sut.create(authStub.admin, { type: SharedLinkType.Album, albumId: album.id }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.sharedLink.create).not.toHaveBeenCalled();
     });
 
     it('should create an album shared link', async () => {

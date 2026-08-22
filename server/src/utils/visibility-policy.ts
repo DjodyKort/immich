@@ -177,6 +177,22 @@ const admitted = (surface: Surface, ctx: PolicyContext): AssetVisibility[] => {
 };
 
 /**
+ * The admitted set as inlined SQL literals, shared by {@link withSurface} and
+ * {@link surfacePredicate} so the two cannot answer the policy table differently.
+ *
+ * `sql.lit` rather than bound parameters, matching the helper this module replaced: it keeps the
+ * generated fixtures under `src/queries` stable and keeps the planner matching the partial index
+ * `asset_id_timeline_notDeleted_idx`, whose predicate is written out with literals.
+ *
+ * Only the *mapping* is shared, not the whole predicate. Collapsing `withSurface` into
+ * `qb.where((eb) => surfacePredicate(eb, ...))` was tried and rejected: `eb.and([...])` parenthesises,
+ * so every generated `.sql` fixture would gain a pair of brackets around a clause that means exactly
+ * what it meant before. That is churn across the fork's whole diff for no semantic gain.
+ */
+const admittedLiterals = (surface: Surface, ctx: PolicyContext) =>
+  admitted(surface, ctx).map((visibility) => sql.lit(visibility));
+
+/**
  * The bit each surface occupies in `asset.hiddenFrom`, the per-asset exclusion mask.
  *
  * **These values are persisted in the database. Never renumber them and never reuse a retired bit.**
@@ -358,11 +374,7 @@ const notExcludedPerAsset = <DBT, TB extends keyof DBT & string>(
  */
 export function withSurface<O>(qb: SelectQueryBuilder<DB, 'asset', O>, surface: Surface, ctx: PolicyContext) {
   return qb
-    .where(
-      'asset.visibility',
-      'in',
-      admitted(surface, ctx).map((visibility) => sql.lit(visibility)),
-    )
+    .where('asset.visibility', 'in', admittedLiterals(surface, ctx))
     .where((eb) => notExcludedPerAsset(eb, surface));
 }
 
@@ -399,11 +411,7 @@ export function surfacePredicate<DBT, TB extends keyof DBT & string>(
   ctx: PolicyContext,
 ): Expression<SqlBool> {
   return asAssetBuilder(eb).and([
-    asAssetBuilder(eb)(
-      'asset.visibility',
-      'in',
-      admitted(surface, ctx).map((visibility) => sql.lit(visibility)),
-    ),
+    asAssetBuilder(eb)('asset.visibility', 'in', admittedLiterals(surface, ctx)),
     notExcludedPerAsset(eb, surface),
   ]);
 }
