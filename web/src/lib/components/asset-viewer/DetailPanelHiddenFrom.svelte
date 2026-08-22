@@ -1,6 +1,7 @@
 <script lang="ts">
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { AssetSurface, type AssetResponseDto } from '@immich/sdk';
+  import { hideFromPlaceLabels } from '$lib/utils/hidden-from';
+  import { AssetVisibility, type AssetResponseDto } from '@immich/sdk';
   import { Badge, Text } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
@@ -11,14 +12,11 @@
 
   let { asset, isOwner }: Props = $props();
 
-  const labels = $derived<Record<AssetSurface, string>>({
-    [AssetSurface.Timeline]: $t('hide_from_place_timeline'),
-    [AssetSurface.Search]: $t('hide_from_place_search'),
-    [AssetSurface.Map]: $t('hide_from_place_map'),
-    [AssetSurface.People]: $t('hide_from_place_people'),
-    [AssetSurface.Memories]: $t('hide_from_place_memories'),
-    [AssetSurface.Folders]: $t('hide_from_place_folders'),
-  });
+  // The shared table rather than a sixth copy of the same six strings. It also carries the `locked`
+  // relabel, which this panel was missing: for an asset in the locked folder the timeline bit governs
+  // that grid, so the hide-from modal calls the row "Locked folder" while this said "Main timeline" --
+  // one state described two ways, in two places a person sees within a tap of each other.
+  const labels = $derived(hideFromPlaceLabels($t, { locked: asset.visibility === AssetVisibility.Locked }));
 
   // `hiddenFrom` is always present on the response, and empty for the overwhelming majority of
   // assets -- so this whole section costs nothing until someone has actually excluded something.
@@ -33,7 +31,7 @@
     <section class="flex flex-wrap gap-1 pt-2" data-testid="detail-panel-hidden-from">
       {#each hiddenFrom as surface (surface)}
         <Badge size="small" shape="round">
-          <span class="px-2 font-light">{labels[surface]}</span>
+          <span class="px-2 font-light">{labels.get(surface)?.label ?? surface}</span>
         </Badge>
       {/each}
     </section>

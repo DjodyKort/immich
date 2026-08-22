@@ -19,6 +19,7 @@ import { MapMarkerResponseDto } from 'src/dtos/map.dto';
 import { AlbumUserRole, AssetVisibility, JobName, Permission } from 'src/enum';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository';
 import { BaseService } from 'src/services/base.service';
+import { LockedAlbumError } from 'src/utils/album.util';
 import { addAssets, removeAssets } from 'src/utils/asset.util';
 import { asDateTimeString } from 'src/utils/date';
 import { findOrFail } from 'src/utils/misc';
@@ -151,7 +152,7 @@ export class AlbumService extends BaseService {
     if (dto.isLocked && requestedAssetIds.length > 0) {
       const lockedAssetIds = await this.assetRepository.getLockedAssetIds(requestedAssetIds);
       if (lockedAssetIds.size !== requestedAssetIds.length || assetIds.length !== requestedAssetIds.length) {
-        throw new BadRequestException('A locked album can only contain assets that are already locked');
+        throw new BadRequestException(LockedAlbumError.NeedsLockedAssets);
       }
     }
 
@@ -410,7 +411,7 @@ export class AlbumService extends BaseService {
       // the locked folder) -- reject outright rather than silently dropping the offending assets.
       const lockedAssetIds = await this.assetRepository.getLockedAssetIds(dto.ids);
       if (lockedAssetIds.size !== dto.ids.length) {
-        throw new BadRequestException('A locked album can only contain assets that are already locked');
+        throw new BadRequestException(LockedAlbumError.NeedsLockedAssets);
       }
 
       // Can't use the shared addAssets() util below here: it gates each asset via
@@ -513,7 +514,7 @@ export class AlbumService extends BaseService {
       // the locked folder) -- reject outright rather than converting/evicting them.
       const lockedAssetIds = await this.assetRepository.getLockedAssetIds(dto.assetIds);
       if (lockedAssetIds.size !== dto.assetIds.length) {
-        throw new BadRequestException('A locked album can only contain assets that are already locked');
+        throw new BadRequestException(LockedAlbumError.NeedsLockedAssets);
       }
 
       // An asset can only ever belong to one locked album at a time -- if it's already in a
@@ -619,7 +620,7 @@ export class AlbumService extends BaseService {
     // is exactly the state the lock switch used to refuse to unlock. Refuse the sharing instead, since
     // that is the half the user can still change their mind about.
     if (album.isLocked) {
-      throw new BadRequestException('A locked album cannot be shared. Unlock it first');
+      throw new BadRequestException(LockedAlbumError.CannotBeShared);
     }
 
     for (const { userId, role } of albumUsers) {
