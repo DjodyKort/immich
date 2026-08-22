@@ -15,6 +15,7 @@ import 'package:immich_mobile/presentation/actions/delete.action.dart';
 import 'package:immich_mobile/presentation/actions/download.action.dart';
 import 'package:immich_mobile/presentation/actions/hide_from_places.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
+import 'package:immich_mobile/presentation/actions/move_to_locked_album.action.dart';
 import 'package:immich_mobile/presentation/actions/open_in_browser.action.dart';
 import 'package:immich_mobile/presentation/actions/remove_from_album.action.dart';
 import 'package:immich_mobile/presentation/actions/restore.action.dart';
@@ -79,6 +80,7 @@ enum ActionButtonType {
   archive,
   unarchive,
   moveToLockFolder,
+  moveToLockedAlbum,
   removeFromLockFolder,
   removeFromAlbum,
   restoreTrash,
@@ -116,6 +118,13 @@ enum ActionButtonType {
       ActionButtonType.moveToLockFolder =>
         context.isOwner && //
             !context.isInLockedView && //
+            context.asset.hasRemote,
+      // Unlike the two either side of it, this is not gated on which view you are in. It locks an
+      // ordinary photo into a locked album from the timeline, and moves an already-locked one between
+      // locked albums from inside one -- `POST /albums/:id/locked-assets` evicts from the old album, so
+      // both are the same operation. The action itself withholds when nothing is selectable.
+      ActionButtonType.moveToLockedAlbum =>
+        context.isOwner && //
             context.asset.hasRemote,
       ActionButtonType.removeFromLockFolder =>
         context.isOwner && //
@@ -202,6 +211,7 @@ enum ActionButtonType {
       ActionButtonType.delete => ActionMenuItem(action: DeleteAction(source: context.source)),
       ActionButtonType.moveToLockFolder ||
       ActionButtonType.removeFromLockFolder => ActionMenuItem(action: LockAction(source: context.source)),
+      ActionButtonType.moveToLockedAlbum => ActionMenuItem(action: MoveToLockedAlbumAction(source: context.source)),
       ActionButtonType.deleteLocal => ActionMenuItem(action: CleanupLocalAction(source: context.source)),
       ActionButtonType.upload => ActionMenuItem(
         action: UploadAction(source: context.source, showProgress: context.source == ActionSource.viewer),
@@ -258,6 +268,7 @@ enum ActionButtonType {
     ActionButtonType.archive => 10,
     ActionButtonType.unarchive => 10,
     ActionButtonType.moveToLockFolder => 10,
+    ActionButtonType.moveToLockedAlbum => 10,
     ActionButtonType.deleteLocal => 10,
     ActionButtonType.delete => 10,
     ActionButtonType.restoreTrash => 10,
