@@ -266,8 +266,7 @@ export class AlbumService extends BaseService {
         throw new BadRequestException('An album can only be locked if you own every asset in it');
       }
 
-      await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Locked });
-      await this.albumRepository.removeAssetsFromOtherAlbums(assetIds, id);
+      await this.moveIntoLockedFolder(assetIds, id);
     } else {
       // Timeline, not archive: it is the default visibility and the same value the single-asset "remove
       // from locked folder" action restores. Memberships are left alone -- the assets stay in this album,
@@ -283,11 +282,7 @@ export class AlbumService extends BaseService {
 
     const updated = await this.albumRepository.update(album.id, { id: album.id, isLocked: dto.isLocked }, auth.user.id);
 
-    // Same follow-up the single-asset visibility change queues, so sidecars reflect the new state.
-    await this.jobRepository.queueAll(
-      assetIds.map((assetId) => ({ name: JobName.SidecarWrite, data: { id: assetId } })),
-    );
-
+    await this.queueSidecarWrites(assetIds);
     await this.notifyAlbumChanged(album);
 
     return mapAlbum({ ...updated, assets: album.assets });
@@ -386,15 +381,9 @@ export class AlbumService extends BaseService {
     const toAdd = dto.ids.filter((assetId) => !existing.has(assetId));
 
     if (toAdd.length > 0) {
-      await this.assetRepository.updateAll(toAdd, { visibility: AssetVisibility.Locked });
-      await this.albumRepository.removeAssetsFromOtherAlbums(toAdd, id);
+      await this.moveIntoLockedFolder(toAdd, id);
       await this.albumRepository.addAssetIds(id, toAdd);
-
-      // Same follow-up every visibility change queues, so the sidecars reflect the new state.
-      await this.jobRepository.queueAll(
-        toAdd.map((assetId) => ({ name: JobName.SidecarWrite, data: { id: assetId } })),
-      );
-
+      await this.queueSidecarWrites(toAdd);
       await this.notifyAlbumChanged(album);
     }
 
@@ -701,13 +690,27 @@ export class AlbumService extends BaseService {
   }
 
   /**
-   * The album, refusing anyone but its owner, with [message] naming the operation.
+   * Set [assetIds] to Locked and evict them from every album except [keepInAlbumId].
    *
-   * `Permission.AlbumUpdate` is granted to editors too, so every operation that rewrites the album's
-   * *contents* rather than its label has to narrow to the owner on its own. Ownership lives in
-   * `albumUsers` as the Owner role rather than as a column on `album`, which is why this is a find
-   * rather than a predicate.
+   * The two statements are one operation and have to stay one: a locked asset that is still reachable
+   * through an ordinary album's membership is the locked folder leaking, since `checkAlbumAccess`
+   * grants asset reads through album membership. Both callers here -- locking an existing album, and
+   * moving timeline photos into a locked one -- had this pair written out inline, which is one call
+   * site away from someone adding a third that locks without evicting.
    */
+  private async moveIntoLockedFolder(assetIds: string[], keepInAlbumId: string) {
+    await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Locked });
+    await this.albumRepository.removeAssetsFromOtherAlbums(assetIds, keepInAlbumId);
+  }
+
+  /**
+   * Queue the sidecar rewrite that every visibility change owes, so the files on disk say what the
+   * database says. The same follow-up the single-asset visibility action queues.
+   */
+  private async queueSidecarWrites(assetIds: string[]) {
+    await this.jobRepository.queueAll(assetIds.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+  }
+
   /**
    * Tell every member's clients that the album changed, so they re-read instead of going stale.
    *
@@ -730,6 +733,14 @@ export class AlbumService extends BaseService {
     });
   }
 
+  /**
+   * The album, refusing anyone but its owner, with [message] naming the operation.
+   *
+   * `Permission.AlbumUpdate` is granted to editors too, so every operation that rewrites the album's
+   * *contents* rather than its label has to narrow to the owner on its own. Ownership lives in
+   * `albumUsers` as the Owner role rather than as a column on `album`, which is why this is a find
+   * rather than a predicate.
+   */
   private async findOwnedOrFail(auth: AuthDto, id: string, message: string) {
     const album = await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth));
 

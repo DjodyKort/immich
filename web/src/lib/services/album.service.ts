@@ -349,6 +349,21 @@ export const redirectIfLockedAndNotElevated = async (album: AlbumResponseDto): P
  * Elevation is required in both directions, so an unelevated session is sent to the PIN prompt rather
  * than allowed to fail against the API.
  */
+/**
+ * Announce an album change that moved its photos on or off a surface -- locking, unlocking, or a
+ * `hiddenFrom` rule edit.
+ *
+ * Two events, always together, which is why this is a function rather than two lines at each call site.
+ * `AlbumUpdate` refreshes the album's own metadata everywhere it is displayed; `AlbumVisibilityChange`
+ * additionally makes the timelines re-read, because the set of photos that moved is not enumerable from
+ * the response. Emitting only the first is precisely the bug this pairing exists to prevent: the rule
+ * saved, the album row updated, and the open timeline kept showing photos that had left it until F5.
+ */
+export const notifyAlbumVisibilityChanged = (album: AlbumResponseDto) => {
+  eventManager.emit('AlbumUpdate', album);
+  eventManager.emit('AlbumVisibilityChange', album);
+};
+
 export const handleSetAlbumLocked = async (album: AlbumResponseDto, isLocked: boolean) => {
   const $t = await getFormatter();
 
@@ -372,10 +387,7 @@ export const handleSetAlbumLocked = async (album: AlbumResponseDto, isLocked: bo
 
   try {
     const response = await setAlbumLocked({ id: album.id, albumSetLockedDto: { isLocked } });
-    eventManager.emit('AlbumUpdate', response);
-    // Locking rewrites the visibility of every member asset, so every timeline showing them is now
-    // wrong. Same reload the album rule triggers, for the same reason: the set is not enumerable here.
-    eventManager.emit('AlbumVisibilityChange', response);
+    notifyAlbumVisibilityChanged(response);
     toastManager.primary($t(isLocked ? 'lock_album_locked' : 'lock_album_unlocked'));
     return true;
   } catch (error) {

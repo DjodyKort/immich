@@ -85,8 +85,6 @@ class FavoriteBottomSheet extends ConsumerWidget {
         .new(action: EditDateTimeAction(source: .timeline)),
         .new(action: EditLocationAction(source: .timeline)),
         .new(action: LockAction(source: .timeline)),
-        // One step for what used to take three: lock, lose the album, find the photos in the locked
-        // folder, add them there. Hidden unless the session is already elevated - see the action.
         .new(action: MoveToLockedAlbumAction(source: .timeline)),
         .new(action: HideFromPlacesAction(source: .timeline)),
         .new(action: StackAction(source: .timeline)),
