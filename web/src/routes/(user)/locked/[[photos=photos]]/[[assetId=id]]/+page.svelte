@@ -53,7 +53,7 @@
   // Every asset here already has Locked visibility, so the shared AddToAlbum and HideFromPlaces
   // actions (which are selection-aware: AddToAlbum only offers locked albums when the selection
   // is locked) naturally work here too -- no bespoke handling needed.
-  const { AddToAlbum, HideFromPlaces } = $derived(getAssetBulkActions($t));
+  const { AddToAlbum, MoveToLockedAlbum, HideFromPlaces } = $derived(getAssetBulkActions($t));
 
   const { LockSession } = $derived(getUserActions($t));
 
@@ -115,6 +115,15 @@
     <SetVisibilityAction unlock onVisibilitySet={handleMoveOffLockedFolder} />
     <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
       <MenuOption icon={AddToAlbum.icon} text={AddToAlbum.title} onClick={() => AddToAlbum.onAction(AddToAlbum)} />
+      <!-- Not a duplicate of the line above. This view lists every locked asset, members of locked
+           albums included, and for those AddToAlbum's route answers ALREADY_IN_LOCKED_ALBUM whichever
+           album you pick. This one moves them instead, so it is the only way to shift a photo from one
+           locked album to another. -->
+      <MenuOption
+        icon={MoveToLockedAlbum.icon}
+        text={MoveToLockedAlbum.title}
+        onClick={() => MoveToLockedAlbum.onAction(MoveToLockedAlbum)}
+      />
       <MenuOption icon={mdiLockPlusOutline} text={$t('create_locked_album')} onClick={handleCreateLockedAlbum} />
       <MenuOption
         icon={HideFromPlaces.icon}

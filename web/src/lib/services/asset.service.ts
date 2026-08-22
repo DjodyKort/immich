@@ -26,6 +26,7 @@ import {
   mdiHeartOutline,
   mdiImageRefreshOutline,
   mdiImageSearch,
+  mdiFolderLockOutline,
   mdiInformationOutline,
   mdiMagnifyMinusOutline,
   mdiMagnifyPlusOutline,
@@ -79,6 +80,32 @@ export const getAssetBulkActions = ($t: MessageFormatter) => {
     },
   };
 
+  /**
+   * Move the selection into a locked album, from anywhere -- including from inside another one.
+   *
+   * Distinct from [AddToAlbum] above, which posts to the ordinary add-assets route. That route refuses
+   * an asset already in a different locked album (`ALREADY_IN_LOCKED_ALBUM`), and an asset may be in at
+   * most one, so from inside a locked album every destination it can offer is a refusal. That is why
+   * the album page strips AddToAlbum there -- correctly -- and why, until this existed, a locked
+   * album's contents could not be reorganised from the web at all. The only bulk actions left were
+   * "Remove from album" and "Move out of locked folder".
+   *
+   * This goes through `POST /albums/:id/locked-assets`, which evicts from the previous album in the
+   * same operation. Mobile has had the equivalent since MoveToLockedAlbumAction; this is the web half.
+   */
+  const MoveToLockedAlbum: ActionItem = {
+    title: $t('move_to_locked_album'),
+    icon: mdiFolderLockOutline,
+    onAction: () => {
+      const assets = assetMultiSelectManager.assets;
+      void modalManager.show(AssetAddToAlbumModal, {
+        assetIds: assets.map((asset) => asset.id),
+        lockedOnly: true,
+        move: true,
+      });
+    },
+  };
+
   const HideFromPlaces: ActionItem = {
     title: $t('hide_from_places'),
     icon: mdiEyeOffOutline,
@@ -127,7 +154,15 @@ export const getAssetBulkActions = ($t: MessageFormatter) => {
     $if: () => ownedAssets.every((asset) => asset.isVideo),
   };
 
-  return { AddToAlbum, HideFromPlaces, RefreshFacesJob, RefreshMetadataJob, RegenerateThumbnailJob, TranscodeVideoJob };
+  return {
+    AddToAlbum,
+    MoveToLockedAlbum,
+    HideFromPlaces,
+    RefreshFacesJob,
+    RefreshMetadataJob,
+    RegenerateThumbnailJob,
+    TranscodeVideoJob,
+  };
 };
 
 export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & { stackPrimaryAssetId?: string }) => {

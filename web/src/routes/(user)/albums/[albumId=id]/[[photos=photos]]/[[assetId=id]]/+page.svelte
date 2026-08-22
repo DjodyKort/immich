@@ -498,14 +498,21 @@
         {@const Actions = getAssetBulkActions($t)}
         <CommandPaletteDefaultProvider
           name={$t('assets')}
-          actions={Object.values(Actions).filter((action) => !album.isLocked || action !== Actions.AddToAlbum)}
+          actions={Object.values(Actions).filter((action) =>
+            album.isLocked ? action !== Actions.AddToAlbum : action !== Actions.MoveToLockedAlbum,
+          )}
         />
         <CreateSharedLink />
         <SelectAllAssets {timelineManager} assetInteraction={assetMultiSelectManager} />
-        {#if !album.isLocked}
-          <!-- Every asset shown here already belongs to this album. If it's locked, "Add to
-               album" can only ever be a no-op duplicate or a rejected cross-locked-album error,
-               so there's nothing useful it can do here. -->
+        {#if album.isLocked}
+          <!-- "Add to album" genuinely cannot work here: every asset shown already belongs to this
+               album, so the ordinary add-assets route can only answer duplicate, and an asset may be
+               in at most one locked album, so every *other* locked album answers
+               ALREADY_IN_LOCKED_ALBUM. Moving is the operation that applies, and it has its own route
+               -- POST /albums/:id/locked-assets evicts from this album as it adds to the next one.
+               Without this, a locked album's contents could not be reorganised from the web at all. -->
+          <ActionButton action={Actions.MoveToLockedAlbum} />
+        {:else}
           <ActionButton action={Actions.AddToAlbum} />
         {/if}
         {#if assetMultiSelectManager.isAllUserOwned}
