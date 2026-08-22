@@ -56,7 +56,7 @@ jobs:
     permissions:
       contents: write # to create the release and attach the APKs
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
@@ -90,7 +90,7 @@ jobs:
 
       # The public mise action, not immich-app/devtools/actions/use-mise: that one needs a token from
       # an app this fork does not have. Same substitution fork-ci.yml makes.
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           working_directory: ./mobile
 

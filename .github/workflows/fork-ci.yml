@@ -49,6 +49,52 @@ permissions:
 # reaches upstream. It is repeated per job rather than hoisted into `env`, because a job-level `if`
 # cannot read the `env` context.
 jobs:
+  # Which areas this push actually touched, so the expensive jobs can sit out the pushes that cannot
+  # affect them. Only `Mobile (build)` consults it today -- it is the long pole at ~4.5 min and 12 of
+  # the last 20 commits here touched no mobile file at all.
+  #
+  # **Fails open.** Anything it cannot work out -- no base commit, a force push, a first push, a
+  # workflow_call or dispatch with no diff to speak of -- reports every area as changed and everything
+  # runs. A filter that wrongly skips a gate is worse than one that wrongly runs it, and this is the
+  # side of that trade to be on.
+  changes:
+    name: Changed areas
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mobile: ${{ steps.filter.outputs.mobile }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - id: filter
+        env:
+          # Empty for anything that is not a plain push or PR, which is what sends this fail-open.
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event_name == 'push' && github.event.before || '') }}
+        run: |
+          set -euo pipefail
+          # 000... is what a push reports when the branch is new, and a force push can leave a base
+          # that is no longer an ancestor. Both mean "no usable diff".
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]              || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "no usable base ($BASE) - running everything"
+            echo "mobile=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$BASE" HEAD)
+          echo "$changed" | sed 's/^/  /'
+          # Wider than just mobile/, on purpose. i18n feeds the generated translations, open-api
+          # generates the Dart client, and the mise files pin the toolchain -- each can break the
+          # build without touching mobile/. .github/ is in there so that editing this job re-runs it;
+          # without that, a change to the build step could not verify itself.
+          if echo "$changed" | grep -qE '^(mobile/|i18n/|open-api/|\.github/|mise\.toml|mise\.lock)'; then
+            echo "mobile=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mobile=false" >> "$GITHUB_OUTPUT"
+          fi
+
   server:
     name: Server (unit, lint, format, check)
     if: ${{ github.repository != 'immich-app/immich' }}
@@ -63,7 +109,7 @@ jobs:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       - run: mise run ci-unit
 
   server-medium:
@@ -87,7 +133,7 @@ jobs:
           # e2e/test-assets holds the video fixtures. Without it three medium tests fail on missing
           # files, which reads as a regression rather than a missing submodule.
           submodules: recursive
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       # Testcontainers otherwise pulls ghcr.io/immich-app/postgres anonymously, and anonymous pulls
       # are rate limited per IP across shared runners. Seen as a 404 "No such image", which then
       # cascades into a misleading "No test files found, exiting with code 1" once global setup dies.
@@ -111,7 +157,7 @@ jobs:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       - run: mise run ci-unit
 
   web-lint:
@@ -128,7 +174,7 @@ jobs:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       # Its own job on purpose. //web:ci-unit deliberately excludes lint, and upstream runs Lint Web
       # on their beefy self-hosted runner. It is the most resource-hungry gate here: under CPU
       # contention it dies with "Atomics.wait() failed: timed-out" inside synckit on the
@@ -149,7 +195,7 @@ jobs:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       - run: mise run //:i18n:format
 
   openapi:
@@ -163,7 +209,7 @@ jobs:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       - run: mise run open-api
       # Regenerating must be a no-op: a diff here means a DTO or controller changed without the
       # client being regenerated. Note this is NOT what upstream's check-openapi.yml does - that one
@@ -214,7 +260,7 @@ jobs:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       # install:ci is install with --enforce-lockfile. It depends on //:open-api-dart, so the
       # generated client is produced here rather than being committed (gitignored since #30287).
       # Its install:ios step is a no-op off macOS, so this is safe on a Linux runner.
@@ -255,7 +301,8 @@ jobs:
   # fork-release-mobile.yml, which fails loudly if KEY_JKS is missing rather than debug-signing.
   mobile-build:
     name: Mobile (build)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    needs: changes
+    if: ${{ github.repository != 'immich-app/immich' && needs.changes.outputs.mobile == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -273,9 +320,28 @@ jobs:
           packages: ''
       # The public mise action, not immich-app/devtools/actions/use-mise: that one needs a token from
       # an app this fork does not have. Same substitution the rest of this file makes.
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           working_directory: ./mobile
+      # Gradle dominates this job: the same build is ~4.5 min locally against a warm cache and was
+      # over 10 on a cold runner. mise-action already caches the toolchain (Flutter, Java) on its own,
+      # and pub and Gradle are what remain. Keyed on the lockfiles that decide the contents, with a
+      # prefix-only restore key so a dependency bump warms from the previous cache instead of starting
+      # from nothing.
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('mobile/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/android/**/*.gradle*', 'mobile/android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
       - name: Install dependencies
         run: mise //mobile:install:ci
       - name: Perform codegen
