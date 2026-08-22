@@ -14,6 +14,14 @@ import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 /**
+ * `hiddenFrom` comes back in whatever order the server produced it, so both sides are sorted before
+ * comparing. Explicit rather than a bare `sort()`: the default sorts by string coercion, which is
+ * only accidentally right for these values and is what `unicorn/require-array-sort-compare` objects
+ * to. `toSorted` also leaves the response body untouched, so a later assertion sees what arrived.
+ */
+const byName = (a: AssetSurface, b: AssetSurface) => a.localeCompare(b);
+
+/**
  * The two routes this fork added to the album API, over real HTTP.
  *
  * `PUT /albums/:id/locked` and `PUT /albums/:id/hidden-from` are covered by medium tests at the
@@ -104,7 +112,10 @@ describe('album visibility', () => {
         .set('Authorization', `Bearer ${user.accessToken}`)
         .send({ isLocked: true });
 
-      expect(status).toBe(400);
+      // 401, not 400: setLocked used to hand-roll this check and answer 400 with its own message.
+      // 6ee008717 moved it to upstream's requireElevatedPermission, which is what its eight other
+      // call sites use, and that answers 401 'Elevated permission is required'.
+      expect(status).toBe(401);
     });
 
     it('should refuse someone who is not the owner', async () => {
@@ -131,13 +142,15 @@ describe('album visibility', () => {
         .send({ hiddenFrom: [AssetSurface.Timeline, AssetSurface.Search] });
 
       expect(set.status).toBe(200);
-      expect(set.body.hiddenFrom.sort()).toEqual([AssetSurface.Search, AssetSurface.Timeline].sort());
+      expect(set.body.hiddenFrom.toSorted(byName)).toEqual(
+        [AssetSurface.Search, AssetSurface.Timeline].toSorted(byName),
+      );
 
       // Read back through a different route, so this is the stored rule rather than the echo of the
       // request body.
       const albums = await getAllAlbums({}, { headers: authOf(user) });
-      expect(albums.find(({ id }) => id === album.id)?.hiddenFrom.sort()).toEqual(
-        [AssetSurface.Search, AssetSurface.Timeline].sort(),
+      expect(albums.find(({ id }) => id === album.id)?.hiddenFrom.toSorted(byName)).toEqual(
+        [AssetSurface.Search, AssetSurface.Timeline].toSorted(byName),
       );
     });
 
