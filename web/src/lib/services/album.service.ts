@@ -1,6 +1,7 @@
 import {
   addAssetsToAlbum as addToAlbum,
   addAssetsToAlbums as addToAlbums,
+  addLockedAssetsToAlbum,
   addUsersToAlbum,
   AlbumUserRole,
   BulkIdErrorReason,
@@ -144,6 +145,37 @@ export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], 
     }
 
     eventManager.emit('AlbumAddAssets', { assetIds, albumIds });
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.error_adding_assets_to_album'));
+    return false;
+  }
+};
+
+/**
+ * Move assets into a locked album, evicting them from wherever they were.
+ *
+ * Not the same operation as `addAssetsToAlbums`, and the difference is why this exists. That posts to
+ * the ordinary add-assets route, which refuses an asset that is already in a *different* locked album
+ * -- an asset may belong to at most one at a time, and the refusal comes back as
+ * `ALREADY_IN_LOCKED_ALBUM`. From inside a locked album that is every possible destination, so the
+ * album picker had nothing it could offer and the button was simply removed. What was left was
+ * "Remove from album".
+ *
+ * `POST /albums/:id/locked-assets` calls `moveIntoLockedFolder` server-side: it sets the assets to
+ * Locked and removes them from every other album in the same operation. That eviction is what makes
+ * it a move rather than an add, and what makes it legal for an asset that already lives in one.
+ *
+ * One album only, unlike its neighbour above -- "add to several albums at once" has no meaning when
+ * membership is exclusive.
+ */
+export const moveAssetsToLockedAlbum = async (albumId: string, assetIds: string[]) => {
+  const $t = await getFormatter();
+
+  try {
+    const results = await addLockedAssetsToAlbum({ ...authManager.params, id: albumId, bulkIdsDto: { ids: assetIds } });
+    notifyAddToAlbum($t, albumId, assetIds, results);
+    eventManager.emit('AlbumAddAssets', { assetIds, albumIds: [albumId] });
     return true;
   } catch (error) {
     handleError(error, $t('errors.error_adding_assets_to_album'));
