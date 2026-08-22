@@ -61,6 +61,17 @@ describe('album visibility', () => {
     return [album, asset.id];
   };
 
+  /** A locked asset that is in no album, which is the only kind `POST /albums` may assemble. */
+  const looseLockedAsset = async (session: LoginResponseDto) => {
+    const asset = await utils.createAsset(session.accessToken);
+    await request(app)
+      .put(`/assets/${asset.id}`)
+      .set('Authorization', `Bearer ${session.accessToken}`)
+      .send({ visibility: AssetVisibility.Locked });
+
+    return asset.id;
+  };
+
   const visibilityOf = async (session: LoginResponseDto, assetId: string) => {
     const { body } = await request(app).get(`/assets/${assetId}`).set('Authorization', `Bearer ${session.accessToken}`);
     return body.visibility;
@@ -129,6 +140,51 @@ describe('album visibility', () => {
 
       // Not 403: the album is simply not visible to another user, so it never reaches the owner check.
       expect(status).toBe(400);
+    });
+  });
+
+  describe('POST /albums with isLocked', () => {
+    it('should assemble a locked album out of loose locked assets', async () => {
+      await elevate(user);
+      const assetId = await looseLockedAsset(user);
+
+      const { status, body } = await request(app)
+        .post('/albums')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ albumName: 'assembled', assetIds: [assetId], isLocked: true });
+
+      expect(status).toBe(201);
+      expect(body).toMatchObject({ isLocked: true });
+      await expect(getAllAlbums({ assetId }, { headers: authOf(user) })).resolves.toHaveLength(1);
+    });
+
+    // The regression this exists for. An asset belongs to at most one locked album at a time --
+    // `addAssets` has enforced that from the start, and this route did not, while
+    // `AlbumRepository.create` inserts its `album_asset` rows unconditionally. So creating a second
+    // locked album out of the first one's contents silently put those assets in both, which is
+    // exactly the state the rule prevents everywhere else.
+    //
+    // Reachable from both clients without either doing anything wrong: the locked folder lists every
+    // locked asset, members of locked albums included, and both offer "create a locked album from
+    // this selection" over that list.
+    it('should refuse assets that are already in another locked album', async () => {
+      const [album, assetId] = await albumWithOneAsset(user);
+      await elevate(user);
+      await request(app)
+        .put(`/albums/${album.id}/locked`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ isLocked: true });
+
+      const { status } = await request(app)
+        .post('/albums')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ albumName: 'second home', assetIds: [assetId], isLocked: true });
+
+      expect(status).toBe(400);
+      // The assertion that would have caught the bug. Refusing with a 400 and creating the album
+      // anyway would satisfy the line above; membership is what the invariant is actually about.
+      const albums = await getAllAlbums({ assetId }, { headers: authOf(user) });
+      expect(albums.map(({ id }) => id)).toEqual([album.id]);
     });
   });
 

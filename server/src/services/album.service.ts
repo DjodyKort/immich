@@ -155,6 +155,26 @@ export class AlbumService extends BaseService {
       if (lockedAssetIds.size !== requestedAssetIds.length || assetIds.length !== requestedAssetIds.length) {
         throw new BadRequestException(LockedAlbumError.NeedsLockedAssets);
       }
+
+      // An asset belongs to at most one locked album at a time. `addAssets` and the bulk
+      // add-to-albums path both enforce that; this one did not, and `AlbumRepository.create` inserts
+      // its `album_asset` rows unconditionally -- so assembling a new locked album out of assets
+      // that already sat in one put them in *two*, which is the state the rule exists to prevent.
+      // Reachable from both clients: mobile's locked folder sheet and web's `handleCreateLockedAlbum`
+      // both offer "create a locked album from this selection", and the locked folder lists every
+      // locked asset, members of locked albums included.
+      //
+      // Refused rather than evicted, matching the check above it: `create` reports a bad request, it
+      // does not quietly rearrange albums the caller never named. Moving between locked albums has
+      // its own route -- `POST /albums/:id/locked-assets` -- which evicts on purpose.
+      //
+      // No album to exclude: the one that would be excluded does not exist yet.
+      const conflictingAssetIds = await this.albumRepository.getAssetIdsInOtherLockedAlbums(requestedAssetIds);
+      if (conflictingAssetIds.size > 0) {
+        throw new BadRequestException(
+          'Some of these assets are already in a locked album. Remove them from it first, or use the locked-assets route on the album you want them in',
+        );
+      }
     }
 
     const userMetadata = await this.userRepository.getMetadata(auth.user.id);
