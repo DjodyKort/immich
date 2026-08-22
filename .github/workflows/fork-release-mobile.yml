@@ -103,6 +103,19 @@ jobs:
       # versionCode comes from the run number rather than pubspec's build number, which only moves
       # when upstream bumps it - two fork releases off one upstream version would otherwise carry the
       # same versionCode. Run numbers only ever increase, which is all Android and Obtainium need.
+      # mobile/android/gradle.properties asks for a 4G daemon, and the release build does not fit in
+      # it on a hosted runner: JetifyTransform rewrites Flutter's native jars during
+      # mergeReleaseNativeLibs and dies with "Java heap space". It is marginal rather than absolute --
+      # the same `flutter build apk --release` passes in Fork CI's Mobile (build) job -- which is
+      # worse than a hard failure, because it turns a release into a coin flip.
+      #
+      # Raised here rather than in the project file, which is upstream's: GRADLE_USER_HOME's
+      # gradle.properties wins over the project's, the same mechanism the android CI container uses
+      # to cap its daemon. Runners have 16G, so 8G leaves ample room for the workers.
+      - name: Give Gradle enough heap for the release build
+        run: |
+          mkdir -p ~/.gradle
+          echo 'org.gradle.jvmargs=-Xmx8g -XX:MaxMetaspaceSize=1g' >> ~/.gradle/gradle.properties
       - name: Build the APKs
         working-directory: ./mobile
         env:
