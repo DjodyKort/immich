@@ -9,6 +9,7 @@ import 'package:immich_mobile/presentation/actions/delete.action.dart';
 import 'package:immich_mobile/presentation/actions/download.action.dart';
 import 'package:immich_mobile/presentation/actions/hide_from_places.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
+import 'package:immich_mobile/presentation/actions/move_to_locked_album.action.dart';
 import 'package:immich_mobile/presentation/actions/share.action.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_selector.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/base_bottom_sheet.widget.dart';
@@ -87,6 +88,12 @@ class _LockedFolderBottomSheetState extends ConsumerState<LockedFolderBottomShee
         .new(action: DownloadAction(source: .timeline)),
         .new(action: DeleteAction(source: .timeline)),
         .new(action: LockAction(source: .timeline)),
+        // Not a duplicate of the selector below. That selector uses the ordinary add-assets route,
+        // which refuses an asset already in a different locked album (`ALREADY_IN_LOCKED_ALBUM`) --
+        // and the locked folder shows every locked asset, members of locked albums included. This
+        // action's route moves them instead, so it is the only thing here that can reorganise an
+        // album's contents rather than only file loose ones.
+        .new(action: MoveToLockedAlbumAction(source: .timeline)),
         // The locked folder is the timeline with visibility pinned to locked, so the timeline switch
         // decides whether a locked photo appears here while leaving it in its locked albums.
         .new(action: HideFromPlacesAction(source: .timeline)),

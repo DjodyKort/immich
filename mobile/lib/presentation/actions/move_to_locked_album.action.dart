@@ -23,6 +23,12 @@ import 'package:immich_mobile/widgets/common/immich_toast.dart';
 /// opening the locked folder, finding them again, and adding them there. The server does it as one
 /// operation; this is the button for it.
 ///
+/// It is also the only way to move photos *between* locked albums, which is why it is offered for
+/// assets that are already locked. `POST /albums/:id/locked-assets` calls `moveIntoLockedFolder`,
+/// which removes them from every other album as part of the same operation. The album selectors on
+/// the locked views cannot do this: they use the ordinary add-assets route, which refuses an asset
+/// that is already in a different locked album rather than moving it.
+///
 /// **Elevates on tap.** It used to be offered only to a session that had already cleared the PIN --
 /// which in practice meant visiting the locked folder first, the very detour this action exists to
 /// remove. It now runs the same sequence the router guard runs, through the shared
@@ -37,9 +43,12 @@ import 'package:immich_mobile/widgets/common/immich_toast.dart';
 typedef _State = ({List<String> assetIds});
 
 final _stateProvider = Provider.family.autoDispose<_State?, ActionSource>((ref, source) {
-  // Assets already in the locked folder have the locked folder's own sheet, which carries a locked
-  // album selector. Offering this for them as well would be two routes to one outcome.
-  final candidates = ref.watch(ownedAssetsActionProvider(source)).locked(isLocked: false);
+  // Offered for locked assets too, which it used to withhold itself from on the grounds that the
+  // locked views carry their own album selector. They do, and it cannot do this: those selectors go
+  // through the ordinary add-assets route, and an asset may belong to at most one locked album, so
+  // for anything already in one every destination that route offers comes back
+  // `ALREADY_IN_LOCKED_ALBUM`. This action's route moves rather than adds, which is the difference.
+  final candidates = ref.watch(ownedAssetsActionProvider(source));
   if (candidates.isEmpty) {
     return null;
   }
