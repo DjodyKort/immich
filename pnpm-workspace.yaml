@@ -31,6 +31,17 @@ overrides:
   canvas: 3.2.3
   sharp: ^0.35.3
 packageExtensions:
+  # The plugin does `import typescript from 'typescript'` and reads `SymbolFlags` off it, while
+  # declaring `typescript` nowhere -- not a dependency, not a peer. So the import resolves to
+  # whatever is hoisted, which in this workspace is the real `typescript@7` that `packages/sdk` and
+  # the plugin packages depend on. TypeScript 7's entry point is `lib/version.cjs`, exporting only
+  # `{ version, versionMajorMinor }`, so `SymbolFlags` is undefined and the rule throws
+  # `Cannot read properties of undefined (reading 'Class')` on the first file it reaches instead of
+  # reporting. `overrides` cannot fix an undeclared dependency; declaring it here can. The 6 alias is
+  # what every linting workspace already uses and what the plugin is written against.
+  '@koddsson/eslint-plugin-tscompat':
+    dependencies:
+      typescript: npm:@typescript/typescript6@^6.0.2
   nestjs-kysely:
     dependencies:
       tslib: '*'
