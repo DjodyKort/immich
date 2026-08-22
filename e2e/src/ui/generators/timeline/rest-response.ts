@@ -344,6 +344,13 @@ export function toAssetResponseDto(asset: MockTimelineAsset, owner?: UserRespons
     width: exifInfo.exifImageWidth ?? 1,
     height: exifInfo.exifImageHeight ?? 1,
     isEdited: false,
+    // Withheld from nothing, which is what every asset the server has not been told to hide reports.
+    // These are required on the DTO, so a fixture that omits them stops compiling rather than
+    // silently describing an asset shape the API never returns.
+    hiddenFrom: [],
+    hiddenFromInherited: [],
+    hiddenFromShown: [],
+    hiddenFromEffective: [],
   };
 }
 
@@ -421,6 +428,10 @@ export function getAlbum(
     shared: false,
     hasSharedLink: false,
     isActivityEnabled: true,
+    // An ordinary album: in the album list, outside the locked folder, imposing no rule on its photos.
+    isHidden: false,
+    isLocked: false,
+    hiddenFrom: [],
     assetCount: albumAssets.length,
     startDate: albumAssets.length > 0 ? albumAssets.at(-1)?.fileCreatedAt : undefined,
     endDate: albumAssets.length > 0 ? albumAssets[0].fileCreatedAt : undefined,
