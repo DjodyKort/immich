@@ -13,7 +13,7 @@ import 'package:immich_mobile/services/session_elevation.service.dart';
 class LockedGuard extends AutoRouteGuard {
   final SessionElevationService _elevation;
 
-  LockedGuard(this._elevation);
+  const LockedGuard(this._elevation);
 
   @override
   Future<void> onNavigation(NavigationResolver resolver, StackRouter router) async {
