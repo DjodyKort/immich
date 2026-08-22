@@ -8,6 +8,11 @@
 # It exists to feed Obtainium: point Obtainium at this repository and it tracks these releases,
 # picking the APK for your device's ABI.
 #
+# Per-ABI APKs only, no universal one. Building the universal APK meant a second full compile, link,
+# R8 and native-lib merge of the same code -- it was roughly half the job's wall clock for an artifact
+# Obtainium never picks, because Obtainium matches the ABI itself. Sideloading by hand needs the right
+# file: arm64-v8a for any phone made in the last decade.
+#
 # ## Before the first run
 #
 # Set these four repository secrets, generated from a keystore you create once:
@@ -56,6 +61,19 @@ jobs:
     permissions:
       contents: write # to create the release and attach the APKs
     steps:
+      # `github.ref_name` is the *branch* on a workflow_dispatch, so dispatching this from
+      # `integration` publishes a release literally called "integration" and burns that name -- a
+      # release cannot be renamed, only deleted. Releases come from tags; a dispatch is for re-running
+      # a tag whose build failed. First step on purpose: this costs five seconds, and finding it after
+      # the build costs fifteen minutes.
+      - name: Refuse to release anything that is not a tag
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "::error::Refusing to publish a release named '$REF_NAME'. Dispatch this workflow from" \
+               "a tag (Run workflow -> pick a tag), not from a branch." && exit 1
+
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -94,6 +112,26 @@ jobs:
         with:
           working_directory: ./mobile
 
+      # The release used to be the one mobile build in this fork with no cache at all, which is why it
+      # took 15 minutes for the same work Fork CI's Mobile (build) does in 6. Same keys as fork-ci.yml
+      # on purpose: `integration` is this fork's default branch, and GitHub lets any ref restore caches
+      # saved on the default branch, so a tag build inherits whatever the last push to `integration`
+      # warmed up. Different keys would have meant two caches and no sharing.
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('mobile/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/android/**/*.gradle*', 'mobile/android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
       - name: Install dependencies
         run: mise //mobile:install:ci
 
@@ -123,7 +161,6 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          flutter build apk --release --build-number=${{ github.run_number }}
           flutter build apk --release --build-number=${{ github.run_number }} \
             --split-per-abi --target-platform android-arm,android-arm64,android-x64
 
@@ -151,7 +188,6 @@ jobs:
             --title "$TAG" \
             --generate-notes \
             $DRAFT \
-            app-release.apk \
             app-arm64-v8a-release.apk \
             app-armeabi-v7a-release.apk \
             app-x86_64-release.apk
