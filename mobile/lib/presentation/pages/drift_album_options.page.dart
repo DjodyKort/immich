@@ -364,11 +364,14 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
                       : context.themeData.disabledColor,
                   dense: true,
                   title: Text(
-                    hideFromPlaceLabel(context, surface),
+                    // A locked album's rows are named for the locked folder, the same as web's
+                    // AlbumHiddenFromFields -- the timeline switch governs where its (locked) assets
+                    // appear, and for them that view is the locked folder.
+                    hideFromPlaceLabel(context, surface, locked: album.isLocked),
                     style: context.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
                   ),
                   subtitle: Text(
-                    hideFromPlaceDescription(context, surface),
+                    hideFromPlaceDescription(context, surface, locked: album.isLocked),
                     style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
                   ),
                 ),

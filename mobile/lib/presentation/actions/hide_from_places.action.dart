@@ -76,7 +76,11 @@ class HideFromPlacesAction extends AssetActionBuilder {
 
   /// One asset replaces its whole set: its true state is on screen, so that is exactly what the switches mean.
   Future<void> _editOne(BuildContext context, WidgetRef ref, RemoteAsset asset) async {
-    final places = await showHideFromPlacesPicker(context: context, hiddenFrom: asset.hiddenFrom);
+    final places = await showHideFromPlacesPicker(
+      context: context,
+      hiddenFrom: asset.hiddenFrom,
+      locked: asset.isLocked,
+    );
     if (places == null || !context.mounted) {
       return;
     }
@@ -99,7 +103,15 @@ class HideFromPlacesAction extends AssetActionBuilder {
       for (final place in AssetSurface.values) place: assets.where((asset) => asset.hiddenFrom.contains(place)).length,
     };
 
-    final edit = await showHideFromPlacesBulkPicker(context: context, hiddenCounts: hiddenCounts, total: assets.length);
+    // Only when *every* one of them is locked, matching web's rule. A mixed selection has no single
+    // right name for that row, and the main-timeline name is the safe one to show: it is the surface
+    // the switch actually names, and the locked-folder reading is the special case.
+    final edit = await showHideFromPlacesBulkPicker(
+      context: context,
+      hiddenCounts: hiddenCounts,
+      total: assets.length,
+      locked: assets.every((asset) => asset.isLocked),
+    );
     if (edit == null || edit.isEmpty || !context.mounted) {
       return;
     }

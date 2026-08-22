@@ -192,6 +192,60 @@ void main() {
       expect(find.byType(ImmichIconButton), findsOneWidget);
     });
 
+    // The locked folder *is* the timeline with visibility pinned to locked, so for a locked asset that
+    // first switch governs the locked folder, not the main one. Web has relabelled it since the shared
+    // label table landed (`web/src/lib/utils/hidden-from.ts`); mobile still said "Main timeline", so the
+    // same switch was described two different ways depending on which client you happened to open.
+    //
+    // Only that row. A locked photo's search and map masks mean exactly what they say.
+    testWidgets('names the timeline row for the locked folder when the asset is locked', (tester) async {
+      final asset = owned(visibility: .locked);
+      stored(asset);
+
+      await openPicker(tester, {asset});
+
+      expect(find.text(StaticTranslations.instance.hide_from_place_locked_folder), findsOneWidget);
+      expect(find.text(StaticTranslations.instance.hide_from_place_timeline), findsNothing);
+      expect(find.text(StaticTranslations.instance.hide_from_place_search), findsOneWidget);
+    });
+
+    testWidgets('keeps the main-timeline name for an ordinary asset', (tester) async {
+      final asset = owned();
+      stored(asset);
+
+      await openPicker(tester, {asset});
+
+      expect(find.text(StaticTranslations.instance.hide_from_place_timeline), findsOneWidget);
+      expect(find.text(StaticTranslations.instance.hide_from_place_locked_folder), findsNothing);
+    });
+
+    // A mixed selection has no single right name for that row, so it keeps the main-timeline one --
+    // the surface the switch actually names, with the locked-folder reading as the special case. Same
+    // rule as web's modal, which relabels only when every asset in hand is locked.
+    testWidgets('keeps the main-timeline name for a selection that is only partly locked', (tester) async {
+      final locked = owned(visibility: .locked);
+      final ordinary = owned();
+      stored(locked);
+      stored(ordinary);
+
+      await openPicker(tester, {locked, ordinary});
+
+      expect(find.text(StaticTranslations.instance.hide_from_place_timeline), findsOneWidget);
+      expect(find.text(StaticTranslations.instance.hide_from_place_locked_folder), findsNothing);
+    });
+
+    testWidgets('names it for the locked folder when every asset in the selection is locked', (tester) async {
+      final first = owned(visibility: .locked);
+      final second = owned(visibility: .locked);
+      stored(first);
+      stored(second);
+
+      await openPicker(tester, {first, second});
+
+      expect(find.text(StaticTranslations.instance.hide_from_place_locked_folder), findsOneWidget);
+      expect(find.text(StaticTranslations.instance.hide_from_place_timeline), findsNothing);
+    });
+
     testWidgets('is hidden for a trashed asset', (tester) async {
       await tester.pumpTestWidget(
         context,
