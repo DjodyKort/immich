@@ -1,9 +1,9 @@
 import 'package:drift/drift.dart';
+import 'package:immich_mobile/data/db/main/database.dart';
+import 'package:immich_mobile/data/db/main/table/memory/memory.drift.dart';
+import 'package:immich_mobile/data/db/main/table/remote/asset.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/memory.model.dart';
-import 'package:immich_mobile/infrastructure/entities/memory.entity.drift.dart';
-import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.dart';
-import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/memory.repository.drift.dart';
 import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
@@ -13,10 +13,7 @@ class MemoryRepository extends DatabaseAccessor<Drift> with $MemoryRepositoryMix
 
   Drift get _db => attachedDatabase;
 
-  Future<List<DriftMemory>> getAll(String ownerId) async {
-    final now = DateTime.now();
-    final localUtc = DateTime.utc(now.year, now.month, now.day, 0, 0, 0);
-
+  Future<List<Memory>> getAll(String ownerId, {bool onlyToday = true, bool onlyFavorites = false}) async {
     final query =
         _db.select(_db.memoryEntity).join([
             innerJoin(_db.memoryAssetEntity, _db.memoryAssetEntity.memoryId.equalsExp(_db.memoryEntity.id)),
@@ -29,17 +26,28 @@ class MemoryRepository extends DatabaseAccessor<Drift> with $MemoryRepositoryMix
             ),
           ])
           ..where(_db.memoryEntity.ownerId.equals(ownerId))
-          ..where(_db.memoryEntity.deletedAt.isNull())
-          ..where(_db.memoryEntity.showAt.isNull() | _db.memoryEntity.showAt.isSmallerOrEqualValue(localUtc))
-          ..where(_db.memoryEntity.hideAt.isNull() | _db.memoryEntity.hideAt.isBiggerOrEqualValue(localUtc))
-          ..orderBy([OrderingTerm.desc(_db.memoryEntity.memoryAt), OrderingTerm.asc(_db.remoteAssetEntity.createdAt)]);
+          ..where(_db.memoryEntity.deletedAt.isNull());
+
+    if (onlyFavorites) {
+      query.where(_db.memoryEntity.isSaved.equals(true));
+    }
+
+    if (onlyToday) {
+      final now = DateTime.now();
+      final localUtc = DateTime.utc(now.year, now.month, now.day, 0, 0, 0);
+
+      query.where(_db.memoryEntity.showAt.isNull() | _db.memoryEntity.showAt.isSmallerOrEqualValue(localUtc));
+      query.where(_db.memoryEntity.hideAt.isNull() | _db.memoryEntity.hideAt.isBiggerOrEqualValue(localUtc));
+    }
+
+    query.orderBy([OrderingTerm.desc(_db.memoryEntity.memoryAt), OrderingTerm.asc(_db.remoteAssetEntity.createdAt)]);
 
     final rows = await query.get();
     if (rows.isEmpty) {
       return const [];
     }
 
-    final Map<String, DriftMemory> memoriesMap = {};
+    final Map<String, Memory> memoriesMap = {};
 
     for (final row in rows) {
       final memory = row.readTable(_db.memoryEntity);
@@ -57,7 +65,7 @@ class MemoryRepository extends DatabaseAccessor<Drift> with $MemoryRepositoryMix
     return memoriesMap.values.toList(growable: false);
   }
 
-  Future<DriftMemory?> get(String memoryId) async {
+  Future<Memory?> get(String memoryId) async {
     final query =
         _db.select(_db.memoryEntity).join([
             leftOuterJoin(_db.memoryAssetEntity, _db.memoryAssetEntity.memoryId.equalsExp(_db.memoryEntity.id)),
@@ -96,8 +104,8 @@ class MemoryRepository extends DatabaseAccessor<Drift> with $MemoryRepositoryMix
 }
 
 extension on MemoryEntityData {
-  DriftMemory toDto() {
-    return DriftMemory(
+  Memory toDto() {
+    return Memory(
       id: id,
       createdAt: createdAt,
       updatedAt: updatedAt,

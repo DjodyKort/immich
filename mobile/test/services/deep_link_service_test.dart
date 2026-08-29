@@ -22,9 +22,9 @@ class MockAssetService extends Mock implements AssetService {}
 
 class MockRemoteAlbumService extends Mock implements RemoteAlbumService {}
 
-class MockDriftMemoryService extends Mock implements DriftMemoryService {}
+class MockMemoryService extends Mock implements MemoryService {}
 
-class MockDriftPeopleService extends Mock implements DriftPeopleService {}
+class MockPeopleService extends Mock implements PeopleService {}
 
 class MockPlatformDeepLink extends Mock implements PlatformDeepLink {}
 
@@ -65,7 +65,7 @@ final _album = RemoteAlbum(
   ownerName: 'Owner',
 );
 
-final _memory = DriftMemory(
+final _memory = Memory(
   id: _memoryId,
   createdAt: DateTime(2026, 6, 12),
   updatedAt: DateTime(2026, 6, 12),
@@ -88,7 +88,7 @@ void main() {
   late MockTimelineFactory timelineFactory;
   late MockAssetService assetService;
   late MockRemoteAlbumService remoteAlbumService;
-  late MockDriftMemoryService memoryService;
+  late MockMemoryService memoryService;
   late MockWidgetRef ref;
   late List<TimelineService> createdTimelineServices;
   late DeepLinkService sut;
@@ -97,7 +97,7 @@ void main() {
     timelineFactory = MockTimelineFactory();
     assetService = MockAssetService();
     remoteAlbumService = MockRemoteAlbumService();
-    memoryService = MockDriftMemoryService();
+    memoryService = MockMemoryService();
     ref = MockWidgetRef();
     createdTimelineServices = [];
 
@@ -119,7 +119,7 @@ void main() {
       assetService,
       remoteAlbumService,
       memoryService,
-      MockDriftPeopleService(),
+      MockPeopleService(),
       _user,
     );
 
@@ -173,8 +173,8 @@ void main() {
 
     final route = await sut.handleScheme(deepLink, ref);
 
-    expect(route, isA<DriftMemoryRoute>());
-    expect((route!.args! as DriftMemoryRouteArgs).memories, [_memory]);
+    expect(route, isA<MemoryRoute>());
+    expect((route!.args! as MemoryRouteArgs).memories, [_memory]);
     verify(() => memoryService.getMemoryLane(_userId)).called(1);
     verifyNever(() => memoryService.get(any()));
   });
@@ -186,8 +186,8 @@ void main() {
 
     final route = await sut.handleScheme(deepLink, ref);
 
-    expect(route, isA<DriftMemoryRoute>());
-    expect((route!.args! as DriftMemoryRouteArgs).memories, [_memory]);
+    expect(route, isA<MemoryRoute>());
+    expect((route!.args! as MemoryRouteArgs).memories, [_memory]);
     verifyNever(() => memoryService.getMemoryLane(any()));
     verify(() => memoryService.get(_memoryId)).called(1);
   });

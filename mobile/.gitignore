@@ -32,6 +32,7 @@
 .pub/
 /build/
 lib/**/*.drift.dart
+lib/**/*.steps.dart
 lib/**/*.freezed.dart
 lib/routing/router.gr.dart
 test/drift/main/generated/
@@ -66,4 +67,6 @@ libisar.so
 
 # Translation file
 lib/generated/
-lib/**/*.steps.dart
+
+# Flutter widget previews cache
+.widget_preview/

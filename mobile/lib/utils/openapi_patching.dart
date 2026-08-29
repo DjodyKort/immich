@@ -19,7 +19,7 @@ final Map<String, Map<String, Object?>> openApiPatches = {
   'UserPreferencesResponseDto': {
     'download.includeEmbeddedVideos': false,
     'folders': FoldersResponse(enabled: false, sidebarWeb: false).toJson(),
-    'memories': MemoriesResponse(enabled: true, duration: 5).toJson(),
+    'memories': MemoriesResponse(enabled: true, duration: 5, sidebarWeb: false).toJson(),
     'ratings': RatingsResponse(enabled: false).toJson(),
     'people': PeopleResponse(enabled: true, sidebarWeb: false).toJson(),
     'tags': TagsResponse(enabled: false, sidebarWeb: false).toJson(),
@@ -38,7 +38,7 @@ final Map<String, Map<String, Object?>> openApiPatches = {
   // generated model's required-key assertion throws. An empty list is the correct default: it means
   // "withheld from nowhere", which is exactly what a server without the feature implies.
   'AssetResponseDto': {'visibility': 'timeline', 'createdAt': _now, 'isEdited': false, 'hiddenFrom': <String>[]},
-  'UserAdminResponseDto': {'profileChangedAt': _now},
+  'UserAdminResponseDto': {'profileChangedAt': _now, 'clusterGroupId': ''},
   'LoginResponseDto': {'isOnboarded': false},
   'AlbumResponseDto': {'isLocked': false, 'isHidden': false},
   'SyncUserV1': {'profileChangedAt': _now, 'hasProfileImage': false},
@@ -47,7 +47,8 @@ final Map<String, Map<String, Object?>> openApiPatches = {
   // entities even though `SyncAlbumV2.fromJson` deserializes them off the stream. Patch them by hand.
   'SyncAlbumV2': {'isLocked': false, 'isHidden': false},
   'ServerFeaturesDto': {'ocr': false, 'realtimeTranscoding': false},
-  'MemoriesResponse': {'duration': 5},
+  'SearchAssetResponseDto': {'nextCursor': null},
+  'MemoriesResponse': {'duration': 5, 'sidebarWeb': false},
   'WorkflowResponseDto': {'logging': false},
 };
 

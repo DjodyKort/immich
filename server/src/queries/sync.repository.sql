@@ -551,7 +551,7 @@ order by
 select
   "asset_face"."id",
   "assetId",
-  "personId",
+  "personGroupId" as "personId",
   "imageWidth",
   "imageHeight",
   "boundingBoxX1",
@@ -1050,7 +1050,7 @@ order by
 -- SyncRepository.person.getDeletes
 select
   "id",
-  "personId"
+  "personGroupId" as "personId"
 from
   "person_audit" as "person_audit"
 where
@@ -1062,7 +1062,7 @@ order by
 
 -- SyncRepository.person.getUpserts
 select
-  "id",
+  "personGroupId" as "id",
   "createdAt",
   "updatedAt",
   "ownerId",

@@ -466,5 +466,5 @@ export const handleDownloadAlbum = async (album: AlbumResponseDto) => {
     return;
   }
 
-  await downloadArchive(`${album.albumName}.zip`, { albumId: album.id });
+  await downloadArchive(album.albumName, { albumId: album.id });
 };
