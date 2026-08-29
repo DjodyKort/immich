@@ -25,20 +25,23 @@ concurrency:
   # Not cancel-in-progress: killing a run halfway through a merge and push leaves a partial branch.
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  # Needed because this workflow calls fork-ci.yml, whose medium job logs in to ghcr.io. A called
-  # workflow cannot request a permission the caller does not hold, and the mismatch fails the run at
-  # startup with only "likely a workflow file issue" to go on.
-  packages: read
+# Nothing by default; each job asks for what it needs and no more. This used to be one workflow-level
+# block granting `contents: write`, `pull-requests: write` and `issues: write` to all seven jobs,
+# including the four that only write to the run summary.
+#
+# Note for whoever tightens this further: a called workflow cannot request a permission the calling
+# *job* does not hold, and the mismatch fails the run at startup with only "likely a workflow file
+# issue" to go on. That is why `gates` and `triage` carry blocks that look redundant.
+permissions: {}
 
 jobs:
   merge:
     name: Merge upstream
     if: ${{ github.repository != 'immich-app/immich' }}
     runs-on: ubuntu-latest
+    permissions:
+      # The push falls back to GITHUB_TOKEN when SYNC_TOKEN is absent.
+      contents: write
     timeout-minutes: 20
     outputs:
       status: ${{ steps.merge.outputs.status }}
@@ -49,7 +52,7 @@ jobs:
       conflicts: ${{ steps.merge.outputs.conflicts }}
       blocked_files: ${{ steps.merge.outputs.blocked_files }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           # No stored credential on purpose. This job supplies exactly one Authorization header itself,
@@ -90,9 +93,12 @@ jobs:
           SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
           # The fallback, since checkout no longer stores a credential for us.
           JOB_TOKEN: ${{ github.token }}
+          # Through the environment rather than interpolated into the script. It is a digit today, so
+          # this is hygiene rather than a fix -- but it is the same pattern as a value that is not.
+          BEHIND: ${{ steps.drift.outputs.behind }}
         run: |
           set -uo pipefail
-          if [ "${{ steps.drift.outputs.behind }}" = "0" ]; then
+          if [ "$BEHIND" = "0" ]; then
             echo "already up to date"
             echo "status=uptodate" >> "$GITHUB_OUTPUT"
             exit 0
@@ -139,7 +145,12 @@ jobs:
           # to the cache safely from CI, so it is surfaced rather than written.
           bash ./_fork/rr-cache.sh export >/dev/null || true
           if ! git diff --quiet -- _fork/rr-cache; then
-            echo "::notice ::rerere learned something new this run. Run _fork/rr-cache.sh export locally and commit it."
+            echo "::notice ::rerere learned something new this run. Download the rr-cache-learned artifact, or redo the merge locally and export."
+            # Saved rather than only announced. The resolution rerere worked out here is the expensive
+            # part of the run, and telling someone to reproduce it locally is telling them to redo the
+            # merge. The tarball unpacks straight over _fork/rr-cache.
+            tar -czf "$RUNNER_TEMP/rr-cache-learned.tar.gz" _fork/rr-cache
+            echo "rr_learned=true" >> "$GITHUB_OUTPUT"
           fi
           git checkout -- _fork/rr-cache 2>/dev/null || true
 
@@ -186,11 +197,24 @@ jobs:
           fi
           echo "status=merged" >> "$GITHUB_OUTPUT"
 
+      - name: Keep what rerere learned
+        if: ${{ steps.merge.outputs.rr_learned == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rr-cache-learned
+          path: ${{ runner.temp }}/rr-cache-learned.tar.gz
+          retention-days: 30
+
   prune:
     name: Prune abandoned sync branches
     needs: merge
     if: ${{ always() && github.repository != 'immich-app/immich' }}
     runs-on: ubuntu-latest
+    permissions:
+      # Deletes refs under sync/upstream-*.
+      contents: write
+      # `gh pr list`, to spare a branch that still has one open.
+      pull-requests: read
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
@@ -238,6 +262,10 @@ jobs:
   gates:
     name: Gates
     needs: merge
+    permissions:
+      contents: read
+      # fork-ci.yml's medium job logs in to ghcr.io to raise the anonymous pull limit.
+      packages: read
     if: ${{ github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'merged' }}
     # The same gate suite the branch would get from a pull_request event. Called explicitly because a
     # push made with GITHUB_TOKEN does not trigger workflows.
@@ -250,6 +278,11 @@ jobs:
     needs: [merge, gates]
     if: ${{ always() && github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'merged' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      # `gh label create`. Labels live on the issues API even when only PRs use them.
+      issues: write
     timeout-minutes: 10
     outputs:
       number: ${{ steps.pr.outputs.number }}
@@ -325,6 +358,10 @@ jobs:
   triage:
     name: Triage what arrived
     needs: [merge, pull-request]
+    permissions:
+      contents: read
+      # argus's run job posts the review as a PR comment.
+      pull-requests: write
     # Runs whenever something merged, even if the PR step failed. The triage is worth having on its own,
     # and tying it to PR creation would mean a repo setting that blocks `gh pr create` also silently
     # costs us the review. Without a PR number it falls back to an artifact, below.
@@ -336,7 +373,17 @@ jobs:
     # yield nothing: upstream/main is an ancestor of the sync branch by now, so the merge-base is
     # upstream/main itself and the range is empty. That failure would be silent and would look like a
     # clean report.
-    uses: DjodyKort/argus/.github/workflows/task.yml@main
+    # Unpinned, and inheriting secrets. Both deliberate, both flagged by zizmor.
+    #
+    # `@main` because argus is this account's own repository and its engine is developed against this
+    # fork; pinning a SHA would mean a commit here for every change there, and the trust boundary is
+    # the same account either way.
+    #
+    # `secrets: inherit` because task.yml declares no `secrets:` inputs -- it reaches for the model
+    # route secrets by name. Enumerating them here would couple the two repositories at every route
+    # change. Worth revisiting alongside the SYNC_TOKEN swap in _fork/self-hosted-runner.md, which is
+    # the credential in this repository that genuinely is over-scoped.
+    uses: DjodyKort/argus/.github/workflows/task.yml@main # zizmor: ignore[unpinned-uses]
     with:
       task: merge-triage
       rules: _fork/argus-rules.json
@@ -346,13 +393,15 @@ jobs:
       upstream_remote: https://github.com/immich-app/immich.git
       sink: ${{ needs.pull-request.outputs.number != '' && 'pr-comment' || 'artifact' }}
       pr_number: ${{ needs.pull-request.outputs.number }}
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
 
   report-blocked:
     name: Report a push blocked by workflow permissions
     needs: merge
     if: ${{ github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'blocked' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
@@ -367,6 +416,8 @@ jobs:
       - name: Explain what is blocked
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016  # the single quotes are the point: this block prints a run-book
+          # for a human to paste, and $(...) in it must survive as literal text.
           {
             echo "## Upstream sync blocked"
             echo
@@ -400,6 +451,8 @@ jobs:
     needs: merge
     if: ${{ github.repository != 'immich-app/immich' && needs.merge.outputs.status == 'conflicted' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
@@ -413,6 +466,7 @@ jobs:
       - name: Explain the conflicts
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016  # as above: a run-book to paste, not a script to expand.
           {
             echo "## Upstream sync needs manual conflict resolution"
             echo

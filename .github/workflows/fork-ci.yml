@@ -48,6 +48,22 @@ permissions:
 # Every job carries `if: github.repository != 'immich-app/immich'` so this file is inert if it ever
 # reaches upstream. It is repeated per job rather than hoisted into `env`, because a job-level `if`
 # cannot read the `env` context.
+#
+# The second half of that `if` is the duplicate-run guard. upstream-sync.yml calls this workflow
+# against its merge branch and *then* opens the PR, and the PR open event triggers this workflow a
+# second time -- the whole suite ran twice on every sync, ~19 job-minutes each. The `workflow_call`
+# run is the one worth keeping: it gates the branch before the PR exists, and its result is what
+# decides whether the PR opens as a draft.
+#
+# Scoped to the PR's author as well as the branch name, deliberately. A human opening a PR from a
+# `sync/upstream-*` branch by hand is still gated; a bare branch-name check would silently stop doing
+# that, which is the failure mode this file exists to avoid.
+#
+# `github.event.pull_request.user.login` rather than `github.actor`, for two reasons. `github.actor`
+# is whoever caused the *latest* event, so pushing one commit to a sync branch would flip it to a
+# human and quietly bring the duplicate run back. And zizmor flags an actor comparison as spoofable
+# (bot-conditions), which for a condition that decides whether the gates run at all is not a warning
+# to wave through. The PR's author is fixed for the life of the PR and comes from the event payload.
 jobs:
   # Which areas this push actually touched, so the expensive jobs can sit out the pushes that cannot
   # affect them. Only `Mobile (build)` consults it today -- it is the long pole at ~4.5 min and 12 of
@@ -59,14 +75,18 @@ jobs:
   # side of that trade to be on.
   changes:
     name: Changed areas
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       mobile: ${{ steps.filter.outputs.mobile }}
       e2e: ${{ steps.filter.outputs.e2e }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -86,6 +106,8 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
+          # shellcheck disable=SC2001  # indenting every line of a multi-line value; the parameter
+          # expansion shellcheck suggests needs an embedded newline and is worse here.
           echo "$changed" | sed 's/^/  /'
           # Wider than just mobile/, on purpose. i18n feeds the generated translations, open-api
           # generates the Dart client, and the mise files pin the toolchain -- each can break the
@@ -104,26 +126,108 @@ jobs:
             echo "e2e=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # The gate on this file itself, and on the scripts around it. Nothing checked either until now:
+  # upstream's `Zizmor` job only triggers on `pull_request` and `push: branches: [main]`, so a fork
+  # that pushes straight to `integration` never ran it, and upstream's `ShellCheck` job dies on the
+  # org token like the rest.
+  #
+  # This is not theoretical. `upstream-sync.yml` has a recorded `startup_failure` -- a workflow file
+  # GitHub refused to start, found by pushing it -- and actionlint independently flags the two
+  # `runs-on: mich` jobs that leave a run queued for 24 hours.
+  #
+  # Scoped to the fork's own workflow files on purpose. Upstream's are upstream's problem, they lint
+  # them themselves, and most of them are disabled on this fork anyway; linting them here would mean a
+  # red gate every time upstream edits a file we do not own.
+  #
+  # actionlint runs shellcheck over every `run:` block when shellcheck is on PATH, which it is on
+  # ubuntu-latest. That is most of the value: the shell in these files is where the bugs live.
+  workflows:
+    name: Workflows (actionlint, zizmor, shellcheck)
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/fork-setup
+
+      # Versions pinned inline rather than added to mise.toml, which is upstream's file. mise verifies
+      # GitHub artifact attestations on these backends, which is a stronger guarantee than a
+      # hand-written sha256 and does not have to be re-derived on a version bump.
+      #
+      # shellcheck comes from mise rather than from the runner image, even though ubuntu-latest ships
+      # one. A lint gate that depends on what happens to be preinstalled is a gate that changes its
+      # mind when GitHub rebuilds the image, and it would disagree with the local runner.
+      - name: actionlint
+        env:
+          # mise resolves these releases through the GitHub API, and an unauthenticated runner shares
+          # a 60-per-hour limit with every other job on the same egress IP. This fork has already lost
+          # a run to exactly that failure mode once, on the anonymous ghcr.io pull in Server (medium),
+          # where it surfaced as a 404 for a tag that plainly existed.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mise x aqua:koalaman/shellcheck@v0.11.0 github:rhysd/actionlint@1.7.12 -- \
+            actionlint -color \
+              .github/workflows/fork-ci.yml \
+              .github/workflows/fork-release-mobile.yml \
+              .github/workflows/upstream-sync.yml
+
+      # --offline is deliberate. Online, zizmor resolves `uses:` refs against the API and runs audits
+      # whose answers depend on the state of other repositories -- which makes the gate's verdict a
+      # function of the network rather than of this commit, and makes it disagree with a local run.
+      # Staleness of a pinned action is dependabot's job (.github/dependabot.yml), not this gate's.
+      - name: zizmor
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mise x github:zizmorcore/zizmor@1.29.0 -- \
+            zizmor --no-progress --offline --persona regular \
+              .github/actions/fork-setup/action.yml \
+              .github/workflows/fork-ci.yml \
+              .github/workflows/fork-release-mobile.yml \
+              .github/workflows/upstream-sync.yml
+
+      - name: shellcheck
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise x aqua:koalaman/shellcheck@v0.11.0 -- shellcheck _fork/*.sh
+
   server:
     name: Server (unit, lint, format, check)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
         working-directory: ./server
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       - run: mise run ci-unit
 
   server-medium:
     name: Server (medium)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -134,7 +238,7 @@ jobs:
       run:
         working-directory: ./server
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
@@ -142,14 +246,21 @@ jobs:
           # e2e/test-assets holds the video fixtures. Without it three medium tests fail on missing
           # files, which reads as a regression rather than a missing submodule.
           submodules: recursive
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       # Testcontainers otherwise pulls ghcr.io/immich-app/postgres anonymously, and anonymous pulls
       # are rate limited per IP across shared runners. Seen as a 404 "No such image", which then
       # cascades into a misleading "No test files found, exiting with code 1" once global setup dies.
       # It passed on the previous run with identical server code, so this is a pull limit rather than
       # a test problem. Authenticating with the run's own token raises the limit and costs nothing.
+      # Both values go through the environment rather than being interpolated into the command. As
+      # written before, `github.actor` was expanded into the shell by the runner before bash ever saw
+      # it -- the pattern zizmor flags as template-injection. GitHub constrains usernames enough that
+      # it was not exploitable, which is exactly why it would have survived indefinitely.
       - name: Log in to ghcr.io
-        run: echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USER: ${{ github.actor }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       # The login above was supposed to be the fix for that 404 and is not sufficient on its own: a
       # dispatch run hit it again while authenticated, for a tag that verifiably exists, one minute
       # into the job. Testcontainers pulls the image itself and gives up on the first failure, taking
@@ -177,36 +288,44 @@ jobs:
 
   web:
     name: Web (unit, format, check)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
         working-directory: ./web
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       - run: mise run ci-unit
 
   web-lint:
     name: Web (lint)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
         working-directory: ./web
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       # Its own job on purpose. //web:ci-unit deliberately excludes lint, and upstream runs Lint Web
       # on their beefy self-hosted runner. It is the most resource-hungry gate here: under CPU
       # contention it dies with "Atomics.wait() failed: timed-out" inside synckit on the
@@ -216,32 +335,55 @@ jobs:
       - run: mise run install
       - run: mise run lint
 
+  # Prettier over the two directories nothing else covers. `.github` is in there because upstream's
+  # own `.github Files Formatting` job cannot run on a fork, and a badly formatted workflow file is
+  # exactly the sort of thing that arrives in a sync and never gets noticed.
   i18n:
-    name: i18n (format)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    name: Formatting (i18n, .github)
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       - run: mise run //:i18n:format
+      # Not `mise run //.github:install`, which is upstream's task and does not work: it runs
+      # `pnpm install --filter github`, and the package in .github has no `name` field, so pnpm
+      # matches nothing -- and reports "No projects matched the filters" while exiting 0. The install
+      # then appears to succeed and the format step dies on a missing prettier. Upstream's own job
+      # does not use that task either.
+      #
+      # `--filter ./.github` is the path form, and it does match -- verified rather than assumed,
+      # because "matches nothing and exits 0" is exactly the bug being worked around here. It also
+      # beats upstream's own approach of installing from inside the directory, which pulls in all 12
+      # workspace projects for a job that needs prettier.
+      - run: pnpm install --frozen-lockfile --filter ./.github
+      - run: mise run //.github:format
 
   openapi:
     name: OpenAPI (generated client is current)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       - run: mise run open-api
       # Regenerating must be a no-op: a diff here means a DTO or controller changed without the
       # client being regenerated. Note this is NOT what upstream's check-openapi.yml does - that one
@@ -265,7 +407,11 @@ jobs:
   # minutes, so it is ungated.
   e2e-check:
     name: E2E (lint, format, check)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -274,11 +420,11 @@ jobs:
       run:
         working-directory: ./e2e
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       - run: mise run ci-unit
 
   # The API suite, which stands up the real server in Docker and drives it through the SDK. This is
@@ -295,7 +441,12 @@ jobs:
   e2e-api:
     name: E2E (API)
     needs: changes
-    if: ${{ github.repository != 'immich-app/immich' && needs.changes.outputs.e2e == 'true' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-'))
+          && needs.changes.outputs.e2e == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -304,13 +455,13 @@ jobs:
       run:
         working-directory: ./e2e
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref }}
           # The compose stack mounts test-assets; without it the media specs fail on missing files.
           submodules: recursive
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       # The same order upstream uses. The SDK has to be built before e2e installs, because the suite
       # imports it as a workspace package rather than talking to the API by hand.
       - name: Set up the SDK and CLI
@@ -333,10 +484,113 @@ jobs:
         run: docker compose logs --no-color > docker-compose-logs.txt
       - name: Archive the stack logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-api-docker-logs
           path: ./e2e/docker-compose-logs.txt
+          retention-days: 7
+
+  # Coverage that used to arrive free from upstream's test.yml and left with it when that workflow was
+  # disabled. Not academic: e2e imports @immich/cli as a workspace package and the API suite builds it,
+  # so a broken CLI already fails E2E (API) -- ten minutes later and wearing a different job's name.
+  #
+  # Ungated. It is ~2 minutes, and putting it behind `changes` would cost it a `needs` barrier for no
+  # real saving.
+  #
+  # The other two things test.yml covered and this does not: packages/scripts (upstream's release
+  # tooling, which this fork does not use -- it releases through fork-release-mobile.yml) and
+  # machine-learning. ML is deliberate and checked rather than assumed: docker-compose.yml here runs
+  # ghcr.io/immich-app/immich-machine-learning, upstream's published image. The fork builds only the
+  # server image, so nothing it does can break ML and nothing ML does needs gating here.
+  cli:
+    name: CLI (unit, lint, format, check)
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ./packages/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/fork-setup
+      - run: mise run ci-unit
+
+  # The browser half of e2e, which nothing here has ever run. fork-ci.yml's header used to say the
+  # Playwright projects were left out because "the fork has touched only their fixtures so far". That
+  # stopped being true the moment this fork started changing web behaviour -- and `src/specs/web/
+  # asset-viewer` and `src/ui/specs/asset-viewer` are precisely where a change to the asset viewer
+  # would show up.
+  #
+  # A separate job from E2E (API) rather than three more steps in it, even though that means standing
+  # the compose stack up twice. Runner minutes are free on a public repository and the two run in
+  # parallel, so this costs wall clock only if it becomes the longest job -- and in exchange a
+  # Playwright flake stays legible as a Playwright flake instead of turning the API suite red.
+  #
+  # `--only-shell` for chromium: the headless shell is a fraction of the full browser download and is
+  # what the config's Desktop Chrome project actually runs.
+  e2e-web:
+    name: E2E (web, Playwright)
+    needs: changes
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-'))
+          && needs.changes.outputs.e2e == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ./e2e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+      - uses: ./.github/actions/fork-setup
+      - name: Set up the SDK and CLI
+        working-directory: .
+        run: |
+          pnpm --filter @immich/sdk --filter @immich/cli install --frozen-lockfile
+          pnpm --filter @immich/sdk --filter @immich/cli build
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install the Chromium headless shell
+        run: pnpm exec playwright install chromium --only-shell
+      - name: Start the stack
+        run: docker compose up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+      - name: Run the web suite
+        run: pnpm test:web
+      - name: Run the ui suite
+        run: pnpm test:web:ui
+      - name: Run the web maintenance suite
+        run: pnpm test:web:maintenance
+      # The Playwright report is the only thing that makes a failed browser test diagnosable after the
+      # fact -- it carries the trace, the screenshot and the DOM at the point of failure.
+      - name: Capture the stack logs
+        if: always()
+        run: docker compose logs --no-color > docker-compose-logs.txt
+      - name: Archive the report and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-web-report
+          path: |
+            ./e2e/playwright-report
+            ./e2e/test-results
+            ./e2e/docker-compose-logs.txt
           retention-days: 7
 
   # The generated SQL in server/src/queries is committed, and nothing gated it until now. It went
@@ -351,7 +605,11 @@ jobs:
   # a stale dist this passes while proving nothing.
   sql:
     name: SQL (generated queries are current)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -375,11 +633,11 @@ jobs:
     env:
       DB_URL: postgres://postgres:postgres@localhost:5432/immich
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       - run: pnpm install --frozen-lockfile
       - name: Build plugins
         run: mise //:plugins
@@ -402,11 +660,15 @@ jobs:
 
   asset-surfaces:
     name: Asset surfaces (new read paths are classified)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
@@ -420,21 +682,32 @@ jobs:
       - name: Check for unclassified asset-bearing operations
         run: node _fork/asset-surfaces.mjs check
 
+  # Behind the same filter as `Mobile (build)`, on identical inputs. This job is 7 minutes and ran on
+  # every push, web-only ones included; 12 of the last 20 commits here touched no mobile file. The
+  # header's rule -- a filter that wrongly skips a gate is worse than one that wrongly runs it -- is
+  # why this extends only to mobile, where the same filter is already trusted for the more expensive
+  # job. The 1-3 minute server and web gates stay ungated; the saving would not pay for the risk.
   mobile:
     name: Mobile (analyze, format, test)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    needs: changes
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-'))
+          && needs.changes.outputs.mobile == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     defaults:
       run:
         working-directory: ./mobile
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
           ref: ${{ inputs.ref }}
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
       # install:ci is install with --enforce-lockfile. It depends on //:open-api-dart, so the
       # generated client is produced here rather than being committed (gitignored since #30287).
       # Its install:ios step is a no-op off macOS, so this is safe on a Linux runner.
@@ -476,40 +749,45 @@ jobs:
   mobile-build:
     name: Mobile (build)
     needs: changes
-    if: ${{ github.repository != 'immich-app/immich' && needs.changes.outputs.mobile == 'true' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-'))
+          && needs.changes.outputs.mobile == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.ref }}
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: 'zulu'
           java-version: '17'
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           packages: ''
       # The public mise action, not immich-app/devtools/actions/use-mise: that one needs a token from
       # an app this fork does not have. Same substitution the rest of this file makes.
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
         with:
-          working_directory: ./mobile
+          working-directory: ./mobile
       # Gradle dominates this job: the same build is ~4.5 min locally against a warm cache and was
       # over 10 on a cold runner. mise-action already caches the toolchain (Flutter, Java) on its own,
       # and pub and Gradle are what remain. Keyed on the lockfiles that decide the contents, with a
       # prefix-only restore key so a dependency bump warms from the previous cache instead of starting
       # from nothing.
       - name: Cache pub packages
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('mobile/pubspec.lock') }}
           restore-keys: pub-${{ runner.os }}-
       - name: Cache Gradle
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.gradle/caches
@@ -539,11 +817,15 @@ jobs:
 
   upstream-drift:
     name: Upstream drift (informational)
-    if: ${{ github.repository != 'immich-app/immich' }}
+    if: >-
+      ${{ github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Empty for push and pull_request, so checkout keeps its default behaviour there.
@@ -574,3 +856,64 @@ jobs:
           elif [ "$behind" -gt 0 ]; then
             echo "::notice ::$behind upstream commits not yet merged."
           fi
+
+  # The one check to require on `integration`. Requiring the individual jobs cannot work: the
+  # `changes` filter legitimately skips `Mobile (build)`, `Mobile (analyze, format, test)` and
+  # `E2E (API)`, and a required check that never reports leaves the PR blocked forever.
+  #
+  # `always()` is the point -- it has to run precisely when something upstream of it failed. Skipped
+  # passes, failure and cancelled do not. `needs` must list every gate; a job left out of it is a job
+  # whose failure this check would call green, which is the one bug this file cannot afford.
+  complete:
+    name: Fork CI complete
+    needs:
+      - changes
+      - workflows
+      - server
+      - server-medium
+      - web
+      - web-lint
+      - i18n
+      - openapi
+      - e2e-check
+      - e2e-api
+      - e2e-web
+      - cli
+      - sql
+      - asset-surfaces
+      - mobile
+      - mobile-build
+      - upstream-drift
+    if: >-
+      ${{ always()
+          && github.repository != 'immich-app/immich'
+          && !(github.event_name == 'pull_request'
+               && github.event.pull_request.user.login == 'github-actions[bot]'
+               && startsWith(github.head_ref, 'sync/upstream-')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any gate did not pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' | sort
+
+          # Into the run summary as well as the log. The summary is what is visible from the PR and
+          # from `gh run view` without drilling into a job, and "which gate was skipped" is the
+          # question this suite gets asked most, now that three of them sit behind a filter.
+          {
+            echo "| result | gate |"
+            echo "| --- | --- |"
+            echo "$RESULTS" | jq -r 'to_entries | sort_by(.key)[] | "| \(.value.result) | \(.key) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          bad=$(echo "$RESULTS" | jq -r '
+            [to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key]
+            | join(", ")')
+          if [ -n "$bad" ]; then
+            echo "::error::gates did not pass: $bad"
+            exit 1
+          fi
+          echo "every gate passed or was skipped"

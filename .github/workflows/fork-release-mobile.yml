@@ -51,6 +51,12 @@ on:
         default: false
         type: boolean
 
+# Never cancel-in-progress: a half-built release that has already created the GitHub release but not
+# yet attached every APK is worse than a slow one, and `gh release create` is not idempotent.
+concurrency:
+  group: fork-release-mobile-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -74,7 +80,7 @@ jobs:
           echo "::error::Refusing to publish a release named '$REF_NAME'. Dispatch this workflow from" \
                "a tag (Run workflow -> pick a tag), not from a branch." && exit 1
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -96,35 +102,38 @@ jobs:
             echo "::error::key.jks decoded to an empty file - check that KEY_JKS is valid base64." && exit 1
           fi
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           packages: ''
 
-      # The public mise action, not immich-app/devtools/actions/use-mise: that one needs a token from
-      # an app this fork does not have. Same substitution fork-ci.yml makes.
-      - uses: jdx/mise-action@v4
+      - uses: ./.github/actions/fork-setup
         with:
-          working_directory: ./mobile
+          working-directory: ./mobile
 
       # The release used to be the one mobile build in this fork with no cache at all, which is why it
       # took 15 minutes for the same work Fork CI's Mobile (build) does in 6. Same keys as fork-ci.yml
       # on purpose: `integration` is this fork's default branch, and GitHub lets any ref restore caches
       # saved on the default branch, so a tag build inherits whatever the last push to `integration`
       # warmed up. Different keys would have meant two caches and no sharing.
+      # zizmor flags both caches here as cache-poisoning: a workflow that publishes a signed artifact
+      # is restoring a cache that a push to the default branch can write. That is a real description
+      # of the mechanism -- the comment above says so in as many words -- and it is accepted rather
+      # than missed. Only the repository owner can push to `integration`, and dropping the cache costs
+      # this job nine of its fifteen minutes. Revisit the moment anyone else gets push access.
       - name: Cache pub packages
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('mobile/pubspec.lock') }}
           restore-keys: pub-${{ runner.os }}-
       - name: Cache Gradle
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: |
             ~/.gradle/caches
@@ -183,11 +192,13 @@ jobs:
           DRAFT: ${{ inputs.draft && '--draft' || '' }}
         working-directory: ./mobile/build/app/outputs/flutter-apk
         run: |
-          gh release create "$TAG" \
-            --repo "$REPO" \
-            --title "$TAG" \
-            --generate-notes \
-            $DRAFT \
+          set -euo pipefail
+          # An array rather than an unquoted "$DRAFT". Unquoted it is a word-splitting bug waiting for
+          # the day someone puts two flags in it; quoted it passes an empty argument on a normal tag
+          # push, which gh rejects. This is the shape that is right in both cases.
+          args=(--repo "$REPO" --title "$TAG" --generate-notes)
+          [ -n "$DRAFT" ] && args+=("$DRAFT")
+          gh release create "$TAG" "${args[@]}" \
             app-arm64-v8a-release.apk \
             app-armeabi-v7a-release.apk \
             app-x86_64-release.apk

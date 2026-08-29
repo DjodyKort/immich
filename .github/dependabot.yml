@@ -1,0 +1,35 @@
+# [FORK] Action version bumps, and nothing else.
+#
+# Why this exists: renovate.json extends `local>immich-app/.github:renovate-config`, an org preset
+# that cannot resolve from a personal fork, so the fork has had no dependency automation at all. That
+# is how `checkout@v6`, `cache@v4`, `upload-artifact@v4` and `setup-java@v5` all drifted a major
+# behind without anything saying so.
+#
+# Scoped to github-actions on purpose. npm, pub and pip belong to upstream and are bumped there; a
+# fork opening PRs against them would be noise in front of the weekly sync, which is the one PR here
+# that has to be read carefully.
+#
+# `.github/dependabot.yml` does not exist upstream, so this is an added file rather than an edit --
+# the same rule the fork's workflows follow to keep `.github/` out of the merge.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - '/'
+      # Workflows are found under `/` automatically; the composite action is not.
+      - '/.github/actions/fork-setup'
+    schedule:
+      interval: weekly
+      day: sunday
+      # After the 05:17 sync, so the two do not land on top of each other.
+      time: '08:00'
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'ci(fork)'
+    labels:
+      - automation
+    groups:
+      # One PR, not five. These move together and each one costs a full Fork CI run to verify.
+      actions:
+        patterns:
+          - '*'
