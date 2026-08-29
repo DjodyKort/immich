@@ -174,6 +174,7 @@ describe(AssetRepository.name, () => {
           userIds: [user.id],
           visibility: AssetVisibility.Timeline,
           orderBy: AssetOrderBy.TakenAt,
+          ctx: { elevated: false },
         },
         auth,
       );
@@ -192,6 +193,7 @@ describe(AssetRepository.name, () => {
           userIds: [user.id],
           visibility: AssetVisibility.Timeline,
           orderBy: AssetOrderBy.TakenAt,
+          ctx: { elevated: false },
         },
         auth,
       );
@@ -263,6 +265,7 @@ describe(AssetRepository.name, () => {
           userIds: [user.id],
           visibility: AssetVisibility.Timeline,
           orderBy: AssetOrderBy.CreatedAt,
+          ctx: { elevated: false },
         },
         auth,
       );
@@ -281,6 +284,7 @@ describe(AssetRepository.name, () => {
           userIds: [user.id],
           visibility: AssetVisibility.Timeline,
           orderBy: AssetOrderBy.CreatedAt,
+          ctx: { elevated: false },
         },
         auth,
       );

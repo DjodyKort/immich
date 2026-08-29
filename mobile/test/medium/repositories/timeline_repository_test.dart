@@ -293,6 +293,8 @@ void main() {
 
       final assets = await sut.hidden(user.id, .day).assetSource(0, 10);
       expect(assets.map((item) => (item as RemoteAsset).id), [asset.id]);
+    });
+
     test('orders shifted album assets in both directions and keeps normal asset order (#28852)', () async {
       final user = await ctx.newUser();
       final descendingAlbum = await ctx.newRemoteAlbum(ownerId: user.id, order: .desc);

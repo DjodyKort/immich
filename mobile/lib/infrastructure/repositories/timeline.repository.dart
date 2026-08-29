@@ -190,7 +190,6 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     String albumId, {
     GroupAssetsBy groupBy = GroupAssetsBy.day,
     required bool isElevated,
-    GroupAssetsBy groupBy = GroupAssetsBy.day,
   }) {
     if (groupBy == GroupAssetsBy.none) {
       // Counted through a join on the asset table rather than straight off album membership, so the
@@ -266,6 +265,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     required int offset,
     required int count,
     required bool isElevated,
+    GroupAssetsBy groupBy = GroupAssetsBy.day,
   }) async {
     final albumData = await (_db.remoteAlbumEntity.select()..where((row) => row.id.equals(albumId))).getSingleOrNull();
 

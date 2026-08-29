@@ -57,36 +57,17 @@ SyncAssetV1 _createAsset({
   );
 }
 
-SyncAssetV2 _createAssetV2({required String id, required String checksum, required String fileName}) {
+SyncAssetV2 _createAssetV2({
+  required String id,
+  List<AssetSurface> hiddenFrom = const [],
+  String ownerId = 'user-1',
+  String? checksum,
+  String? fileName,
+}) {
   return SyncAssetV2(
     id: id,
-    checksum: checksum,
-    originalFileName: fileName,
-    type: AssetTypeEnum.IMAGE,
-    ownerId: 'user-1',
-    isFavorite: false,
-    fileCreatedAt: DateTime(2024, 1, 1),
-    fileModifiedAt: DateTime(2024, 1, 1),
-    createdAt: DateTime(2024, 1, 1),
-    localDateTime: DateTime(2024, 1, 1),
-    visibility: AssetVisibility.timeline,
-    width: null,
-    height: null,
-    deletedAt: null,
-    duration: 0,
-    libraryId: null,
-    livePhotoVideoId: null,
-    stackId: null,
-    thumbhash: null,
-    isEdited: false,
-  );
-}
-
-SyncAssetV2 _createAssetV2({required String id, List<AssetSurface> hiddenFrom = const [], String ownerId = 'user-1'}) {
-  return SyncAssetV2(
-    id: id,
-    checksum: 'checksum-$id',
-    originalFileName: '$id.jpg',
+    checksum: checksum ?? 'checksum-$id',
+    originalFileName: fileName ?? '$id.jpg',
     type: AssetTypeEnum.IMAGE,
     ownerId: ownerId,
     isFavorite: false,
@@ -410,6 +391,9 @@ void main() {
 
       await sut.updateAssetsV2([_createAssetV2(id: 'asset-toggle')]);
       expect(await storedMask('asset-toggle'), isNull);
+    });
+  });
+
   group('SyncStreamRepository - updateAssets upsert dedupe (#22522 #27186)', () {
     Future<void> seedExif(String assetId) =>
         db.remoteExifEntity.insertOne(RemoteExifEntityCompanion.insert(assetId: assetId));
