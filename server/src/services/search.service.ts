@@ -28,9 +28,9 @@ import { BaseService } from 'src/services/base.service';
 import { requireElevatedPermission } from 'src/utils/access';
 import { getMyPartnerIds } from 'src/utils/asset.util';
 import { isSmartSearchEnabled } from 'src/utils/misc';
-import { forViewer, PolicyContext } from 'src/utils/visibility-policy';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor';
 import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter';
+import { forViewer, PolicyContext } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class SearchService extends BaseService {
