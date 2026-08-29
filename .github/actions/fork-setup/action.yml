@@ -1,0 +1,43 @@
+# [FORK] The toolchain setup every Fork CI job repeats.
+#
+# A composite action rather than twelve copies of the same `uses:`. The point is the pin: this fork
+# pins actions by SHA, and without somewhere central a bump is a twelve-line diff nobody reads and
+# dependabot has to touch twelve times.
+#
+# Lives under .github/actions/, which upstream does not use, so it is an added path rather than an
+# edit -- the same rule fork-ci.yml follows to keep .github/ out of the weekly merge.
+#
+# ## Why there is no pnpm store cache here
+#
+# There was one, briefly. It is the obvious thing to add: eight jobs run `pnpm install` from cold and
+# mise-action caches the pnpm *binary* but not the store. Two facts kill it.
+#
+# This repository is public, so GitHub-hosted runner minutes are free. The eight installs cost
+# roughly 8-10 job-minutes per run and no money, and they are not on the critical path either -- the
+# suite's wall clock is E2E (API) at 9 minutes, which no amount of pnpm caching shortens.
+#
+# And the cache budget is 10GB, of which 5.57GB is already in use -- 4.1GB of that the Gradle cache
+# that takes the release build from 15 minutes to 6. A pnpm store for this monorepo is ~1GB, the
+# store is only complete for whichever job saved it first, and pushing several of those into 4.4GB of
+# headroom evicts Gradle by LRU. That trades nine real minutes on every release for seconds on jobs
+# whose minutes are free.
+#
+# If this is revisited: one entry, saved by exactly one job, restore-only everywhere else, and check
+# `gh api repos/DjodyKort/immich/actions/cache/usage` first.
+name: Fork CI setup
+description: Install the mise toolchain.
+
+inputs:
+  working-directory:
+    description: Directory mise resolves its config from. Only the mobile jobs need anything but the root.
+    required: false
+    default: '.'
+
+runs:
+  using: composite
+  steps:
+    # The public action, not immich-app/devtools/actions/use-mise: that one needs a token from an app
+    # this fork does not have.
+    - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      with:
+        working_directory: ${{ inputs.working-directory }}
