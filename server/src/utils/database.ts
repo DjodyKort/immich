@@ -34,6 +34,7 @@ import {
   AssetFileType,
   AssetOrder,
   AssetOrderBy,
+  AssetVisibility,
   DatabaseExtension,
   ExifOrientation,
   SearchOrderField,

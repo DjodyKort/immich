@@ -56,7 +56,7 @@ void main() {
 
   setUpAll(() {
     TestUtils.init();
-    registerFallbackValue(const DriftLockedFolderRoute());
+    registerFallbackValue(const LockedFolderRoute());
   });
 
   setUp(() {
@@ -114,7 +114,7 @@ void main() {
 
       await enterCorrectPin(tester);
 
-      verify(() => router.replace(const DriftLockedFolderRoute())).called(1);
+      verify(() => router.replace(const LockedFolderRoute())).called(1);
       verifyNever(() => router.maybePop<bool>(any()));
     });
 

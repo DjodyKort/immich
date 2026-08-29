@@ -92,7 +92,14 @@ from
   inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
   and "asset"."ownerId" = "person"."ownerId"
-  and "asset"."visibility" = 'timeline'
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 512 = 0
+  )
   and "asset"."deletedAt" is null
 where
   "person"."ownerId" = $1
@@ -323,7 +330,14 @@ select
 from
   "asset_face"
   left join "asset" on "asset"."id" = "asset_face"."assetId"
-  and "asset"."visibility" = 'timeline'
+  and (
+    "asset"."visibility" in ('timeline')
+    and (
+      coalesce("asset"."hiddenFrom", 0) | (
+        coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+      )
+    ) & 512 = 0
+  )
   and "asset"."deletedAt" is null
   and (
     "asset"."ownerId" = $1::uuid
@@ -372,7 +386,14 @@ where
           "asset"
         where
           "asset"."id" = "asset_face"."assetId"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" in ('timeline')
+            and (
+              coalesce("asset"."hiddenFrom", 0) | (
+                coalesce("asset"."hiddenFromInherited", 0) & ~ coalesce("asset"."hiddenFromShown", 0)
+              )
+            ) & 512 = 0
+          )
           and "asset"."deletedAt" is null
       )
   )

@@ -85,7 +85,7 @@ type Fixture = {
   userId: string;
   albumId: string;
   /** One person, with a visible face on every asset, for the people surface. */
-  personId: string;
+  personGroupId: string;
   /** One memory, containing every asset, for the memories surface. */
   memoryId: string;
   /** Shared by all four assets, so that they form a single duplicate group. */
@@ -150,7 +150,7 @@ const newFixture = async (ctx: FixtureContext): Promise<Fixture> => {
       city: 'City ' + index,
     });
     await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
-    await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+    await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
     await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
     ids[visibility] = asset.id;
   }
@@ -158,7 +158,7 @@ const newFixture = async (ctx: FixtureContext): Promise<Fixture> => {
   return {
     userId: user.id,
     albumId: album.id,
-    personId: person.id,
+    personGroupId: person.personGroupId,
     memoryId: memory.id,
     duplicateId,
     ids,
@@ -305,8 +305,8 @@ const sumBucketCounts = (buckets: Array<{ count: number }>) =>
   buckets.reduce((total, bucket) => total + Number(bucket.count), 0);
 
 /** A person's asset count. A helper because lint forbids reading a member straight off an await. */
-const personAssetCount = async (sut: PersonService, auth: AuthDto, personId: string) => {
-  const { assets } = await sut.getStatistics(auth, personId);
+const personAssetCount = async (sut: PersonService, auth: AuthDto, personGroupId: string) => {
+  const { assets } = await sut.getStatistics(auth, personGroupId);
   return assets;
 };
 
@@ -361,7 +361,7 @@ const SURFACES: Surface[] = [
     name: 'SearchService.searchMetadata',
     setup: setupSearch,
     probe: async ({ sut, auth }) => {
-      const response = await sut.searchMetadata(auth, {});
+      const response = await sut.searchMetadata(auth, { size: 100 });
       return { ids: response.assets.items.map((item) => item.id) };
     },
     notElevated: [Timeline, Archive],
@@ -381,7 +381,7 @@ const SURFACES: Surface[] = [
     name: 'SearchService.searchRandom',
     setup: setupSearch,
     probe: async ({ sut, auth }) => {
-      const items = await sut.searchRandom(auth, {});
+      const items = await sut.searchRandom(auth, { size: 100 });
       return { ids: items.map((item) => item.id) };
     },
     notElevated: [Timeline, Archive],
@@ -391,7 +391,7 @@ const SURFACES: Surface[] = [
     name: 'SearchService.searchLargeAssets',
     setup: setupSearch,
     probe: async ({ sut, auth }) => {
-      const items = await sut.searchLargeAssets(auth, {});
+      const items = await sut.searchLargeAssets(auth, { size: 100 });
       return { ids: items.map((item) => item.id) };
     },
     notElevated: [Timeline, Archive],
@@ -479,7 +479,7 @@ const SURFACES: Surface[] = [
     name: 'PersonService.getStatistics',
     setup: setupPerson,
     probe: async ({ sut, fixture, auth }) => {
-      const statistics = await sut.getStatistics(auth, fixture.personId);
+      const statistics = await sut.getStatistics(auth, fixture.personGroupId);
       return { count: statistics.assets };
     },
     // The strictest rule in the table alongside the global map: a person's asset count omits the
@@ -603,7 +603,7 @@ describe('per-asset exclusions', () => {
     expect(buckets.reduce((total, bucket) => total + bucket.count, 0)).toBe(1);
 
     const { sut: search } = setupSearch(defaultDatabase);
-    const found = await search.searchMetadata(auth, {});
+    const found = await search.searchMetadata(auth, { size: 100 });
     const ids = found.assets.items.map((item) => item.id);
 
     // Off the timeline, still findable in search. This is the capability the enum could not carry.
@@ -624,25 +624,25 @@ describe('per-asset exclusions', () => {
     const { asset: excluded } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
     for (const asset of [kept, excluded]) {
       await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
-      await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
     }
     const auth = factory.auth({ user: { id: user.id } });
 
     const { sut: personService } = setupPerson(defaultDatabase);
-    expect(await personAssetCount(personService, auth, person.id)).toBe(2);
+    expect(await personAssetCount(personService, auth, person.personGroupId)).toBe(2);
 
     const response = await assetService.update(auth, excluded.id, { hiddenFrom: [AssetSurface.People] });
     // The wire format is surface names in both directions; the mask never leaves the server.
     expect(response.hiddenFrom).toEqual([AssetSurface.People]);
 
-    expect(await personAssetCount(personService, auth, person.id)).toBe(1);
+    expect(await personAssetCount(personService, auth, person.personGroupId)).toBe(1);
 
     // Still on the timeline and still findable in search: only the surface named moved.
     const { sut: timeline } = setupTimeline(defaultDatabase);
     expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(2);
 
     const { sut: search } = setupSearch(defaultDatabase);
-    const found = await search.searchMetadata(auth, {});
+    const found = await search.searchMetadata(auth, { size: 100 });
     expect(found.assets.items.map((item) => item.id)).toContain(excluded.id);
   });
 
@@ -652,16 +652,16 @@ describe('per-asset exclusions', () => {
     const { person } = await ctx.newPerson({ ownerId: user.id });
     const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
     await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
-    await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+    await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
     const auth = factory.auth({ user: { id: user.id } });
 
     const { sut: personService } = setupPerson(defaultDatabase);
     await assetService.update(auth, asset.id, { hiddenFrom: [AssetSurface.People] });
-    expect(await personAssetCount(personService, auth, person.id)).toBe(0);
+    expect(await personAssetCount(personService, auth, person.personGroupId)).toBe(0);
 
     const cleared = await assetService.update(auth, asset.id, { hiddenFrom: null });
     expect(cleared.hiddenFrom).toEqual([]);
-    expect(await personAssetCount(personService, auth, person.id)).toBe(1);
+    expect(await personAssetCount(personService, auth, person.personGroupId)).toBe(1);
   });
 
   it('should replace the whole set rather than merge into it', async () => {
@@ -670,20 +670,20 @@ describe('per-asset exclusions', () => {
     const { person } = await ctx.newPerson({ ownerId: user.id });
     const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
     await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
-    await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+    await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
     const auth = factory.auth({ user: { id: user.id } });
 
     const { sut: personService } = setupPerson(defaultDatabase);
     const { sut: timeline } = setupTimeline(defaultDatabase);
 
     await assetService.update(auth, asset.id, { hiddenFrom: [AssetSurface.People, AssetSurface.Timeline] });
-    expect(await personAssetCount(personService, auth, person.id)).toBe(0);
+    expect(await personAssetCount(personService, auth, person.personGroupId)).toBe(0);
     expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(0);
 
     // Timeline is absent from the second call, so it must come back -- a merge would leave it excluded.
     const narrowed = await assetService.update(auth, asset.id, { hiddenFrom: [AssetSurface.People] });
     expect(narrowed.hiddenFrom).toEqual([AssetSurface.People]);
-    expect(await personAssetCount(personService, auth, person.id)).toBe(0);
+    expect(await personAssetCount(personService, auth, person.personGroupId)).toBe(0);
     expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(1);
   });
 
@@ -696,7 +696,7 @@ describe('per-asset exclusions', () => {
     const { asset: untouched } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
     for (const asset of [first, second, untouched]) {
       await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
-      await ctx.newAssetFace({ assetId: asset.id, personId: person.id });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
     }
     const auth = factory.auth({ user: { id: user.id } });
 
@@ -706,7 +706,7 @@ describe('per-asset exclusions', () => {
     await assetService.updateAll(auth, { ids: [first.id, second.id], hiddenFrom: [AssetSurface.People] });
 
     const { sut: personService } = setupPerson(defaultDatabase);
-    expect(await personAssetCount(personService, auth, person.id)).toBe(1);
+    expect(await personAssetCount(personService, auth, person.personGroupId)).toBe(1);
 
     const { sut: timeline } = setupTimeline(defaultDatabase);
     expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(3);

@@ -6,7 +6,7 @@ import 'package:immich_mobile/domain/models/user.model.dart';
 import 'package:immich_mobile/domain/services/user.service.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/auth/auth_state.model.dart';
-import 'package:immich_mobile/presentation/pages/drift_album_options.page.dart';
+import 'package:immich_mobile/presentation/pages/album_options.page.dart';
 import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
@@ -66,7 +66,7 @@ void main() {
   final owner = UserFactory.createDto();
 
   Future<void> pumpOptions(WidgetTester tester, RemoteAlbum album) => tester.pumpConsumerWidget(
-    DriftAlbumOptionsPage(album: album),
+    AlbumOptionsPage(album: album),
     overrides: [
       authProvider.overrideWith((ref) => _TestAuthNotifier(ref, album.ownerId)),
       // The page renders the owner's avatar row, so this has to resolve even though the row is not
@@ -83,7 +83,7 @@ void main() {
     find.ancestor(of: find.text(StaticTranslations.instance.lock_album), matching: find.byType(SwitchListTile)),
   );
 
-  group('DriftAlbumOptionsPage lock switch', () {
+  group('AlbumOptionsPage lock switch', () {
     testWidgets('is operable on an album shared with nobody', (tester) async {
       await pumpOptions(tester, album(isLocked: false, isShared: false));
 

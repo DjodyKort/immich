@@ -33,7 +33,7 @@ class PinAuthPage extends HookConsumerWidget {
     // The one place either success path ends, so the two cannot drift apart. Both mean the same thing --
     // the session is now elevated -- and differ only in where the user should be left.
     void finish() {
-      unawaited(popOnSuccess ? context.maybePop(true) : context.replaceRoute(const DriftLockedFolderRoute()));
+      unawaited(popOnSuccess ? context.maybePop(true) : context.replaceRoute(const LockedFolderRoute()));
     }
 
     Future<void> registerBiometric(String pinCode) async {

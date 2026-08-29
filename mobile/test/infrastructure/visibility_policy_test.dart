@@ -1,10 +1,10 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:immich_mobile/data/db/main/database.dart';
+import 'package:immich_mobile/data/db/main/table/remote/album.drift.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
-import 'package:immich_mobile/infrastructure/entities/remote_album.entity.drift.dart';
-import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
 import 'package:immich_mobile/infrastructure/utils/visibility_policy.dart';
 
 void main() {
