@@ -747,10 +747,15 @@ jobs:
       #
       # Codegen must run before analysis. Skipping it produces thousands of phantom analyzer errors,
       # and the drift schema in particular is not part of checklist while the migration tests need it.
-      - run: mise run codegen:pigeon
-      - run: mise run codegen:dart
-      - run: mise run codegen:translation
-      - run: mise run codegen:drift:schema
+      # `mise run codegen`, not the individual steps. It used to enumerate them, and that quietly
+      # rotted: upstream added `codegen:drift:migration` when it made database.steps.dart generated
+      # rather than committed, the enumerated list did not know about it, and `analyze` failed on a
+      # missing file that nothing had been asked to produce. The aggregate cannot drift that way.
+      #
+      # `mise run checklist` still cannot be used here -- it calls `analyze`, which is analyze:dart
+      # plus analyze:dcm, and `dcm analyze` on CI needs a paid licence key. That is why the steps
+      # below are still spelled out.
+      - run: mise run codegen
       - run: mise run analyze:dart
       # dart format with --set-exit-if-changed, so this is a real gate rather than a rewrite.
       - run: mise run format
