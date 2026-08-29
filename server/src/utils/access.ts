@@ -127,6 +127,10 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return setUnion(isOwner, isPartner);
     }
 
+    case Permission.AssetFileDownload: {
+      return access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+    }
+
     case Permission.AssetView: {
       const isOwner = await access.asset.checkOwnerAccess(auth.user.id, ids, forViewer(auth));
       const isAlbum = await access.asset.checkAlbumAccess(auth.user.id, setDifference(ids, isOwner), forViewer(auth));
@@ -163,6 +167,11 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
 
     case Permission.AssetEditDelete: {
       return await access.asset.checkOwnerAccess(auth.user.id, ids, forViewer(auth));
+    }
+
+    case Permission.AssetFileRead:
+    case Permission.AssetFileDelete: {
+      return await access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
     }
 
     case Permission.AlbumRead: {
@@ -306,8 +315,29 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return access.person.checkFaceOwnerAccess(auth.user.id, ids);
     }
 
+    case Permission.ClusterGroupRead: {
+      const isMember = await access.clusterGroup.checkOwnerAccess(auth.user.id, ids);
+      const isInvited = await access.clusterGroup.checkInviteAccess(auth.user.id, setDifference(ids, isMember));
+      return setUnion(isMember, isInvited);
+    }
+
+    case Permission.ClusterGroupLeave:
+    case Permission.ClusterGroupRequestCreate: {
+      return access.clusterGroup.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    case Permission.ClusterGroupRequestDelete: {
+      const isOwner = await access.clusterGroupRequest.checkOwnerAccess(auth.user.id, ids);
+      const isGroupMember = await access.clusterGroupRequest.checkGroupAccess(auth.user.id, ids);
+      return setUnion(isOwner, isGroupMember);
+    }
+
+    case Permission.ClusterGroupRequestRead: {
+      return access.clusterGroupRequest.checkOwnerAccess(auth.user.id, ids);
+    }
+
     case Permission.PartnerUpdate: {
-      return await access.partner.checkUpdateAccess(auth.user.id, ids);
+      return access.partner.checkUpdateAccess(auth.user.id, ids);
     }
 
     case Permission.SessionRead:

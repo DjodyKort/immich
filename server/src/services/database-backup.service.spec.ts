@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
-import { PassThrough, Readable } from 'node:stream';
-import { defaults, SystemConfig } from 'src/config';
+import { Duplex, PassThrough, Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core';
+import { defaults, SystemConfig } from 'src/dtos/config.dto';
 import { ImmichWorker, JobStatus, StorageFolder } from 'src/enum';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository';
 import { DatabaseBackupService } from 'src/services/database-backup.service';
@@ -250,6 +250,25 @@ describe(DatabaseBackupService.name, () => {
         throw new Error('error');
       });
       await expect(sut.handleBackupDatabase()).rejects.toThrow('error');
+    });
+
+    it('should destroy the spawned processes if the write stream fails', async () => {
+      const spawned: Duplex[] = [];
+      mocks.process.spawnDuplexStream.mockImplementation(() => {
+        const duplex = mockDuplex()('command', 0, 'data', '');
+        spawned.push(duplex);
+        return duplex;
+      });
+      mocks.storage.createWriteStream.mockImplementation(() => {
+        throw new Error('ENOENT: no such file or directory');
+      });
+
+      await expect(sut.handleBackupDatabase()).rejects.toThrow('ENOENT');
+
+      expect(spawned).toHaveLength(2);
+      for (const stream of spawned) {
+        expect(stream.destroyed).toBe(true);
+      }
     });
 
     it('should fail if rename fails', async () => {

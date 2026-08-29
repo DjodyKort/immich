@@ -12,7 +12,7 @@ import type {
   QueueResponseDto,
   ReleaseEventV1,
   SharedLinkResponseDto,
-  SystemConfigDto,
+  AdminConfigDto,
   TagResponseDto,
   UserAdminResponseDto,
   WorkflowResponseDto,
@@ -89,7 +89,7 @@ export type Events = {
   SessionLocked: [];
   SessionDelete: [];
 
-  SystemConfigUpdate: [SystemConfigDto];
+  SystemConfigUpdate: [AdminConfigDto];
 
   IntegrityReportDeleteStatus: [{ type?: IntegrityReport; id?: string; isDeleting: boolean }];
   IntegrityReportDeleted: [{ type?: IntegrityReport; id?: string }];

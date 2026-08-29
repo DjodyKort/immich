@@ -431,12 +431,16 @@ export class AlbumService extends BaseService {
         throw new BadRequestException(LockedAlbumError.NeedsLockedAssets);
       }
 
-      // Can't use the shared addAssets() util below here: it gates each asset via
-      // Permission.AssetShare, which hardcodes non-elevated access -- deliberately, since that
-      // permission also covers shared-link/album-sharing paths that must never expose locked
-      // content. Permission.AssetUpdate does respect elevation, and organizing an asset the
+      // Can't use the shared addAssets() util below here. Upstream now takes the permission as a
+      // parameter rather than hardcoding Permission.AssetShare, so that half of the original reason
+      // is gone -- but the rest stands: this branch also has to report ALREADY_IN_LOCKED_ALBUM and
+      // to refuse assets that are not already locked, neither of which addAssets knows about.
+      //
+      // Permission.AssetUpdate rather than AssetShare, because AssetShare hardcodes non-elevated
+      // access -- deliberately, since it also covers shared-link and album-sharing paths that must
+      // never expose locked content. AssetUpdate respects elevation, and organizing an asset the
       // requester already owns (and has already locked) into a locked album they also own doesn't
-      // expose it to anyone else, so it's the right check here.
+      // expose it to anyone else.
       const existingAssetIds = await this.albumRepository.getAssetIds(id, dto.ids);
       const notPresentAssetIds = dto.ids.filter((assetId) => !existingAssetIds.has(assetId));
 
@@ -473,7 +477,7 @@ export class AlbumService extends BaseService {
       results = await addAssets(
         auth,
         { access: this.accessRepository, bulk: this.albumRepository },
-        { parentId: id, assetIds: dto.ids },
+        { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
       );
     }
 
