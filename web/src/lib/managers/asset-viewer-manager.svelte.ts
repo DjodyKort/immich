@@ -2,6 +2,7 @@ import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
 import type { ZoomImageWheelState } from '@zoom-image/core';
 import { cubicOut } from 'svelte/easing';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { faceOverlayManager } from '$lib/stores/face-overlay.svelte';
 import type { ImageLoaderStatus } from '$lib/utils/adaptive-image-loader.svelte';
 import { canCopyImageToClipboard } from '$lib/utils/asset-utils';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
@@ -228,8 +229,15 @@ class AssetViewerManager extends BaseEventManager<Events> {
     return this.#highlightedFaces;
   }
 
+  /**
+   * The single gate for the hover overlay. Both entry points -- the invisible hit boxes over the
+   * photo and the person thumbnails in the detail panel -- come through here, and so does everything
+   * downstream of it: the dimmed backdrop in PhotoViewer, the markers in the panorama adapter, and
+   * the highlight ring on a person's thumbnail. Refusing the faces here turns all of them off at
+   * once, rather than each consumer having to remember the setting.
+   */
   setHighlightedFaces(faces: Faces[]) {
-    this.#highlightedFaces = faces;
+    this.#highlightedFaces = faceOverlayManager.isEnabled ? faces : [];
   }
 
   clearHighlightedFaces() {

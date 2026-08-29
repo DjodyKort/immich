@@ -12,6 +12,7 @@
     playVideoThumbnailOnHover,
     showDeleteModal,
   } from '$lib/stores/preferences.store';
+  import { faceOverlayManager } from '$lib/stores/face-overlay.svelte';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { Field, Switch, Text, Theme, themeManager, ThemePreference } from '@immich/ui';
   import { onMount } from 'svelte';
@@ -91,6 +92,13 @@
 
       <Field label={$t('display_original_photos')} description={$t('display_original_photos_setting_description')}>
         <Switch bind:checked={$alwaysLoadOriginalFile} />
+      </Field>
+
+      <Field label={$t('face_overlay_setting')} description={$t('face_overlay_setting_description')}>
+        <Switch
+          checked={faceOverlayManager.showByDefault}
+          onCheckedChange={(checked) => (faceOverlayManager.showByDefault = checked)}
+        />
       </Field>
 
       <Field label={$t('video_hover_setting')} description={$t('video_hover_setting_description')}>
