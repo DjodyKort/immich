@@ -50,6 +50,7 @@ jobs:
       base: ${{ steps.drift.outputs.base }}
       replayed: ${{ steps.merge.outputs.replayed }}
       conflicts: ${{ steps.merge.outputs.conflicts }}
+      new_workflows: ${{ steps.merge.outputs.new_workflows }}
       blocked_files: ${{ steps.merge.outputs.blocked_files }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -160,6 +161,15 @@ jobs:
           # permission", and there is no `workflows` permission a workflow can grant itself, so no
           # permissions block fixes it. Upstream edits its workflows often, so this is the common case
           # rather than an edge one. A PAT or app token with Workflows: write is the only way through.
+          # Workflow files upstream *added*, as opposed to changed. They matter more than the rest:
+          # GitHub enables a new workflow the moment it appears, so every sync can quietly switch on
+          # something that runs on this fork's pull requests. The 2026-08-29 sync brought three
+          # (backport, draft-release, migration-order) and Migration Order started firing on the sync
+          # PR immediately. The disable sweep in _docs/ci-review-2026-08-29.md is point-in-time; this
+          # is what keeps it current.
+          new_workflows=$(git diff --name-only --diff-filter=A "$pre_merge"..HEAD -- .github/workflows | head -20)
+          echo "new_workflows=$(echo "$new_workflows" | paste -sd, -)" >> "$GITHUB_OUTPUT"
+
           workflow_changes=$(git diff --name-only "$pre_merge"..HEAD -- .github/workflows | head -20)
           if [ -n "$workflow_changes" ] && [ -z "${SYNC_TOKEN:-}" ]; then
             echo "::error ::This merge changes .github/workflows, which GITHUB_TOKEN may not push. Add a SYNC_TOKEN secret with Contents: write and Workflows: write."
@@ -293,6 +303,7 @@ jobs:
       BRANCH: ${{ needs.merge.outputs.branch }}
       BEHIND: ${{ needs.merge.outputs.behind }}
       REPLAYED: ${{ needs.merge.outputs.replayed }}
+      NEW_WORKFLOWS: ${{ needs.merge.outputs.new_workflows }}
       GATES: ${{ needs.gates.result }}
     steps:
       # gh pr create --label hard-fails on a label that does not exist yet, which is easy to hit on a
@@ -329,6 +340,15 @@ jobs:
               echo "$REPLAYED" | tr ',' '\n' | sed 's/^/- /'
             else
               echo "No conflicts: the merge was clean."
+            fi
+            echo
+            if [ -n "$NEW_WORKFLOWS" ]; then
+              echo
+              echo "**Upstream added workflow files, and GitHub enables a new workflow as soon as it"
+              echo "appears.** Decide whether each should run on this fork, and \`gh workflow disable\`"
+              echo "the ones that should not:"
+              echo
+              echo "$NEW_WORKFLOWS" | tr ',' '\n' | sed 's/^/- /'
             fi
             echo
             echo "A clean merge is not evidence of a working one. Upstream changes that touch none of our"
