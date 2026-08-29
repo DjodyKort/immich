@@ -43,10 +43,19 @@ after:
    `127.0.0.1`.
 
    **What that sentence actually cost to implement.** A bare `useradd ghrunner` does not deliver it,
-   and this box has no host firewall to make up the difference — before 2026-08-29, `nft list ruleset`
-   showed **zero chains hooking input**. So the runner is an ephemeral container on its own bridge
-   network, reaching hiro through a socat sidecar and nothing else. Three corrections were needed,
-   each found by measuring rather than reasoning:
+   and at the time there was no host firewall to make up the difference — before 2026-08-29, `nft list
+   ruleset` showed **zero chains hooking input**. So the runner is an ephemeral container on its own
+   bridge network, reaching hiro through a socat sidecar and nothing else.
+
+   The host has had a default-deny inbound policy since 2026-08-29 (D-0042, `firewall.service`), but
+   that does not make the confinement below redundant, and the two are not interchangeable. The host
+   firewall accepts the docker bridges wholesale, because containers legitimately reach host services
+   through them — OmniRoute calls ollama that way. What keeps *this* container out of ollama is the
+   `argus` table, at an earlier priority, matched on the runner's own bridge. Anything of the runner's
+   that reaches the default-deny chain has already been filtered down to the two gateway ports.
+
+   Three corrections were needed to get the confinement right, each found by measuring rather than
+   reasoning:
 
    - The sidecar could not bind the bridge gateway address, because compose does not materialise a
      network that nothing attaches to and the sidecar runs on the host network. `argus_net` is
