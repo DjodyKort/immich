@@ -8,6 +8,7 @@
   import AssetViewerEvents from '$lib/components/AssetViewerEvents.svelte';
   import { assetViewerManager, type Faces } from '$lib/managers/asset-viewer-manager.svelte';
   import { castManager } from '$lib/managers/cast-manager.svelte';
+  import { faceOverlayManager } from '$lib/stores/face-overlay.svelte';
   import { faceManager } from '$lib/stores/face.svelte';
   import { ocrManager } from '$lib/stores/ocr.svelte';
   import { SlideshowLook, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
@@ -174,7 +175,11 @@
   const faces = $derived(Array.from(faceToNameMap.keys()));
 
   const boundingBoxes = $derived.by(() => {
-    if (assetViewerManager.isFaceEditMode || ocrManager.showOverlay) {
+    // faceOverlayManager gates the boxes as well as the highlight, not just the highlight. These
+    // divs are invisible until hovered, but they are `pointer-events-auto` and sit over the photo,
+    // so leaving them in place with the overlay off would keep swallowing pointer events for an
+    // effect that no longer draws anything.
+    if (assetViewerManager.isFaceEditMode || ocrManager.showOverlay || !faceOverlayManager.isEnabled) {
       return [];
     }
 

@@ -16,6 +16,8 @@
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import RemoveFromAlbumAction from '$lib/components/timeline/actions/RemoveFromAlbumAction.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { faceOverlayManager } from '$lib/stores/face-overlay.svelte';
+  import { faceManager } from '$lib/stores/face.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
   import { getAlbumAssetActions } from '$lib/services/album.service';
@@ -33,7 +35,7 @@
     type StackResponseDto,
   } from '@immich/sdk';
   import { ActionButton, CommandPaletteDefaultProvider, Tooltip, type ActionItem } from '@immich/ui';
-  import { mdiArrowLeft, mdiArrowRight, mdiDotsVertical, mdiVideoOutline } from '@mdi/js';
+  import { mdiArrowLeft, mdiArrowRight, mdiDotsVertical, mdiFaceRecognition, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -83,6 +85,24 @@
     icon: mdiVideoOutline,
     $if: () => asset.type === AssetTypeEnum.Video,
     onAction: () => setPlayOriginalVideo(!isPlayingOriginalVideo),
+  });
+
+  // Flips the session override in faceOverlayManager, not the saved default -- that one lives in
+  // Settings -> App Settings and survives a reload, which this deliberately does not.
+  //
+  // Only offered on an asset that has detected faces. On any other photo the menu entry would name a
+  // behaviour that photo does not have, and toggling it would appear to do nothing.
+  const FaceOverlay: ActionItem = $derived({
+    title: faceOverlayManager.isEnabled ? $t('hide_face_overlay') : $t('show_face_overlay'),
+    icon: mdiFaceRecognition,
+    $if: () => faceManager.data.length > 0,
+    onAction: () => {
+      faceOverlayManager.toggle();
+      // Whatever was highlighted when the menu opened is stale either way: turning the overlay off
+      // has to take the dim with it, and turning it back on must not restore a highlight for a face
+      // the pointer left several clicks ago.
+      assetViewerManager.clearHighlightedFaces();
+    },
   });
 
   const Actions = $derived(getAssetActions($t, { ...asset, stackPrimaryAssetId: stack?.primaryAssetId }));
@@ -198,6 +218,8 @@
         <ActionMenuItem action={Actions.HideFromPlaces} />
 
         <ActionMenuItem action={PlayOriginalVideo} />
+
+        <ActionMenuItem action={FaceOverlay} />
 
         {#if isOwner}
           <hr />
