@@ -32,12 +32,58 @@ case "${1:-}" in
     fi
     echo "imported $(count "$live") resolution(s) into $live"
     ;;
+  # Exports only entries that are actually usable, normalised to variant 0.
+  #
+  # rerere numbers variants when the same conflict id is recorded more than once. A merge that is
+  # started and abandoned -- exploring how bad a sync looks, say -- writes `preimage` with no
+  # `postimage`; resolving the same conflict later lands in `preimage.1`/`postimage.1` beside it.
+  # rerere then looks up variant 0 on replay, finds a preimage it cannot answer, and gives up. The
+  # resolution is right there in variant 1 and never gets used.
+  #
+  # That is not hypothetical: it is why the 2026-08-29 sync replayed 0 of 32 recorded resolutions and
+  # reported the same 33 conflicts a human had already resolved. A cp -R of $GIT_DIR/rr-cache copies
+  # the trap along with the answers.
+  #
+  # So: pick the highest variant that has a postimage, write it as the plain pair, and skip any entry
+  # that has no postimage at all -- an unresolved conflict is not knowledge worth sharing.
   export)
     mkdir -p "$tracked"
-    if [ -d "$live" ] && [ -n "$(ls -A "$live" 2>/dev/null)" ]; then
-      cp -R "$live/." "$tracked/"
-    fi
-    echo "exported $(count "$tracked") resolution(s) into $tracked"
+    exported=0
+    skipped=0
+    for dir in "$live"/*/; do
+      [ -d "$dir" ] || continue
+      id=$(basename "$dir")
+
+      best=""
+      for post in "$dir"postimage "$dir"postimage.*; do
+        [ -f "$post" ] || continue
+        best="$post"
+      done
+
+      if [ -z "$best" ]; then
+        skipped=$((skipped + 1))
+        continue
+      fi
+
+      pre="${best/postimage/preimage}"
+      if [ ! -f "$pre" ]; then
+        echo "warning: $id has $(basename "$best") but no matching preimage; skipping" >&2
+        skipped=$((skipped + 1))
+        continue
+      fi
+
+      mkdir -p "$tracked/$id"
+      # Normalised to variant 0. The variant number is local bookkeeping about the order this machine
+      # happened to see conflicts in; it means nothing to the next clone, and carrying it over is what
+      # strands a resolution behind an unanswerable variant 0.
+      cp "$pre" "$tracked/$id/preimage"
+      cp "$best" "$tracked/$id/postimage"
+      rm -f "$tracked/$id"/preimage.* "$tracked/$id"/postimage.*
+      exported=$((exported + 1))
+    done
+
+    echo "exported $exported resolution(s) into $tracked"
+    [ "$skipped" -gt 0 ] && echo "skipped $skipped entr(y|ies) with no recorded resolution"
     echo "commit _fork/rr-cache to share them"
     ;;
   *)
