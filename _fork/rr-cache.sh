@@ -54,11 +54,22 @@ case "${1:-}" in
       [ -d "$dir" ] || continue
       id=$(basename "$dir")
 
+      # Variant 0 first if it has an answer, then the highest numbered one that does.
+      #
+      # Taking the highest unconditionally was the fix for the original bug -- an abandoned merge
+      # leaving `preimage` with no `postimage` and the real answer in `.1` -- but it is the wrong rule
+      # once a normalised cache exists. A stale `.1` copied in from an older commit would then be
+      # preferred over the correct variant 0 sitting next to it, quietly reintroducing exactly what
+      # this function was written to prevent.
       best=""
-      for post in "$dir"postimage "$dir"postimage.*; do
-        [ -f "$post" ] || continue
-        best="$post"
-      done
+      if [ -f "$dir"postimage ]; then
+        best="$dir"postimage
+      else
+        for post in "$dir"postimage.*; do
+          [ -f "$post" ] || continue
+          best="$post"
+        done
+      fi
 
       if [ -z "$best" ]; then
         skipped=$((skipped + 1))
