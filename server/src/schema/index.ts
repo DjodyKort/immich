@@ -38,6 +38,7 @@ import { ApiKeyTable } from 'src/schema/tables/api-key.table';
 import { AssetAuditTable } from 'src/schema/tables/asset-audit.table';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table';
 import { AssetEditAuditTable } from 'src/schema/tables/asset-edit-audit.table';
+import { AssetLockRestoreTable } from 'src/schema/tables/asset-lock-restore.table';
 import { AssetEditTable } from 'src/schema/tables/asset-edit.table';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
 import { AssetFaceAuditTable } from 'src/schema/tables/asset-face-audit.table';
@@ -112,6 +113,7 @@ export class ImmichDatabase {
     AssetAuditTable,
     AssetEditTable,
     AssetEditAuditTable,
+    AssetLockRestoreTable,
     AssetFaceTable,
     AssetFaceAuditTable,
     AssetMetadataTable,
@@ -224,6 +226,7 @@ export interface DB {
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  asset_lock_restore: AssetLockRestoreTable;
   asset_ocr: AssetOcrTable;
   asset_ocr_audit: AssetOcrAuditTable;
   asset_audio: AssetAudioTable;

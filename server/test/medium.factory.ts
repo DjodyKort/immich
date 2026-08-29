@@ -26,6 +26,7 @@ import { ApiKeyRepository } from 'src/repositories/api-key.repository';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository';
+import { AssetLockRestoreRepository } from 'src/repositories/asset-lock-restore.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository';
 import { ConfigRepository } from 'src/repositories/config.repository';
@@ -480,6 +481,7 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
     case AssetEditRepository:
     case AssetFileRepository:
     case AssetJobRepository:
+    case AssetLockRestoreRepository:
     case ClusterGroupRepository:
     case DownloadRepository:
     case DuplicateRepository:
@@ -562,6 +564,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case AlbumRepository:
     case AssetRepository:
     case AssetJobRepository:
+    case AssetLockRestoreRepository:
     case ConfigRepository:
     case CryptoRepository:
     case LibraryRepository:

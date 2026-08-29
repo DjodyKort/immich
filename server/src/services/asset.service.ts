@@ -36,6 +36,7 @@ import {
 import { BaseService } from 'src/services/base.service';
 import { JobItem, JobOf } from 'src/types';
 import { requireElevatedPermission } from 'src/utils/access';
+import { restoreFromLock } from 'src/utils/asset-lock';
 import {
   getAssetFiles,
   getDimensions,
@@ -188,6 +189,13 @@ export class AssetService extends BaseService {
         ? await this.assetRepository.getLockedAssetIds(ids)
         : new Set<string>();
 
+    // Same reason, opposite direction: record the visibility and the album memberships that locking is
+    // about to overwrite and delete. Has to be here rather than beside `removeAssetsFromAll` below,
+    // because by then `updateAll` has already replaced the visibility it needs to read.
+    if (visibility === AssetVisibility.Locked) {
+      await this.assetLockRestoreRepository.snapshot(ids);
+    }
+
     const assetDto = _.omitBy(
       {
         isFavorite,
@@ -247,6 +255,21 @@ export class AssetService extends BaseService {
 
     if (unlockingAssetIds.size > 0) {
       await this.albumRepository.removeAssetsFromLockedAlbums([...unlockingAssetIds]);
+
+      // The albums come back regardless -- being evicted from them was locking's doing, not the
+      // caller's. Only the *visibility* is conditional: both clients send `timeline` for "remove from
+      // the locked folder" because they have no way of knowing what the asset was before, so that is
+      // the request worth second-guessing. An explicit `archive` is a decision the caller made, and it
+      // stands.
+      await restoreFromLock(
+        {
+          albumRepository: this.albumRepository,
+          assetLockRestoreRepository: this.assetLockRestoreRepository,
+          assetRepository: this.assetRepository,
+        },
+        [...unlockingAssetIds],
+        { visibility: visibility === AssetVisibility.Timeline },
+      );
     }
 
     if (visibility === AssetVisibility.Locked) {

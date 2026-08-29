@@ -4,6 +4,7 @@ import { AlbumUserRole, AssetVisibility, SharedLinkType } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
+import { AssetLockRestoreRepository } from 'src/repositories/asset-lock-restore.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
 import { EventRepository } from 'src/repositories/event.repository';
 import { JobRepository } from 'src/repositories/job.repository';
@@ -38,6 +39,7 @@ const setup = (db?: Kysely<DB>) => {
       AccessRepository,
       AlbumRepository,
       AlbumUserRepository,
+      AssetLockRestoreRepository,
       AssetRepository,
       SharedLinkRepository,
       UserRepository,
@@ -430,5 +432,88 @@ describe('locking an existing album', () => {
 
     await expect(isLocked(ctx, album.id)).resolves.toBe(false);
     await expect(visibilityOf(ctx, assets[0].id)).resolves.toBe(AssetVisibility.Timeline);
+  });
+});
+
+/**
+ * Unlocking as the inverse of locking.
+ *
+ * Locking overwrites two things: the asset's `visibility` -- one exclusive column, so an *archived*
+ * asset loses that fact -- and its membership of every other album, since a locked asset reachable
+ * through an ordinary album is the locked folder leaking. Neither was recorded anywhere, so unlock
+ * returned everything to the timeline and to no album. `asset_lock_restore` is where the previous
+ * state now lives, and these are the properties that make it worth having.
+ */
+describe('unlocking restores what locking overwrote', () => {
+  it('should return an archived asset to the archive, not the timeline', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+    await sut.setLocked(elevated, album.id, { isLocked: true });
+    await expect(visibilityOf(ctx, asset.id)).resolves.toBe(AssetVisibility.Locked);
+
+    await sut.setLocked(elevated, album.id, { isLocked: false });
+
+    await expect(visibilityOf(ctx, asset.id)).resolves.toBe(AssetVisibility.Archive);
+  });
+
+  it('should put the asset back in the other albums it was evicted from', async () => {
+    const { sut, ctx } = setup();
+    const { user, album, assets, elevated } = await seed(ctx);
+    const { album: first } = await ctx.newAlbum({ ownerId: user.id });
+    const { album: second } = await ctx.newAlbum({ ownerId: user.id });
+    await ctx.newAlbumAsset({ albumId: first.id, assetId: assets[0].id });
+    await ctx.newAlbumAsset({ albumId: second.id, assetId: assets[0].id });
+
+    await sut.setLocked(elevated, album.id, { isLocked: true });
+    await expect(ctx.get(AlbumRepository).getAssetIds(first.id, [assets[0].id])).resolves.toEqual(new Set());
+
+    await sut.setLocked(elevated, album.id, { isLocked: false });
+
+    await expect(ctx.get(AlbumRepository).getAssetIds(first.id, [assets[0].id])).resolves.toEqual(
+      new Set([assets[0].id]),
+    );
+    await expect(ctx.get(AlbumRepository).getAssetIds(second.id, [assets[0].id])).resolves.toEqual(
+      new Set([assets[0].id]),
+    );
+  });
+
+  // A membership that cannot come back must not take the visibility restore down with it.
+  it('should still restore visibility when a former album has since been deleted', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+    const { album: gone } = await ctx.newAlbum({ ownerId: user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    await ctx.newAlbumAsset({ albumId: gone.id, assetId: asset.id });
+    const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+    await sut.setLocked(elevated, album.id, { isLocked: true });
+    await ctx.get(AlbumRepository).delete(gone.id);
+
+    await sut.setLocked(elevated, album.id, { isLocked: false });
+
+    await expect(visibilityOf(ctx, asset.id)).resolves.toBe(AssetVisibility.Archive);
+  });
+
+  // The restore point is consumed, so a second unlock has nothing left to apply and cannot resurrect a
+  // stale visibility onto an asset the user has since moved somewhere else.
+  it('should consume the restore point, leaving nothing behind', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+    await sut.setLocked(elevated, album.id, { isLocked: true });
+    await sut.setLocked(elevated, album.id, { isLocked: false });
+
+    await expect(ctx.get(AssetLockRestoreRepository).getMany([asset.id])).resolves.toEqual([]);
   });
 });

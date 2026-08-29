@@ -1,10 +1,19 @@
 import { Kysely } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto';
-import { AssetFileType, AssetMetadataKey, AssetStatus, AssetSurface, JobName, SharedLinkType } from 'src/enum';
+import {
+  AssetFileType,
+  AssetMetadataKey,
+  AssetStatus,
+  AssetSurface,
+  AssetVisibility,
+  JobName,
+  SharedLinkType,
+} from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository';
+import { AssetLockRestoreRepository } from 'src/repositories/asset-lock-restore.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
 import { EventRepository } from 'src/repositories/event.repository';
 import { JobRepository } from 'src/repositories/job.repository';
@@ -31,6 +40,7 @@ const setup = (db?: Kysely<DB>) => {
       AssetRepository,
       AssetEditRepository,
       AssetJobRepository,
+      AssetLockRestoreRepository,
       AlbumRepository,
       AccessRepository,
       SharedLinkAssetRepository,
@@ -44,6 +54,14 @@ const setup = (db?: Kysely<DB>) => {
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
+
+// Every unlock path queues a sidecar write, so give the mock an implementation rather than letting a
+// test fail on the mock instead of on the behaviour it is asserting.
+const setupWithJobs = () => {
+  const made = setup();
+  made.ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+  return made;
+};
 
 type Ctx = Awaited<ReturnType<typeof setup>>['ctx'];
 
@@ -1061,3 +1079,55 @@ describe(AssetService.name, () => {
     });
   });
 });
+
+/**
+ * Locking a single asset from the timeline, and taking it back out again.
+ *
+ * The album path has its own suite; this is the other caller of the same pair, and the one where the
+ * caller gets to name where the asset lands. Both halves of a restore point are exercised here because
+ * they are independent: the visibility defers to an explicit request, the album memberships never do.
+ */
+describe('unlocking a single asset', () => {
+  it('should return an archived asset to the archive and to its albums', async () => {
+    const { sut, ctx } = setupWithJobs();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+    await sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Locked });
+    await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [asset.id])).resolves.toEqual(new Set());
+
+    await sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Timeline });
+
+    await expect(visibilityOfAsset(ctx, asset.id)).resolves.toBe(AssetVisibility.Archive);
+    await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [asset.id])).resolves.toEqual(new Set([asset.id]));
+  });
+
+  // The asymmetry worth pinning: a caller that names a destination gets it, but nobody ever *asks* to
+  // lose the albums an asset was in, so those come back either way.
+  it('should honour an explicit visibility while still restoring the albums', async () => {
+    const { sut, ctx } = setupWithJobs();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+    await sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Locked });
+    await sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Archive });
+
+    await expect(visibilityOfAsset(ctx, asset.id)).resolves.toBe(AssetVisibility.Archive);
+    await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [asset.id])).resolves.toEqual(new Set([asset.id]));
+  });
+});
+
+const visibilityOfAsset = async (ctx: Ctx, id: string) => {
+  const row = await ctx.database
+    .selectFrom('asset')
+    .select('visibility')
+    .where('id', '=', id)
+    .executeTakeFirstOrThrow();
+  return row.visibility;
+};

@@ -20,6 +20,7 @@ import { AlbumUserRole, AssetVisibility, JobName, Permission } from 'src/enum';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository';
 import { BaseService } from 'src/services/base.service';
 import { requireElevatedPermission } from 'src/utils/access';
+import { restoreFromLock } from 'src/utils/asset-lock';
 import { LockedAlbumError } from 'src/utils/album.util';
 import { addAssets, removeAssets } from 'src/utils/asset.util';
 import { asDateTimeString } from 'src/utils/date';
@@ -288,16 +289,27 @@ export class AlbumService extends BaseService {
 
       await this.moveIntoLockedFolder(assetIds, id);
     } else {
-      // Timeline, not archive: it is the default visibility and the same value the single-asset "remove
-      // from locked folder" action restores. Memberships are left alone -- the assets stay in this album,
-      // which is now an ordinary one.
+      // Timeline is the floor, not the answer: it is the default visibility and what the single-asset
+      // "remove from locked folder" action falls back to. Membership of *this* album is left alone --
+      // the assets stay here, in what is now an ordinary album.
       //
-      // Known consequence, shared with that single-asset action: an asset that was *archived* before the
-      // album was locked comes back to the timeline rather than to the archive. `visibility` is one
-      // exclusive column, so locking overwrote the archive state and there is nowhere it was kept.
-      // Restoring it would mean recording the previous value somewhere, which is a bigger change than
-      // this operation warrants; matching the existing unlock behaviour is the consistent choice.
+      // `asset_lock_restore` is where the previous value is kept, so an asset that was *archived*
+      // before the album was locked now returns to the archive, and to the other albums it was
+      // evicted from. Assets locked before that table existed have no restore point and keep the old
+      // behaviour -- back to the timeline, and to no other album.
       await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Timeline });
+
+      // Then put back whatever locking overwrote, for the assets that have a restore point. The
+      // blanket update above stays: it is the fallback for assets locked before `asset_lock_restore`
+      // existed, and it means this call only ever has to describe the exceptions.
+      await restoreFromLock(
+        {
+          albumRepository: this.albumRepository,
+          assetLockRestoreRepository: this.assetLockRestoreRepository,
+          assetRepository: this.assetRepository,
+        },
+        assetIds,
+      );
     }
 
     const updated = await this.albumRepository.update(album.id, { id: album.id, isLocked: dto.isLocked }, auth.user.id);
@@ -721,6 +733,10 @@ export class AlbumService extends BaseService {
    * site away from someone adding a third that locks without evicting.
    */
   private async moveIntoLockedFolder(assetIds: string[], keepInAlbumId: string) {
+    // First, and before either statement below: this reads the visibility and the memberships that
+    // the next two lines are about to overwrite and delete, so it cannot run after them.
+    await this.assetLockRestoreRepository.snapshot(assetIds);
+
     await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Locked });
     await this.albumRepository.removeAssetsFromOtherAlbums(assetIds, keepInAlbumId);
   }

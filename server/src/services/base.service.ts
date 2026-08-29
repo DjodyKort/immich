@@ -14,6 +14,7 @@ import { AppRepository } from 'src/repositories/app.repository';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository';
+import { AssetLockRestoreRepository } from 'src/repositories/asset-lock-restore.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository';
 import { ConfigRepository } from 'src/repositories/config.repository';
@@ -77,6 +78,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   AssetEditRepository,
   AssetFileRepository,
   AssetJobRepository,
+  AssetLockRestoreRepository,
   ClusterGroupRepository,
   ConfigRepository,
   CronRepository,
@@ -139,6 +141,7 @@ export class BaseService {
     protected assetEditRepository: AssetEditRepository,
     protected assetFileRepository: AssetFileRepository,
     protected assetJobRepository: AssetJobRepository,
+    protected assetLockRestoreRepository: AssetLockRestoreRepository,
     protected clusterGroupRepository: ClusterGroupRepository,
     protected configRepository: ConfigRepository,
     protected cronRepository: CronRepository,
@@ -210,6 +213,7 @@ export class BaseService {
       ctx.assetEditRepository,
       ctx.assetFileRepository,
       ctx.assetJobRepository,
+      ctx.assetLockRestoreRepository,
       ctx.clusterGroupRepository,
       ctx.configRepository,
       ctx.cronRepository,

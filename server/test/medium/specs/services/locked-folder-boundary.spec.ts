@@ -6,6 +6,7 @@ import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository';
+import { AssetLockRestoreRepository } from 'src/repositories/asset-lock-restore.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
 import { EventRepository } from 'src/repositories/event.repository';
 import { JobRepository } from 'src/repositories/job.repository';
@@ -77,6 +78,7 @@ const setupAsset = (db?: Kysely<DB>) => {
       AssetRepository,
       AssetEditRepository,
       AssetJobRepository,
+      AssetLockRestoreRepository,
       AlbumRepository,
       AccessRepository,
       SharedLinkAssetRepository,
