@@ -16,6 +16,30 @@ export type AssetLockRestorePoint = {
 };
 
 /**
+ * The albums the outer `asset` row currently belongs to.
+ *
+ * Correlated on `asset.id`, so it only makes sense inside a query that selects from `asset`.
+ * `array(...)` already yields '{}' when the asset is in no album, so there is nothing to coalesce.
+ */
+const currentAlbumIds = sql<string[]>`array(
+  select "album_asset"."albumId" from "album_asset" where "album_asset"."assetId" = "asset"."id"
+)`;
+
+/**
+ * The recorded albums an asset can actually be returned to.
+ *
+ * Deleted and trashed albums are gone, and a membership that cannot come back is not a failure. An
+ * album that became *locked* is excluded for a stronger reason: a locked album may only contain locked
+ * assets, so returning a now-unlocked asset to one would break the invariant the eviction protects.
+ */
+const restorableAlbumIds = sql<string[]>`array(
+  select "album"."id" from "album"
+  where "album"."id" = any("asset_lock_restore"."priorAlbumIds")
+    and "album"."deletedAt" is null
+    and "album"."isLocked" = false
+)`;
+
+/**
  * The restore points that make unlocking the inverse of locking.
  *
  * See `asset-lock-restore.table.ts` for why this exists at all. Every method here is written so that
@@ -52,14 +76,7 @@ export class AssetLockRestoreRepository {
       .expression((eb) =>
         eb
           .selectFrom('asset')
-          .select([
-            'asset.id',
-            'asset.visibility',
-            // `array(...)` already yields '{}' when the asset is in no album, so no coalesce.
-            sql<string[]>`array(select "album_asset"."albumId" from "album_asset" where "album_asset"."assetId" = "asset"."id")`.as(
-              'priorAlbumIds',
-            ),
-          ])
+          .select(['asset.id', 'asset.visibility', currentAlbumIds.as('priorAlbumIds')])
           .where('asset.id', '=', anyUuid(assetIds))
           .where('asset.visibility', '!=', AssetVisibility.Locked),
       )
@@ -90,9 +107,7 @@ export class AssetLockRestoreRepository {
       .select([
         'asset_lock_restore.assetId',
         'asset_lock_restore.priorVisibility',
-        sql<string[]>`array(select "album"."id" from "album" where "album"."id" = any("asset_lock_restore"."priorAlbumIds") and "album"."deletedAt" is null and "album"."isLocked" = false)`.as(
-          'priorAlbumIds',
-        ),
+        restorableAlbumIds.as('priorAlbumIds'),
         sql<number>`coalesce(array_length("asset_lock_restore"."priorAlbumIds", 1), 0)`.as('priorAlbumCount'),
       ])
       .where('asset_lock_restore.assetId', '=', anyUuid(assetIds))
