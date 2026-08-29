@@ -122,7 +122,8 @@ jobs:
           git merge --no-edit upstream/main > merge.log 2>&1 || true
           cat merge.log
 
-          replayed=$(grep -oE "Resolved '[^']+'" merge.log | sed "s/Resolved '//; s/'$//" | paste -sd, - || true)
+          replayed=$(grep -oE "Staged '[^']+' using previous resolution" merge.log \
+            | sed "s/Staged '//; s/' using previous resolution//" | paste -sd, - || true)
           conflicts=$(git diff --name-only --diff-filter=U | paste -sd, - || true)
           echo "replayed=$replayed" >> "$GITHUB_OUTPUT"
           echo "conflicts=$conflicts" >> "$GITHUB_OUTPUT"
