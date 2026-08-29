@@ -487,7 +487,27 @@ export class DatabaseRepository {
     return new Migrator({
       db: this.db,
       migrationLockTableName: 'kysely_migrations_lock',
-      allowUnorderedMigrations: this.configRepository.isDev(),
+      // FORK: unconditionally true, where upstream allows it only in dev.
+      //
+      // A fork interleaves migrations by construction. Upstream authors one, this fork authors its
+      // own, and the sync that brings upstream's in lands *after* the fork's have already run. In
+      // kysely's ordered mode the server then refuses to start:
+      //
+      //   corrupted migrations: expected previously executed migration
+      //   1787186980062-AddAlbumIsHidden to be at index 97 but 1787148183729-ClusterGroups was
+      //   found in its place
+      //
+      // which is exactly how v3.2.0-fork.1 crash-looped: upstream's 1787148183729-ClusterGroups
+      // sorts before the fork's already-applied 1787186980062-AddAlbumIsHidden.
+      //
+      // Renumbering the fork's migrations to sort last is not a fix. The next upstream migration
+      // lands before them again, and the one after that, every sync, forever.
+      //
+      // Safe here because the two sets touch disjoint tables -- the fork's migrations are albums and
+      // asset visibility, upstream's are person, person_audit and asset_face -- so neither depends on
+      // the other having run first. That is a property to re-check whenever a fork migration starts
+      // touching a table upstream also migrates.
+      allowUnorderedMigrations: true,
       migrationTableName: 'kysely_migrations',
       provider: new FileMigrationProvider({
         fs: { readdir },
