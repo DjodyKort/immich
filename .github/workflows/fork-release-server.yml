@@ -1,0 +1,116 @@
+# [FORK] Build the fork's server image on a release tag and push it to ghcr.
+#
+# Why this exists: the server image was built by hand on djodant-server by `immich-fork deploy`, which
+# meant the only copy of a running release lived on that one machine. Nothing else could rebuild it,
+# a deploy cost a full local build, and the only record of what produced an image was the
+# `fork.revision` label it carried.
+#
+# The tag is the same `v*-fork.N` the APK release uses, on purpose: server and app ship as a pair here
+# (the app's MoveToLockedAlbumAction calls POST /albums/:id/locked-assets, and an app newer than its
+# server gets a 404 from a button). One tag push now produces both halves.
+#
+# Deliberately NOT triggered on pushes to integration. An image per push is a registry full of
+# artifacts nobody deploys, and this fork deploys tags.
+#
+# Multi-arch is not built. This runs on one machine, x86_64, and arm64 would mean QEMU emulation and
+# roughly a 40-minute job for an image nothing pulls.
+
+name: '[FORK] Release server image'
+
+on:
+  push:
+    tags:
+      - 'v*-fork.*'
+  workflow_dispatch:
+
+# Never cancel-in-progress: half a pushed manifest is worse than a slow build.
+concurrency:
+  group: fork-release-server-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Build and push the server image
+    if: ${{ github.repository != 'immich-app/immich' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # To push to ghcr.io/<owner>/immich-fork-server.
+      packages: write
+    steps:
+      # Same first-step guard as fork-release-mobile.yml, for the same reason: `github.ref_name` is a
+      # branch on a workflow_dispatch, and an image tagged `integration` is a lie that is easy to
+      # deploy by accident.
+      - name: Refuse to publish anything that is not a tag
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "::error::Refusing to publish an image tagged '$REF_NAME'. Dispatch this from a tag," \
+               "not from a branch." && exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # Lowercased, because a ghcr repository name must be lowercase and a GitHub owner need not be.
+      # `DjodyKort` pushed verbatim fails with an unhelpful "invalid reference format".
+      - name: Work out the image name
+        id: image
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${OWNER,,}/immich-fork-server" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: server/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            ${{ steps.image.outputs.name }}:latest
+          build-args: |
+            BUILD_ID=${{ github.ref_name }}
+          # The same label `immich-fork verify` reads back off a running container, so an image built
+          # here is verifiable exactly like one built on the box.
+          labels: |
+            fork.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          # GitHub's Actions cache, not a registry cache: this is the only workflow building this
+          # image, so there is no cross-job sharing to gain, and `mode=max` in a 10GB budget already
+          # holding a 4.1GB Gradle cache would evict the thing that saves the release build nine
+          # minutes. `mode=min` keeps only the final-stage layers.
+          cache-from: type=gha,scope=fork-server
+          cache-to: type=gha,scope=fork-server,mode=min
+
+      - name: Say what was published
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+        run: |
+          {
+            echo "## Server image published"
+            echo
+            echo '```'
+            echo "immich-fork deploy ${GITHUB_REF_NAME}"
+            echo '```'
+            echo
+            echo "Image: \`$IMAGE\`"
+            echo
+            echo "The package is private until it is made public once, in the repository's Packages"
+            echo "settings. \`immich-fork deploy\` falls back to building locally if the pull fails,"
+            echo "so a private package costs a slow deploy rather than a broken one."
+          } >> "$GITHUB_STEP_SUMMARY"

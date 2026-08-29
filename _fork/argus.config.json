@@ -7,56 +7,64 @@
     "`enforcedBy` matters as much as `statement`. An invariant a test already proves does not need a model",
     "turn spent re-deriving it; naming the gate keeps the model on the parts nothing mechanical covers."
   ],
+  "budget": {
+    "deepReadLevels": ["high"],
+    "maxFiles": 60
+  },
   "invariants": [
     {
+      "enforcedBy": "server/src/utils/visibility-policy.spec.ts - the whole table is frozen by literal",
       "id": "surface-bits-persisted",
-      "statement": "SURFACE_BIT values are persisted in asset.hiddenFrom. They must never be renumbered and a retired bit must never be reused, because either silently reinterprets every stored mask.",
-      "enforcedBy": "server/src/utils/visibility-policy.spec.ts - the whole table is frozen by literal"
+      "statement": "SURFACE_BIT values are persisted in asset.hiddenFrom. They must never be renumbered and a retired bit must never be reused, because either silently reinterprets every stored mask."
     },
     {
+      "enforcedBy": "visibility-policy.spec.ts and the trash case in visibility-matrix.spec.ts",
       "id": "trash-unmaskable",
-      "statement": "Surface.Trash has no bit, so a per-asset exclusion can never reach the trash view. Hiding a photo from the timeline must not make it unrecoverable.",
-      "enforcedBy": "visibility-policy.spec.ts and the trash case in visibility-matrix.spec.ts"
+      "statement": "Surface.Trash has no bit, so a per-asset exclusion can never reach the trash view. Hiding a photo from the timeline must not make it unrecoverable."
     },
     {
+      "enforcedBy": "_fork/asset-surfaces.mjs, run by the asset-surfaces CI job",
       "id": "new-read-surface",
-      "statement": "Any endpoint that can return asset-bearing data is a surface and must be classified, or the visibility policy does not cover it. Neither a conflict nor a compile error reveals a new one.",
-      "enforcedBy": "_fork/asset-surfaces.mjs, run by the asset-surfaces CI job"
+      "statement": "Any endpoint that can return asset-bearing data is a surface and must be classified, or the visibility policy does not cover it. Neither a conflict nor a compile error reveals a new one."
     },
     {
+      "enforcedBy": "server/test/medium/specs/policy-index-invariants.spec.ts",
       "id": "partial-index",
-      "statement": "asset_id_timeline_notDeleted_idx stays predicated on visibility = 'timeline', and 'timeline' stays a label of asset_visibility_enum. Losing either degrades every timeline query without failing a test.",
-      "enforcedBy": "server/test/medium/specs/policy-index-invariants.spec.ts"
+      "statement": "asset_id_timeline_notDeleted_idx stays predicated on visibility = 'timeline', and 'timeline' stays a label of asset_visibility_enum. Losing either degrades every timeline query without failing a test."
     },
     {
+      "acceptedDeviations": [
+        {
+          "risk": "Two answers to one question. They agree today. If they ever disagree, the search path is where it will show, and the fork's ctx is the one to trust for per-surface hiding while upstream's is the one to trust for the explicit-locked refusal.",
+          "since": "2026-08-29, arrived in the upstream sync at bd2cbb751..upstream/main",
+          "where": "server/src/utils/search-filter.ts - applyLockedVisibilityPolicy, called from search.service.ts",
+          "why": "Upstream's own locked-visibility rule, added while this fork already had one. Kept rather than removed because it does something the policy layer does not: it calls requireElevatedPermission when a caller explicitly asks for locked assets, so an unelevated `visibility: locked` query is refused rather than silently filtered. Deleting it would be a behaviour change on a security path; absorbing it into visibility-policy.ts would be a permanent conflict, since upstream re-adds its copy every sync."
+        }
+      ],
+      "enforcedBy": "nothing mechanical, by choice - this one needs eyes",
       "id": "single-policy-home",
-      "statement": "Visibility rules live only in server/src/utils/visibility-policy.ts. No asset.visibility predicate is hand-written anywhere else; callers pick the helper that fits the shape.",
-      "enforcedBy": "nothing mechanical, by choice - this one needs eyes"
+      "statement": "Visibility rules live only in server/src/utils/visibility-policy.ts. No asset.visibility predicate is hand-written anywhere else; callers pick the helper that fits the shape. One accepted deviation, listed below."
     },
     {
+      "enforcedBy": "server/test/medium/specs/services/shared-link-visibility.spec.ts",
       "id": "locked-write-guard",
-      "statement": "Locked assets are kept out of shared links by the write path (Permission.AssetShare, which checks as forSharing() and is never elevated), because the shared-link read queries carry no visibility predicate at all. There is no second line of defence.",
-      "enforcedBy": "server/test/medium/specs/services/shared-link-visibility.spec.ts"
+      "statement": "Locked assets are kept out of shared links by the write path (Permission.AssetShare, which checks as forSharing() and is never elevated), because the shared-link read queries carry no visibility predicate at all. There is no second line of defence."
     },
     {
+      "enforcedBy": "nothing mechanical - mobile/lib/infrastructure/utils/visibility_policy.dart is the only place that knows mobile's mask",
       "id": "mobile-bits-independent",
-      "statement": "Mobile's mask uses its own local bit values, unrelated to the server's numbering, because sync carries surface names rather than integers. Coupling them would make the server's assignment unchangeable.",
-      "enforcedBy": "nothing mechanical - mobile/lib/infrastructure/utils/visibility_policy.dart is the only place that knows mobile's mask"
+      "statement": "Mobile's mask uses its own local bit values, unrelated to the server's numbering, because sync carries surface names rather than integers. Coupling them would make the server's assignment unchangeable."
     }
   ],
-  "budget": {
-    "maxFiles": 60,
-    "deepReadLevels": ["high"]
-  },
   "output": {
-    "shape": "checklist",
-    "sink": "pr-comment",
     "mustNot": [
       "weaken, skip or delete a test or gate to make it pass",
       "state a verdict; report what to check and what you could not verify",
       "claim a result you did not observe",
       "hand-write an asset.visibility predicate instead of using a visibility-policy helper",
       "renumber or reuse a SURFACE_BIT value"
-    ]
+    ],
+    "shape": "checklist",
+    "sink": "pr-comment"
   }
 }
