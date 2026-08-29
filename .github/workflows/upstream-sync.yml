@@ -407,6 +407,16 @@ jobs:
     uses: DjodyKort/argus/.github/workflows/task.yml@main # zizmor: ignore[unpinned-uses]
     with:
       task: merge-triage
+      # This box's topology, not argus's defaults. The runner is confined to its own bridge network
+      # and reaches the gateways through a socat sidecar bound to that network's gateway address --
+      # it cannot see 127.0.0.1, which is the entire point of confining it. See
+      # ~/argus-runner/docker-compose.yml.
+      #
+      # 20129 for OmniRoute rather than 20128: OmniRoute binds 0.0.0.0, so it already owns 20128 on
+      # every interface including this one and socat cannot take it. Routing through the sidecar on a
+      # port of our own keeps this working whichever way that bind goes later.
+      primary_url: http://172.28.0.1:8130
+      fallback_url: http://172.28.0.1:20129
       rules: _fork/argus-rules.json
       config: _fork/argus.config.json
       base: ${{ needs.merge.outputs.base }}
