@@ -38,6 +38,7 @@ select distinct
   "album"."isLocked",
   "album"."isHidden",
   "album"."hiddenFrom",
+  "album"."parentId",
   "album"."order",
   "album"."updateId"
 from

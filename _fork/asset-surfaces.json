@@ -61,6 +61,10 @@
       "surface": "albumContents",
       "why": "Its response is the album DTO, whose assets come from the same withAssets/AlbumContents path updateAlbumInfo uses, so it reads no wider than that. The operation itself writes only album.hiddenFrom; the member assets' hiddenFromInherited is recomputed by database triggers rather than by any read here, so it enumerates nothing. Owner-gated, no elevation."
     },
+    "setAlbumParent": {
+      "surface": "albumContents",
+      "why": "Its response is the album DTO, whose assets come from the same withAssets/AlbumContents path updateAlbumInfo uses, so it reads no wider than that. The operation itself writes only album.parentId and enumerates no assets; the tree queries it validates against (getAncestorIds, getDescendantIds, getParentIds) select album ids only, never asset rows. Owner-gated on both albums. The locked rules it enforces are pinned in album-nesting.spec.ts."
+    },
     "addUsersToAlbum": { "surface": "albumContents", "why": "Named by the AlbumContents doc comment: adding album users." },
     "getAllPeople": { "surface": "people", "why": "The people list and its counts. Asserted in the matrix via PersonService.getStatistics." },
     "searchPerson": { "surface": "people", "why": "People list, filtered." },

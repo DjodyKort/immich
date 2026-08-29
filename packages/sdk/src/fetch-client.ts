@@ -863,6 +863,8 @@ export type AlbumResponseDto = {
     albumUsers: AlbumUserResponseDto[];
     /** Number of assets */
     assetCount: number;
+    /** How many sub-albums this album has. Counted server-side rather than derived from the album list, which is already filtered by what the viewer may see. */
+    childCount: number;
     contributorCounts?: ContributorCountResponseDto[];
     /** Creation date */
     createdAt: string;
@@ -885,6 +887,8 @@ export type AlbumResponseDto = {
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
     order?: AssetOrder;
+    /** The album this one sits inside, or null at the top level */
+    parentId: string | null;
     /** Is shared album */
     shared: boolean;
     /** Start date (earliest asset) */
@@ -974,6 +978,10 @@ export type MapMarkerResponseDto = {
     lon: number;
     /** State/Province name */
     state: string | null;
+};
+export type AlbumSetParentDto = {
+    /** The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. A locked album may only be moved into a locked album, and a normal album only into a normal one -- but a normal album may contain locked children, so moving a locked album to the top level is always allowed. */
+    parentId: string | null;
 };
 export type UpdateAlbumUserDto = {
     role: AlbumUserRole;
@@ -3351,6 +3359,8 @@ export type SyncAlbumV2 = {
     /** Album name */
     name: string;
     order: AssetOrder;
+    /** The album this one sits inside, or null at the top level. Null also once the parent is trashed. */
+    parentId: string | null;
     /** Thumbnail asset ID */
     thumbnailAssetId: string | null;
     /** Updated at */
@@ -4494,6 +4504,22 @@ export function getAlbumMapMarkers({ id, key, slug }: {
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Move an album into another album
+ */
+export function setAlbumParent({ id, albumSetParentDto }: {
+    id: string;
+    albumSetParentDto: AlbumSetParentDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/parent`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumSetParentDto
+    })));
 }
 /**
  * Remove user from album

@@ -3041,6 +3041,68 @@
         "x-immich-permission": "album.read"
       }
     },
+    "/albums/{id}/parent": {
+      "put": {
+        "description": "Set which album this one sits inside, or pass null to move it to the top level. Owner only, and both albums must be yours. Refused if the target is this album or one of its own sub-albums, or if the resulting tree would be too deep. Locked albums may only be nested under locked albums and vice versa -- a normal album may still contain locked children, so moving a locked album to the top level is always allowed. Separate from the update endpoint because it is validated against the rest of the hierarchy rather than being a property assignment.",
+        "operationId": "setAlbumParent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumSetParentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move an album into another album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
     "/albums/{id}/user/{userId}": {
       "delete": {
         "description": "Remove a user from an album. Use an ID of \"me\" to leave a shared album.",
@@ -19716,6 +19778,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "childCount": {
+            "description": "How many sub-albums this album has. Counted server-side rather than derived from the album list, which is already filtered by what the viewer may see.",
+            "type": "number"
+          },
           "contributorCounts": {
             "items": {
               "$ref": "#/components/schemas/ContributorCountResponseDto"
@@ -19784,6 +19850,13 @@
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
           },
+          "parentId": {
+            "description": "The album this one sits inside, or null at the top level",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "shared": {
             "description": "Is shared album",
             "type": "boolean"
@@ -19804,6 +19877,7 @@
           "albumThumbnailAssetId",
           "albumUsers",
           "assetCount",
+          "childCount",
           "createdAt",
           "description",
           "hasSharedLink",
@@ -19812,6 +19886,7 @@
           "isActivityEnabled",
           "isHidden",
           "isLocked",
+          "parentId",
           "shared",
           "updatedAt"
         ],
@@ -19841,6 +19916,21 @@
         },
         "required": [
           "isLocked"
+        ],
+        "type": "object"
+      },
+      "AlbumSetParentDto": {
+        "properties": {
+          "parentId": {
+            "description": "The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. A locked album may only be moved into a locked album, and a normal album only into a normal one -- but a normal album may contain locked children, so moving a locked album to the top level is always allowed.",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parentId"
         ],
         "type": "object"
       },
@@ -30056,6 +30146,13 @@
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
           },
+          "parentId": {
+            "description": "The album this one sits inside, or null at the top level. Null also once the parent is trashed.",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "thumbnailAssetId": {
             "description": "Thumbnail asset ID",
             "nullable": true,
@@ -30079,6 +30176,7 @@
           "isLocked",
           "name",
           "order",
+          "parentId",
           "thumbnailAssetId",
           "updatedAt"
         ],

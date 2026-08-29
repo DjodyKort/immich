@@ -18,7 +18,8 @@ import { AlbumUserRole } from 'src/enum';
 import { DB } from 'src/schema';
 import { AlbumTable } from 'src/schema/tables/album.table';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { asUuid, dummy } from 'src/utils/database';
+import { ALBUM_MAX_DEPTH } from 'src/utils/album.util';
+import { anyUuid, asUuid, dummy } from 'src/utils/database';
 import {
   excludeLockedAlbumsUnlessElevated,
   PolicyContext,
@@ -573,6 +574,123 @@ export class AlbumRepository {
 
   async delete(id: string): Promise<void> {
     await this.db.deleteFrom('album').where('id', '=', id).execute();
+  }
+
+  /**
+   * The chain from [albumId] up to its root, nearest ancestor first, [albumId] itself excluded.
+   *
+   * This is the whole of the cycle and depth machinery. Moving album A under album B is a cycle
+   * exactly when A appears in B's ancestors, and it is too deep exactly when B's chain is already at
+   * the cap -- both answerable from this one walk, so `setParent` reads it once and asks twice.
+   *
+   * Soft-deleted albums are *not* filtered here, on purpose. A trashed parent still owns its children
+   * structurally, and letting a move slip past a cycle check because a link happened to be in the
+   * trash would corrupt the tree the moment it was restored.
+   *
+   * `LIMIT` is the safety net rather than the mechanism: if a cycle ever did exist, a recursive CTE
+   * over it would not terminate, and no query should be able to hang the server because a row is
+   * wrong. It is set above the depth cap so a legitimate chain is never truncated.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getAncestorIds(albumId: string): Promise<string[]> {
+    const rows = await this.db
+      .withRecursive('ancestor', (qb) =>
+        qb
+          .selectFrom('album')
+          .select(['album.id', 'album.parentId'])
+          .where('album.id', '=', albumId)
+          .unionAll((union) =>
+            union
+              .selectFrom('album')
+              .select(['album.id', 'album.parentId'])
+              .innerJoin('ancestor', 'ancestor.parentId', 'album.id'),
+          ),
+      )
+      .selectFrom('ancestor')
+      .select('ancestor.id')
+      .where('ancestor.id', '!=', albumId)
+      .limit(ALBUM_MAX_DEPTH * 2)
+      .execute();
+
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * Every album below [albumId], at any depth. Excludes [albumId] itself.
+   *
+   * Used by the operations that act on a branch rather than an album -- locking a subtree, and
+   * refusing to unlock an album that still has locked descendants. Soft-deleted albums are excluded
+   * because those operations act on what the user can currently see.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getDescendantIds(albumId: string): Promise<string[]> {
+    const rows = await this.db
+      .withRecursive('descendant', (qb) =>
+        qb
+          .selectFrom('album')
+          .select('album.id')
+          .where('album.parentId', '=', albumId)
+          .where('album.deletedAt', 'is', null)
+          .unionAll((union) =>
+            union
+              .selectFrom('album')
+              .select('album.id')
+              .innerJoin('descendant', 'descendant.id', 'album.parentId')
+              .where('album.deletedAt', 'is', null),
+          ),
+      )
+      .selectFrom('descendant')
+      .select('descendant.id')
+      .limit(10_000)
+      .execute();
+
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * The `parentId` of each of [albumIds], as a lookup.
+   *
+   * One statement instead of a query per node, so the caller can walk a subtree it already has the ids
+   * for entirely in memory.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getParentIds(albumIds: string[]): Promise<Map<string, string | null>> {
+    if (albumIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.db
+      .selectFrom('album')
+      .select(['album.id', 'album.parentId'])
+      .where('album.id', '=', anyUuid(albumIds))
+      .execute();
+
+    return new Map(rows.map(({ id, parentId }) => [id, parentId]));
+  }
+
+  /**
+   * How many live children each of [albumIds] has.
+   *
+   * Counted server-side rather than derived by the clients from the flat album list, because that list
+   * is already filtered by what the viewer may see -- a locked child is absent from it for an
+   * unelevated session, and counting the rows present would quietly report the wrong number rather
+   * than the same number every other surface shows.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getChildCounts(albumIds: string[]): Promise<Map<string, number>> {
+    if (albumIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.db
+      .selectFrom('album')
+      .select((eb) => ['album.parentId', eb.fn.countAll<number>().as('count')])
+      .where('album.parentId', '=', anyUuid(albumIds))
+      .where('album.deletedAt', 'is', null)
+      .groupBy('album.parentId')
+      .execute();
+
+    return new Map(rows.map(({ parentId, count }) => [parentId as string, Number(count)]));
   }
 
   @Chunked({ chunkSize: 30_000 })

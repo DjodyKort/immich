@@ -17,5 +17,7 @@ export const albumFactory = Sync.makeFactory<AlbumResponseDto>({
   isHidden: false,
   hiddenFrom: [],
   isLocked: false,
+  parentId: null,
+  childCount: 0,
   order: AssetOrder.Desc,
 });

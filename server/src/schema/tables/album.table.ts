@@ -82,6 +82,26 @@ export class AlbumTable {
   @Column({ type: 'integer', nullable: true })
   hiddenFrom!: number | null;
 
+  /**
+   * The album this one sits inside, or null for a top-level album.
+   *
+   * A self-reference rather than a separate `folder` entity, so an album is a folder exactly when it
+   * happens to have children. That is the model upstream's own #8481 used, and it means every album
+   * feature -- locking, hiding, per-surface rules, sharing, sync -- keeps working on a nested album
+   * with no second concept to teach any of them about.
+   *
+   * `SET NULL` rather than `CASCADE`: deleting a folder must never delete the albums inside it. A
+   * *soft*-deleted parent is left pointing at, because tree queries filter `deletedAt IS NULL`, so its
+   * children surface as top-level while it is in the trash and re-nest untouched when it is restored.
+   *
+   * There is deliberately no closure table, unlike `tag`. Tag search needs descendant sets; nothing
+   * here does, because a parent album shows its own assets and a list of its children rather than
+   * rolling its descendants' assets up. Cycles are prevented by walking ancestors on write, which is
+   * O(depth) against a depth capped at {@link ALBUM_MAX_DEPTH}.
+   */
+  @ForeignKeyColumn(() => AlbumTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
+  parentId!: string | null;
+
   @Column({ default: AssetOrder.Desc })
   order!: Generated<AssetOrder>;
 

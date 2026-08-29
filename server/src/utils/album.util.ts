@@ -18,3 +18,33 @@ export const LockedAlbumError = {
   NeedsLockedAssets: 'A locked album can only contain assets that are already locked',
   CannotBeShared: 'A locked album cannot be shared. Unlock it first',
 } as const;
+
+/**
+ * How deep album nesting may go, counting the root as depth 1.
+ *
+ * A cap rather than unlimited depth for two reasons, neither of them storage. The ancestor walk that
+ * prevents cycles is O(depth) on every re-parent, and a breadcrumb has to stay readable on a phone.
+ * Ten is far past what anyone organising photos reaches and still cheap to walk.
+ */
+export const ALBUM_MAX_DEPTH = 10;
+
+/**
+ * Refusal messages for the nesting rules, all of them reached from more than one place.
+ *
+ * The shape they enforce is *"a public folder may hold a private item; a private folder holds only
+ * private items"* -- locked flows **down** a tree and never up. So a normal album may contain locked
+ * children, which is the case someone deliberately wants, while a locked album's descendants must all
+ * be locked, which is what makes "lock this whole branch" mean something.
+ *
+ * Every one of these is a refusal rather than a fix-up, matching `AlbumService.setLocked`: re-parenting
+ * silently locking or unlocking something the user did not name would be the same class of surprise
+ * that comment warns about, and here it would move photos between the locked folder and the timeline.
+ */
+export const AlbumNestingError = {
+  SelfParent: 'An album cannot be inside itself',
+  Cycle: 'An album cannot be moved inside one of its own sub-albums',
+  TooDeep: `Albums cannot be nested more than ${ALBUM_MAX_DEPTH} levels deep`,
+  DifferentOwner: 'An album can only be moved into another album you own',
+  UnlockedIntoLocked: 'Only a locked album can be moved into a locked album',
+  UnlockChildOfLocked: 'Move this album out of its locked parent before unlocking it',
+} as const;

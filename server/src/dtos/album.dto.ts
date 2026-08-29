@@ -142,6 +142,24 @@ const AlbumSetHiddenFromSchema = z
   })
   .meta({ id: 'AlbumSetHiddenFromDto' });
 
+/**
+ * Where an album sits in the tree.
+ *
+ * Its own route for the same reason as `AlbumSetLockedDto`: unlike a rename this is validated against
+ * the rest of the hierarchy -- ownership, cycles, depth, and the locked-flows-down rule -- and a move
+ * that half-applied alongside a rename would leave the tree in a state no check had approved.
+ */
+const AlbumSetParentSchema = z
+  .object({
+    parentId: z
+      .uuidv4()
+      .nullable()
+      .describe(
+        'The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. A locked album may only be moved into a locked album, and a normal album only into a normal one -- but a normal album may contain locked children, so moving a locked album to the top level is always allowed.',
+      ),
+  })
+  .meta({ id: 'AlbumSetParentDto' });
+
 const GetAlbumsSchema = z
   .object({
     id: z.uuidv4().optional().describe('Album ID'),
@@ -238,6 +256,12 @@ export const AlbumResponseSchema = z
       .describe(
         "Surfaces this album's photos are withheld from. Empty means no rule. Distinct from `isHidden`, which hides the album itself.",
       ),
+    parentId: z.uuidv4().nullable().describe('The album this one sits inside, or null at the top level'),
+    childCount: z
+      .number()
+      .describe(
+        'How many sub-albums this album has. Counted server-side rather than derived from the album list, which is already filtered by what the viewer may see.',
+      ),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
   })
@@ -264,6 +288,7 @@ export class AlbumsAddAssetsResponseDto extends createZodDto(AlbumsAddAssetsResp
 export class UpdateAlbumDto extends createZodDto(UpdateAlbumSchema) {}
 export class AlbumSetLockedDto extends createZodDto(AlbumSetLockedSchema) {}
 export class AlbumSetHiddenFromDto extends createZodDto(AlbumSetHiddenFromSchema) {}
+export class AlbumSetParentDto extends createZodDto(AlbumSetParentSchema) {}
 export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}
@@ -284,6 +309,9 @@ export type MapAlbumDto = {
   isLocked: boolean;
   isHidden: boolean;
   hiddenFrom: number | null;
+  parentId: string | null;
+  /** Optional on the way in, defaulted to 0 on the way out -- most routes have no reason to count. */
+  childCount?: number;
   order: AssetOrder;
 };
 
@@ -332,6 +360,11 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     // Clients speak in surface names; the bitmask never leaves the server, for the same reason the
     // workflow payload converts. See `toHiddenFromMask` / `fromHiddenFromMask`.
     hiddenFrom: fromHiddenFromMask(entity.hiddenFrom),
+    parentId: entity.parentId,
+    // Defaults to 0 rather than being optional: a client that renders "3 sub-albums" must not have to
+    // distinguish "none" from "the caller did not count", and every route that maps an album either
+    // counts or genuinely has none.
+    childCount: entity.childCount ?? 0,
     order: entity.order,
   };
 };

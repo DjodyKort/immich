@@ -187,6 +187,7 @@ class AlbumSync extends BaseSync {
         'album.isLocked',
         'album.isHidden',
         'album.hiddenFrom',
+        'album.parentId',
         'album.order',
         'album.updateId',
       ])

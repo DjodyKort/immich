@@ -6,6 +6,7 @@ import {
   AlbumsAddAssetsResponseDto,
   AlbumSetHiddenFromDto,
   AlbumSetLockedDto,
+  AlbumSetParentDto,
   AlbumStatisticsResponseDto,
   CreateAlbumDto,
   GetAlbumsDto,
@@ -20,13 +21,13 @@ import { AlbumUserRole, AssetVisibility, JobName, Permission } from 'src/enum';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository';
 import { BaseService } from 'src/services/base.service';
 import { requireElevatedPermission } from 'src/utils/access';
-import { LockedAlbumError } from 'src/utils/album.util';
+import { ALBUM_MAX_DEPTH, AlbumNestingError, LockedAlbumError } from 'src/utils/album.util';
 import { restoreFromLock } from 'src/utils/asset-lock';
 import { addAssets, removeAssets } from 'src/utils/asset.util';
 import { asDateTimeString } from 'src/utils/date';
 import { findOrFail } from 'src/utils/misc';
 import { getPreferences } from 'src/utils/preferences';
-import { forViewer, PolicyContext, toHiddenFromMask } from 'src/utils/visibility-policy';
+import { forSystem, forViewer, PolicyContext, toHiddenFromMask } from 'src/utils/visibility-policy';
 
 @Injectable()
 export class AlbumService extends BaseService {
@@ -73,8 +74,15 @@ export class AlbumService extends BaseService {
       albumMetadata[metadata.albumId] = metadata;
     }
 
+    // Counted here rather than left to the clients to derive from this very list. A locked child is
+    // absent from it for an unelevated session, so counting the rows present would report a different
+    // number to different sessions -- and the number a client shows next to "sub-albums" has to be the
+    // one it will actually find when the folder is opened.
+    const childCounts = await this.albumRepository.getChildCounts(albums.map((album) => album.id));
+
     return albums.map((album) => ({
       ...mapAlbum(album),
+      childCount: childCounts.get(album.id) ?? 0,
       sharedLinks: undefined,
       startDate: asDateTimeString(albumMetadata[album.id]?.startDate ?? undefined),
       endDate: asDateTimeString(albumMetadata[album.id]?.endDate ?? undefined),
@@ -99,8 +107,11 @@ export class AlbumService extends BaseService {
     const hasSharedLink = album.sharedLinks && album.sharedLinks.length > 0;
     const isShared = hasSharedUsers || hasSharedLink;
 
+    const childCounts = await this.albumRepository.getChildCounts([album.id]);
+
     return {
       ...mapAlbum(album),
+      childCount: childCounts.get(album.id) ?? 0,
       startDate: asDateTimeString(albumMetadataForIds?.startDate ?? undefined),
       endDate: asDateTimeString(albumMetadataForIds?.endDate ?? undefined),
       assetCount: albumMetadataForIds?.assetCount ?? 0,
@@ -230,6 +241,109 @@ export class AlbumService extends BaseService {
   }
 
   /**
+   * Move an album into another album, or out to the top level.
+   *
+   * Its own route rather than a field on `UpdateAlbumDto`, for the reason `setLocked` and
+   * `setHiddenFrom` are: it is validated against the rest of the tree, and a rename that half-applied
+   * a move would leave the hierarchy in a state no single check had approved.
+   *
+   * Owner-only. `Permission.AlbumUpdate` extends to editors, and re-parenting decides what an album
+   * sits under in *the owner's* library -- not something sharing should confer.
+   *
+   * Every rule below is a refusal, never a fix-up. The tempting fix-ups here are the dangerous ones:
+   * silently locking a child dragged into a locked parent would move its photos into the locked folder
+   * and evict them from every other album, and silently unlocking one dragged out would do the reverse.
+   * Both are exactly the surprise `setLocked` refuses to inflict.
+   */
+  async setParent(auth: AuthDto, id: string, dto: AlbumSetParentDto): Promise<AlbumResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
+
+    const album = await this.findOwnedOrFail(auth, id, 'Only the album owner can move an album');
+    const parentId = dto.parentId ?? null;
+
+    if (album.parentId === parentId) {
+      return mapAlbum(album);
+    }
+
+    if (parentId !== null) {
+      if (parentId === id) {
+        throw new BadRequestException(AlbumNestingError.SelfParent);
+      }
+
+      // Owner-checked through `album_user`, because an album has no `ownerId` column -- ownership is a
+      // row with `role = 'owner'`. Using `findOwnedOrFail` rather than a permission call is deliberate:
+      // `Permission.AlbumUpdate` would also pass for an album merely shared *to* this user with edit
+      // rights, and nesting someone else's album under yours is not a move, it is a claim.
+      const parent = await this.findOwnedOrFail(auth, parentId, AlbumNestingError.DifferentOwner);
+
+      // Locked flows down, never up -- and the asymmetry is the whole point, so only one direction is
+      // refused here.
+      //
+      // A *locked* album may sit under a normal one. That is the case someone deliberately wants, a
+      // private album inside an ordinary one, and it is already safe: the album list and every child
+      // listing run through `excludeLockedAlbumsUnlessElevated`, so an unelevated session never sees
+      // it, and a share recipient never sees an album they have no access to.
+      //
+      // A *normal* album under a locked one is the state that breaks, which is why it is the only
+      // refusal: it would be an ordinary branch hanging off a private one, visible to anyone the
+      // parent is ever opened to, and it is precisely the state `setLocked` refuses to create in place
+      // by unlocking a child.
+      if (!album.isLocked && parent.isLocked) {
+        throw new BadRequestException(AlbumNestingError.UnlockedIntoLocked);
+      }
+
+      // One walk answers both remaining questions. A cycle is exactly "this album is already above the
+      // album it is being moved under", and the depth check is the same chain measured rather than
+      // searched -- so the ancestors are read once, not twice.
+      const ancestors = await this.albumRepository.getAncestorIds(parentId);
+      if (ancestors.includes(id)) {
+        throw new BadRequestException(AlbumNestingError.Cycle);
+      }
+
+      // The moving album brings its own subtree with it, so the depth that matters is the parent's
+      // chain plus this album plus everything already beneath it -- not just the parent's chain.
+      const descendants = await this.albumRepository.getDescendantIds(id);
+      const ownHeight = await this.subtreeHeight(id, descendants);
+      if (ancestors.length + 1 + 1 + ownHeight > ALBUM_MAX_DEPTH) {
+        throw new BadRequestException(AlbumNestingError.TooDeep);
+      }
+    }
+
+    const updated = await this.albumRepository.update(album.id, { id: album.id, parentId }, auth.user.id);
+
+    await this.notifyAlbumChanged(album);
+
+    return mapAlbum({ ...updated, assets: album.assets });
+  }
+
+  /**
+   * How many levels sit below [albumId], counting the deepest branch. A leaf is 0.
+   *
+   * Computed from the flat descendant list rather than by another recursive query, because
+   * `setParent` has already paid for that list and a second walk would only re-derive it.
+   */
+  private async subtreeHeight(albumId: string, descendantIds: string[]): Promise<number> {
+    if (descendantIds.length === 0) {
+      return 0;
+    }
+
+    const parents = await this.albumRepository.getParentIds([albumId, ...descendantIds]);
+
+    let height = 0;
+    for (const descendantId of descendantIds) {
+      let depth = 0;
+      let cursor: string | null | undefined = descendantId;
+      while (cursor && cursor !== albumId && depth <= ALBUM_MAX_DEPTH) {
+        cursor = parents.get(cursor) ?? null;
+        depth++;
+      }
+      height = Math.max(height, depth);
+    }
+
+    return height;
+  }
+
+  /**
    * Move an existing album, contents and all, into or out of the locked folder.
    *
    * Upstream only allowed locking at creation time, which in practice meant locked albums could only
@@ -257,6 +371,26 @@ export class AlbumService extends BaseService {
 
     if (album.isLocked === dto.isLocked) {
       return mapAlbum(album);
+    }
+
+    // The other half of "locked flows down, never up", enforced here because `setParent` cannot see
+    // it: that route refuses to *build* a mixed tree, and this one refuses to *create* one in place.
+    // Unlocking an album that sits inside a locked parent would leave an ordinary album hanging off a
+    // private branch, reachable to anyone the parent is later opened to.
+    //
+    // Refused rather than cascaded upward. Unlocking the parent too would set every asset in every
+    // sibling back to the timeline -- albums the user never named -- which is precisely the surprise
+    // this operation refuses to inflict. Moving the album out first is one click and reverses cleanly.
+    if (!dto.isLocked && album.parentId) {
+      const parent = await this.albumRepository.getById(
+        album.parentId,
+        { withAssets: false },
+        forSystem(),
+        auth.user.id,
+      );
+      if (parent?.isLocked) {
+        throw new BadRequestException(AlbumNestingError.UnlockChildOfLocked);
+      }
     }
 
     // Read separately rather than from `album.assets`: that list comes through `Surface.AlbumContents`,

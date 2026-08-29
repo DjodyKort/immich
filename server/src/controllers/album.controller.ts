@@ -8,6 +8,7 @@ import {
   AlbumsAddAssetsResponseDto,
   AlbumSetHiddenFromDto,
   AlbumSetLockedDto,
+  AlbumSetParentDto,
   AlbumStatisticsResponseDto,
   AlbumUserParamDto,
   CreateAlbumDto,
@@ -118,6 +119,22 @@ export class AlbumController {
     @Body() dto: AlbumSetHiddenFromDto,
   ): Promise<AlbumResponseDto> {
     return this.service.setHiddenFrom(auth, id, dto);
+  }
+
+  @Put(':id/parent')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Move an album into another album',
+    description:
+      'Set which album this one sits inside, or pass null to move it to the top level. Owner only, and both albums must be yours. Refused if the target is this album or one of its own sub-albums, or if the resulting tree would be too deep. Locked albums may only be nested under locked albums and vice versa -- a normal album may still contain locked children, so moving a locked album to the top level is always allowed. Separate from the update endpoint because it is validated against the rest of the hierarchy rather than being a property assignment.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  setAlbumParent(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AlbumSetParentDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.setParent(auth, id, dto);
   }
 
   @Delete(':id')

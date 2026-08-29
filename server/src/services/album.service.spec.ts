@@ -18,6 +18,11 @@ describe(AlbumService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(AlbumService));
+
+    // Every album read counts sub-albums, so give the mock the empty Map the real method returns
+    // rather than letting each test rediscover that `undefined.get` throws. Tests that care about
+    // nesting override it.
+    mocks.album.getChildCounts.mockResolvedValue(new Map());
   });
 
   it('should work', () => {

@@ -522,6 +522,80 @@ select
 from
   "album"
 
+-- AlbumRepository.getAncestorIds
+with recursive
+  "ancestor" as (
+    select
+      "album"."id",
+      "album"."parentId"
+    from
+      "album"
+    where
+      "album"."id" = $1
+    union all
+    select
+      "album"."id",
+      "album"."parentId"
+    from
+      "album"
+      inner join "ancestor" on "ancestor"."parentId" = "album"."id"
+  )
+select
+  "ancestor"."id"
+from
+  "ancestor"
+where
+  "ancestor"."id" != $2
+limit
+  $3
+
+-- AlbumRepository.getDescendantIds
+with recursive
+  "descendant" as (
+    select
+      "album"."id"
+    from
+      "album"
+    where
+      "album"."parentId" = $1
+      and "album"."deletedAt" is null
+    union all
+    select
+      "album"."id"
+    from
+      "album"
+      inner join "descendant" on "descendant"."id" = "album"."parentId"
+    where
+      "album"."deletedAt" is null
+  )
+select
+  "descendant"."id"
+from
+  "descendant"
+limit
+  $2
+
+-- AlbumRepository.getParentIds
+select
+  "album"."id",
+  "album"."parentId"
+from
+  "album"
+where
+  "album"."id" = any ($1::uuid[])
+
+-- AlbumRepository.getChildCounts
+select
+  "album"."parentId",
+  count(*) as "count"
+from
+  "album"
+where
+  "album"."parentId" = any ($1::uuid[])
+  and "album"."deletedAt" is null
+group by
+  "album"."parentId"
+
 -- AlbumRepository.getContributorCounts
 select
   "asset"."ownerId" as "userId",

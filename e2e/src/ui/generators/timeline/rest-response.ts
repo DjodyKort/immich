@@ -428,8 +428,11 @@ export function getAlbum(
     shared: false,
     hasSharedLink: false,
     isActivityEnabled: true,
-    // An ordinary album: in the album list, outside the locked folder, imposing no rule on its photos.
+    // An ordinary album: in the album list, outside the locked folder, imposing no rule on its photos,
+    // and at the top level with nothing nested inside it.
     isHidden: false,
+    parentId: null,
+    childCount: 0,
     isLocked: false,
     hiddenFrom: [],
     assetCount: albumAssets.length,

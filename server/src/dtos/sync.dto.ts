@@ -263,6 +263,10 @@ const SyncAlbumV2Schema = z
       .describe(
         "Surfaces this album's photos are withheld from. Distinct from `isHidden`, which hides the album itself and touches no photo. A client needs this only to render the album's own settings; the per-asset effect arrives already computed as `hiddenFromInherited` on each asset.",
       ),
+    parentId: z
+      .uuidv4()
+      .nullable()
+      .describe('The album this one sits inside, or null at the top level. Null also once the parent is trashed.'),
     order: AssetOrderSchema,
   })
   .meta({ id: 'SyncAlbumV2' });
