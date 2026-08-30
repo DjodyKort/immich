@@ -11,8 +11,16 @@ export const load = (async ({ params, url, depends }) => {
 
   try {
     const album = await getAlbumInfo({ id: params.albumId });
+
+    // Only when the album is actually part of a tree. Most albums are not, and a second request on
+    // every album open to build a breadcrumb that turns out to be one entry long is not worth it.
+    // The list is already filtered by what this session may see, which is what makes the breadcrumb
+    // stop at the first ancestor the viewer cannot open rather than naming one they cannot reach.
+    const siblings = album.parentId || album.childCount > 0 ? await getAllAlbums({}) : [];
+
     return {
       album,
+      siblings,
       meta: {
         title: album.albumName,
       },

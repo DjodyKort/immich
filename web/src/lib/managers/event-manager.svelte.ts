@@ -47,6 +47,16 @@ export type Events = {
   AlbumAddAssets: [{ assetIds: string[]; albumIds: string[] }];
   AlbumCreate: [AlbumResponseDto];
   AlbumUpdate: [AlbumResponseDto];
+
+  /**
+   * An album changed where it sits in the tree.
+   *
+   * Its own event rather than `AlbumUpdate`, which also fires for renames: a move changes the *shape*
+   * of the list, so the list has to rebuild, while a rename does not. Same reasoning that gave
+   * `AlbumVisibilityChange` its own event -- reusing a broader one would cost a rebuild, and the
+   * scroll position with it, every time somebody renamed something.
+   */
+  AlbumMove: [AlbumResponseDto];
   /**
    * The album's photos moved on or off a surface -- its `hiddenFrom` rule changed, or it was locked
    * or unlocked. Separate from `AlbumUpdate` because that also fires for renames, and the timeline

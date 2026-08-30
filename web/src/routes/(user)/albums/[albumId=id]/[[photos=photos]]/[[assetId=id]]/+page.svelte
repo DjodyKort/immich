@@ -82,6 +82,9 @@
   import type { PageData } from './$types';
   import AlbumDescription from './AlbumDescription.svelte';
   import AlbumTitle from './AlbumTitle.svelte';
+  import AlbumBreadcrumb from '$lib/components/album-page/AlbumBreadcrumb.svelte';
+  import SubAlbumsSection from '$lib/components/album-page/SubAlbumsSection.svelte';
+  import { getAlbumBreadcrumb } from '$lib/utils/album-utils';
 
   interface Props {
     data: PageData;
@@ -213,6 +216,11 @@
   });
 
   let album = $derived(data.album);
+
+  // Both come from the same already-filtered list the loader fetched, so neither can name an album
+  // this session cannot open.
+  let breadcrumb = $derived(getAlbumBreadcrumb(data.siblings, album.id));
+  let subAlbums = $derived(data.siblings.filter(({ parentId }) => parentId === album.id));
   let albumId = $derived(album.id);
 
   const containsEditors = $derived(album?.shared && album.albumUsers.some(({ role }) => role === AlbumUserRole.Editor));
@@ -399,6 +407,8 @@
                 </div>
               {/if}
 
+              <AlbumBreadcrumb chain={breadcrumb} />
+
               <AlbumTitle
                 {album}
                 albumName={album.albumName}
@@ -409,6 +419,8 @@
               {#if album.assetCount > 0}
                 <AlbumSummary {album} />
               {/if}
+
+              <SubAlbumsSection children={subAlbums} />
 
               <AlbumHiddenFromSummary {album} />
 

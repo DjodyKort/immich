@@ -7,7 +7,12 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import AlbumEditModal from '$lib/modals/AlbumEditModal.svelte';
   import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
-  import { handleDeleteAlbum, handleDownloadAlbum, redirectIfLockedAndNotElevated } from '$lib/services/album.service';
+  import {
+    handleDeleteAlbum,
+    handleDownloadAlbum,
+    handleMoveAlbum,
+    redirectIfLockedAndNotElevated,
+  } from '$lib/services/album.service';
   import {
     AlbumFilter,
     AlbumGroupBy,
@@ -22,7 +27,13 @@
   import { normalizeSearchString } from '$lib/utils/string-utils';
   import { AlbumUserRole, type AlbumResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
   import { modalManager } from '@immich/ui';
-  import { mdiDeleteOutline, mdiDownload, mdiRenameOutline, mdiShareVariantOutline } from '@mdi/js';
+  import {
+    mdiDeleteOutline,
+    mdiDownload,
+    mdiFolderMoveOutline,
+    mdiRenameOutline,
+    mdiShareVariantOutline,
+  } from '@mdi/js';
   import { groupBy } from 'lodash-es';
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -193,7 +204,7 @@
     isOpen = false;
   };
 
-  const handleSelect = async (action: 'edit' | 'share' | 'download' | 'delete') => {
+  const handleSelect = async (action: 'edit' | 'share' | 'download' | 'delete' | 'move') => {
     closeAlbumContextMenu();
 
     if (!selectedAlbum) {
@@ -214,6 +225,14 @@
           break;
         }
         await modalManager.show(AlbumOptionsModal, { album: selectedAlbum });
+        break;
+      }
+
+      case 'move': {
+        if (await redirectIfLockedAndNotElevated(selectedAlbum)) {
+          break;
+        }
+        await handleMoveAlbum(selectedAlbum);
         break;
       }
 
@@ -248,6 +267,16 @@
     sharedAlbums = findAndUpdate(sharedAlbums, album);
   };
 
+  /**
+   * A move changes where an album sits, so the row has to move with it -- `onAlbumUpdate` patches the
+   * object in place, which is right for a rename and not enough for this.
+   */
+  const onAlbumMove = (album: AlbumResponseDto) => {
+    onAlbumUpdate(album);
+    ownedAlbums = [...ownedAlbums];
+    sharedAlbums = [...sharedAlbums];
+  };
+
   const onAlbumDelete = (album: AlbumResponseDto) => {
     ownedAlbums = ownedAlbums.filter(({ id }) => id !== album.id);
     sharedAlbums = sharedAlbums.filter(({ id }) => id !== album.id);
@@ -260,7 +289,7 @@
   };
 </script>
 
-<OnEvents {onAlbumUpdate} {onAlbumDelete} {onSharedLinkCreate} />
+<OnEvents {onAlbumUpdate} {onAlbumMove} {onAlbumDelete} {onSharedLinkCreate} />
 
 {#if albums.length > 0}
   {#if userSettings.view === AlbumViewMode.Cover}
@@ -299,6 +328,7 @@
   {#if showFullContextMenu}
     <MenuOption icon={mdiRenameOutline} text={$t('edit_album')} onClick={() => handleSelect('edit')} />
     <MenuOption icon={mdiShareVariantOutline} text={$t('share')} onClick={() => handleSelect('share')} />
+    <MenuOption icon={mdiFolderMoveOutline} text={$t('album_move_to')} onClick={() => handleSelect('move')} />
   {/if}
   <MenuOption icon={mdiDownload} text={$t('download')} onClick={() => handleSelect('download')} />
   {#if showFullContextMenu}

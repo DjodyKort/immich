@@ -7,7 +7,9 @@ import {
   BulkIdErrorReason,
   deleteAlbum,
   removeUserFromAlbum,
+  getAllAlbums,
   setAlbumLocked,
+  setAlbumParent,
   updateAlbumInfo,
   updateAlbumUser,
   type AlbumResponseDto,
@@ -18,7 +20,15 @@ import {
   type UserResponseDto,
 } from '@immich/sdk';
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
-import { mdiImageOutline, mdiLink, mdiPlus, mdiPlusBoxOutline, mdiShareVariantOutline, mdiUpload } from '@mdi/js';
+import {
+  mdiFolderMoveOutline,
+  mdiImageOutline,
+  mdiLink,
+  mdiPlus,
+  mdiPlusBoxOutline,
+  mdiShareVariantOutline,
+  mdiUpload,
+} from '@mdi/js';
 import { type MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
@@ -26,6 +36,7 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import AlbumAddUsersModal from '$lib/modals/AlbumAddUsersModal.svelte';
+import AlbumMoveModal from '$lib/modals/AlbumMoveModal.svelte';
 import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
 import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
@@ -84,7 +95,52 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
     },
   };
 
-  return { Share, AddUsers, CreateSharedLink };
+  const MoveTo: ActionItem = {
+    title: $t('album_move_to'),
+    icon: mdiFolderMoveOutline,
+    $if: () => isOwned,
+    onAction: async () => {
+      if (await redirectIfLockedAndNotElevated(album)) {
+        return;
+      }
+      await handleMoveAlbum(album);
+    },
+  };
+
+  return { Share, AddUsers, CreateSharedLink, MoveTo };
+};
+
+/**
+ * Move an album into another album, or out to the top level.
+ *
+ * The whole album list is fetched rather than passed in, because the picker has to show *every*
+ * album -- including the ones that cannot receive this move -- so it can say why each is unavailable.
+ * A picker that only lists valid targets leaves the user staring at a list their album is missing
+ * from, with nothing explaining the absence.
+ *
+ * The server is still the authority. It sees the whole tree, including albums this session cannot,
+ * so its refusal is reported verbatim rather than second-guessed here.
+ */
+export const handleMoveAlbum = async (album: AlbumResponseDto) => {
+  const $t = await getFormatter();
+  const albums = await getAllAlbums({});
+  const parentId = await modalManager.show(AlbumMoveModal, { album, albums });
+
+  if (parentId === undefined) {
+    return;
+  }
+
+  try {
+    const updated = await setAlbumParent({ id: album.id, albumSetParentDto: { parentId } });
+    const parent = parentId ? albums.find(({ id }) => id === parentId) : undefined;
+    toastManager.info(
+      parent ? $t('album_moved', { values: { album: parent.albumName } }) : $t('album_moved_to_top_level'),
+    );
+    eventManager.emit('AlbumMove', updated);
+    return updated;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_move_album'));
+  }
 };
 
 export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseDto, asset: AssetResponseDto) => {
