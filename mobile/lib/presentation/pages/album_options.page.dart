@@ -56,13 +56,56 @@ class AlbumOptionsPage extends HookConsumerWidget {
     /// preference that can be silently retried, and a switch that snapped back after a refusal would leave
     /// the user unsure whether their photos moved.
     Future<void> setLocked(bool value) async {
+      // An album with sub-albums is locked as a branch or not at all -- the server refuses to
+      // half-lock a tree. When there are children the confirm has to describe what the *branch* costs
+      // rather than what this album costs, and those two numbers can be very far apart.
+      final hasSubAlbums = ref.read(remoteAlbumProvider).albums.any((candidate) => candidate.parentId == album.id);
+
+      var content = value
+          ? context.t.lock_album_confirm_prompt(count: album.assetCount)
+          : context.t.unlock_album_confirm_prompt(count: album.assetCount);
+
+      if (hasSubAlbums) {
+        try {
+          final impact = await ref.read(remoteAlbumProvider.notifier).getLockImpact(album.id, includeSubAlbums: true);
+
+          if (!context.mounted) {
+            return;
+          }
+
+          final blockedReason = impact.blockedReason;
+          if (blockedReason != null) {
+            // The server already knows this will be refused. Saying so now beats a confirm followed by
+            // a failure, which asks the user to agree to something that cannot happen.
+            ImmichToast.show(context: context, msg: blockedReason, toastType: ToastType.error);
+            return;
+          }
+
+          final evicted = impact.evictions.fold<int>(0, (total, e) => total + e.assetCount.toInt());
+          content = [
+            context.t.album_lock_impact_albums(count: impact.albums.length),
+            context.t.album_lock_impact_assets(count: impact.assetCount.toInt()),
+            if (evicted > 0) context.t.album_lock_impact_evictions(count: evicted, albums: impact.evictions.length),
+            if (value) context.t.album_lock_impact_undo,
+          ].join(' · ');
+        } catch (_) {
+          if (!context.mounted) {
+            return;
+          }
+          showErrorMessage();
+          return;
+        }
+      }
+
+      if (!context.mounted) {
+        return;
+      }
+
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (_) => ConfirmDialog(
           title: value ? context.t.lock_album_confirm_title : context.t.unlock_album_confirm_title,
-          content: value
-              ? context.t.lock_album_confirm_prompt(count: album.assetCount)
-              : context.t.unlock_album_confirm_prompt(count: album.assetCount),
+          content: content,
           ok: value ? context.t.lock_album_confirm_action : context.t.unlock_album_confirm_action,
         ),
       );
@@ -71,7 +114,7 @@ class AlbumOptionsPage extends HookConsumerWidget {
       }
 
       try {
-        await ref.read(remoteAlbumProvider.notifier).setLocked(album.id, value);
+        await ref.read(remoteAlbumProvider.notifier).setLocked(album.id, value, includeSubAlbums: hasSubAlbums);
         locked.value = value;
         if (!context.mounted) {
           return;

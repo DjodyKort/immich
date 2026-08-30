@@ -7,6 +7,7 @@ import {
   BulkIdErrorReason,
   deleteAlbum,
   removeUserFromAlbum,
+  getAlbumLockImpact,
   getAllAlbums,
   setAlbumLocked,
   setAlbumParent,
@@ -461,11 +462,48 @@ export const handleSetAlbumLocked = async (album: AlbumResponseDto, isLocked: bo
     return false;
   }
 
+  // An album with sub-albums is locked as a branch or not at all -- the server refuses to half-lock a
+  // tree. So when there are children, the confirm has to say what the *branch* costs rather than what
+  // this album costs, and the two numbers can be very different.
+  const includeSubAlbums = album.childCount > 0;
+  let prompt = $t(isLocked ? 'lock_album_confirm_prompt' : 'unlock_album_confirm_prompt', {
+    values: { count: album.assetCount },
+  });
+
+  if (includeSubAlbums) {
+    try {
+      const impact = await getAlbumLockImpact({ id: album.id, includeSubAlbums: 'true' });
+      if (impact.blockedReason) {
+        // The server already knows this will be refused. Saying so now is better than a confirm
+        // followed by an error, which asks the user to agree to something that cannot happen.
+        toastManager.danger(impact.blockedReason);
+        return false;
+      }
+
+      prompt = [
+        $t('album_lock_impact_albums', { values: { count: impact.albums.length } }),
+        $t('album_lock_impact_assets', { values: { count: impact.assetCount } }),
+        impact.evictions.length > 0
+          ? $t('album_lock_impact_evictions', {
+              values: {
+                count: impact.evictions.reduce((total, { assetCount }) => total + assetCount, 0),
+                albums: impact.evictions.length,
+              },
+            })
+          : undefined,
+        isLocked ? $t('album_lock_impact_undo') : undefined,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_update_album_info'));
+      return false;
+    }
+  }
+
   const confirmed = await modalManager.showDialog({
     title: $t(isLocked ? 'lock_album_confirm_title' : 'unlock_album_confirm_title'),
-    prompt: $t(isLocked ? 'lock_album_confirm_prompt' : 'unlock_album_confirm_prompt', {
-      values: { count: album.assetCount },
-    }),
+    prompt,
     confirmText: $t(isLocked ? 'lock_album_confirm_action' : 'unlock_album_confirm_action'),
   });
 
@@ -474,7 +512,7 @@ export const handleSetAlbumLocked = async (album: AlbumResponseDto, isLocked: bo
   }
 
   try {
-    const response = await setAlbumLocked({ id: album.id, albumSetLockedDto: { isLocked } });
+    const response = await setAlbumLocked({ id: album.id, albumSetLockedDto: { isLocked, includeSubAlbums } });
     notifyAlbumVisibilityChanged(response);
     toastManager.primary($t(isLocked ? 'lock_album_locked' : 'lock_album_unlocked'));
     return true;

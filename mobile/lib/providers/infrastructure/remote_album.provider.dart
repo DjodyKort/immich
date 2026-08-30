@@ -18,6 +18,7 @@ import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/services/auth.service.dart';
 import 'package:immich_mobile/services/foreground_upload.service.dart';
 import 'package:logging/logging.dart';
+import 'package:openapi/api.dart' hide AlbumUserRole, AssetSurface;
 
 part 'remote_album.provider.freezed.dart';
 
@@ -385,8 +386,12 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
   /// asset too, so the timelines those assets appear on are stale as well and there is nothing useful to
   /// surgically adjust. `_getAll` is correct in both directions here — locking removes the album from the
   /// ordinary listing only while the session is unelevated, and an elevated session should still see it.
-  Future<void> setLocked(String albumId, bool isLocked) async {
-    await _remoteAlbumService.setLocked(albumId, isLocked);
+  Future<AlbumLockImpactResponseDto> getLockImpact(String albumId, {bool includeSubAlbums = false}) {
+    return _remoteAlbumService.getLockImpact(albumId, includeSubAlbums: includeSubAlbums);
+  }
+
+  Future<void> setLocked(String albumId, bool isLocked, {bool includeSubAlbums = false}) async {
+    await _remoteAlbumService.setLocked(albumId, isLocked, includeSubAlbums: includeSubAlbums);
     await _getAll();
 
     ref.invalidate(lockedRemoteAlbumsProvider);

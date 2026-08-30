@@ -186,9 +186,23 @@ class AlbumApiRepository extends ApiRepository {
 
   /// Its own route rather than a field on `updateAlbumInfo`, because the server rewrites the visibility of
   /// every asset in the album and their memberships elsewhere. See `AlbumService.setLocked`.
-  Future<bool> setLocked(String albumId, bool isLocked) async {
-    final response = await checkNull(_api.setAlbumLocked(albumId, AlbumSetLockedDto(isLocked: isLocked)));
+  Future<bool> setLocked(String albumId, bool isLocked, {bool includeSubAlbums = false}) async {
+    final response = await checkNull(
+      _api.setAlbumLocked(
+        albumId,
+        AlbumSetLockedDto(isLocked: isLocked, includeSubAlbums: Optional.present(includeSubAlbums)),
+      ),
+    );
     return response.isLocked;
+  }
+
+  /// What locking this album, or this branch, would do -- without doing it.
+  ///
+  /// Read-only. A refusal comes back as `blockedReason` rather than an error, because the caller asked
+  /// what *would* happen; saying so before the confirm is better than a confirm followed by a failure,
+  /// which asks someone to agree to something that cannot happen.
+  Future<AlbumLockImpactResponseDto> getLockImpact(String albumId, {bool includeSubAlbums = false}) async {
+    return checkNull(_api.getAlbumLockImpact(albumId, includeSubAlbums: includeSubAlbums.toString()));
   }
 }
 
