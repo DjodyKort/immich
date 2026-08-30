@@ -413,6 +413,22 @@ describe('locking a branch', () => {
       expect(impact.evictions).toEqual([{ id: elsewhere.id, albumName: 'Best of 2025', assetCount: 1 }]);
     });
 
+    // The case a single-album branch cannot catch: with more than one album excluded, `!= any(...)`
+    // would report the sub-albums themselves as collateral of their own locking.
+    it('does not count the branch\u{2019}s own albums as albums losing photos', async () => {
+      const { sut, ctx } = setup();
+      const { user, parent, child, auth } = await seed(ctx);
+      await sut.setParent(auth, child.id, { parentId: parent.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAlbumAsset({ albumId: child.id, assetId: asset.id });
+      // The same asset in both the parent and the child, so each is "another album" for the other.
+      await ctx.newAlbumAsset({ albumId: parent.id, assetId: asset.id });
+
+      const impact = await sut.getLockImpact(auth, parent.id, true);
+
+      expect(impact.evictions).toEqual([]);
+    });
+
     it('reports a refusal rather than throwing, since the caller only asked', async () => {
       const { sut, ctx } = setup();
       const { parent, auth } = await seed(ctx);

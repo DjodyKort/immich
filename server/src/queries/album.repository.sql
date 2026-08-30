@@ -585,7 +585,7 @@ from
   inner join "album" on "album"."id" = "other"."albumId"
 where
   "album"."deletedAt" is null
-  and "other"."albumId" != any ($1::uuid[])
+  and "other"."albumId" not in ($1)
   and "other"."assetId" in (
     select
       "member"."assetId"

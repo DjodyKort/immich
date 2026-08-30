@@ -669,7 +669,11 @@ export class AlbumRepository {
       .innerJoin('album', 'album.id', 'other.albumId')
       .select((eb) => ['album.id', 'album.albumName', eb.fn.countAll<number>().as('assetCount')])
       .where('album.deletedAt', 'is', null)
-      .where('other.albumId', '!=', anyUuid(excludeAlbumIds))
+      // `not in`, never `!= any(...)`. In Postgres `x <> ANY(array)` is true when x differs from *at
+      // least one* element, so with a branch of more than one album every sub-album would satisfy it
+      // and be reported as an "other album losing photos" -- the albums being locked, counted as
+      // collateral of their own locking. A single-album exclude list hides the bug entirely.
+      .where('other.albumId', 'not in', excludeAlbumIds)
       .where('other.assetId', 'in', (eb) =>
         eb.selectFrom('album_asset as member').select('member.assetId').where('member.albumId', '=', anyUuid(albumIds)),
       )
