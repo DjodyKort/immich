@@ -22,7 +22,13 @@
     SortOrder,
     type AlbumViewSettings,
   } from '$lib/stores/preferences.store';
-  import { getSelectedAlbumGroupOption, sortAlbums, stringToSortOrder, type AlbumGroup } from '$lib/utils/album-utils';
+  import {
+    buildAlbumTree,
+    getSelectedAlbumGroupOption,
+    sortAlbums,
+    stringToSortOrder,
+    type AlbumGroup,
+  } from '$lib/utils/album-utils';
   import type { ContextMenuPosition } from '$lib/utils/context-menu';
   import { normalizeSearchString } from '$lib/utils/string-utils';
   import { AlbumUserRole, type AlbumResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
@@ -160,10 +166,26 @@
       : albums,
   );
 
+  /**
+   * Sub-albums are shown inside their parent, so the flat list must not repeat them -- otherwise every
+   * nested album appears twice, once at the top level and once under its parent.
+   *
+   * Only when the list is neither searched nor grouped. A search has to reach a nested album directly
+   * or it becomes unfindable, and a year/owner grouping is a different arrangement of the same albums
+   * that nesting would fight rather than complement. `buildAlbumTree` decides what counts as a root,
+   * which is what makes an album whose parent this session cannot see still appear rather than vanish.
+   */
+  let rootAlbums = $derived.by(() => {
+    if (normalizedSearchQuery || getSelectedAlbumGroupOption(userSettings) !== AlbumGroupBy.None) {
+      return filteredAlbums;
+    }
+    return buildAlbumTree(filteredAlbums).map(({ album }) => album);
+  });
+
   let albumGroupOption = $derived(getSelectedAlbumGroupOption(userSettings));
   let groupedAlbums = $derived.by(() => {
     const groupFunc = groupOptions[albumGroupOption] ?? groupOptions[AlbumGroupBy.None];
-    const groupedAlbums = groupFunc(stringToSortOrder(userSettings.groupOrder), filteredAlbums);
+    const groupedAlbums = groupFunc(stringToSortOrder(userSettings.groupOrder), rootAlbums);
 
     return groupedAlbums.map((group) => ({
       id: group.id,
