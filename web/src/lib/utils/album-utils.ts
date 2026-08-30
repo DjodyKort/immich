@@ -264,3 +264,230 @@ export const sortAlbums = (albums: AlbumResponseDto[], { sortBy, orderBy }: { so
 
   return sort(order, albums);
 };
+
+/**
+ * ----------------
+ * Albums as a tree
+ * ----------------
+ */
+
+export interface AlbumTreeNode {
+  album: AlbumResponseDto;
+  children: AlbumTreeNode[];
+  /** 0 for a root. Used for indentation and for the breadcrumb. */
+  depth: number;
+}
+
+/**
+ * Arrange a flat album list into the tree its `parentId`s describe.
+ *
+ * The list this receives is already filtered by what the viewer may see -- a locked album is absent
+ * for an unelevated session, and an album shared with someone else never appears at all. So a child
+ * whose parent is missing is normal rather than exceptional, and it is **promoted to a root** instead
+ * of being dropped. Dropping it would make an album the user owns vanish from their own album list
+ * because of something about its parent, which is the one outcome this must never produce.
+ *
+ * The same promotion covers a *trashed* parent: soft delete deliberately leaves `parentId` alone so
+ * restoring the parent re-nests its children, and until then those children read as top-level here.
+ *
+ * A cycle cannot reach this function -- the server refuses to create one -- but a corrupt row should
+ * not hang the browser, so nodes are visited once and anything still unplaced is promoted.
+ */
+export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeNode[] => {
+  const nodes = new Map<string, AlbumTreeNode>();
+  for (const album of albums) {
+    nodes.set(album.id, { album, children: [], depth: 0 });
+  }
+
+  const roots: AlbumTreeNode[] = [];
+  for (const node of nodes.values()) {
+    const parentId = node.album.parentId;
+    const parent = parentId ? nodes.get(parentId) : undefined;
+    if (parent && parent !== node) {
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  // Depth is assigned by walking down from the roots rather than by counting parents upwards, so a
+  // promoted orphan is depth 0 -- which is what it renders as.
+  //
+  // The walk also *prunes* any child already placed elsewhere in the tree. Only a corrupt row can
+  // produce one, but leaving the back-edge in place would return a structure that terminates here and
+  // then loops forever in the first consumer that walks `children` recursively. Pruning makes the
+  // returned tree acyclic by construction, which is the guarantee callers actually need.
+  const seen = new Set<string>();
+  const assignDepth = (node: AlbumTreeNode, depth: number) => {
+    node.depth = depth;
+    node.children = node.children.filter((child) => !seen.has(child.album.id));
+    for (const child of node.children) {
+      seen.add(child.album.id);
+      assignDepth(child, depth + 1);
+    }
+  };
+  for (const root of roots) {
+    seen.add(root.album.id);
+    assignDepth(root, 0);
+  }
+
+  // Anything unreachable from a root can only be part of a cycle. Promote it so it stays findable,
+  // rather than leaving it rendered nowhere.
+  for (const node of nodes.values()) {
+    if (!seen.has(node.album.id)) {
+      roots.push(node);
+      seen.add(node.album.id);
+      assignDepth(node, 0);
+    }
+  }
+
+  return roots;
+};
+
+/**
+ * The chain of albums from the root down to [albumId], inclusive.
+ *
+ * Built from the same flat list the tree is, so it stops at the first ancestor the viewer cannot see
+ * rather than inventing a link to an album they have no access to.
+ */
+export const getAlbumBreadcrumb = (albums: AlbumResponseDto[], albumId: string): AlbumResponseDto[] => {
+  const byId = new Map(albums.map((album) => [album.id, album]));
+  const chain: AlbumResponseDto[] = [];
+  const seen = new Set<string>();
+
+  let current = byId.get(albumId);
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    chain.unshift(current);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+
+  return chain;
+};
+
+/**
+ * Flatten a tree back to a list, parents immediately before their children.
+ *
+ * [isExpanded] decides whether a node's children are included at all, so a collapsed folder costs
+ * nothing to render. Sorting is applied per level by [sort], because sorting the flattened result
+ * would interleave children with unrelated albums.
+ */
+export const flattenAlbumTree = (
+  nodes: AlbumTreeNode[],
+  isExpanded: (albumId: string) => boolean,
+  sort: (albums: AlbumResponseDto[]) => AlbumResponseDto[],
+): AlbumTreeNode[] => {
+  const ordered: AlbumTreeNode[] = [];
+
+  const visit = (level: AlbumTreeNode[]) => {
+    const byId = new Map(level.map((node) => [node.album.id, node]));
+    for (const album of sort(level.map((node) => node.album))) {
+      const node = byId.get(album.id);
+      if (!node) {
+        continue;
+      }
+      ordered.push(node);
+      if (node.children.length > 0 && isExpanded(node.album.id)) {
+        visit(node.children);
+      }
+    }
+  };
+
+  visit(nodes);
+  return ordered;
+};
+
+/** Why an album cannot be the destination of a move. */
+export type MoveTargetBlocker = 'self' | 'descendant' | 'currentParent' | 'lockMismatch' | 'notOwned' | 'tooDeep';
+
+export interface MoveTarget {
+  album: AlbumResponseDto;
+  depth: number;
+  /** Undefined when the move is allowed. */
+  blocker?: MoveTargetBlocker;
+}
+
+/** Mirrors ALBUM_MAX_DEPTH in server/src/utils/album.util.ts. */
+export const ALBUM_MAX_DEPTH = 10;
+
+/**
+ * Every album, in tree order, annotated with why it cannot receive [moving] -- or nothing, if it can.
+ *
+ * Blocked targets are returned rather than filtered out, because the picker shows them disabled with
+ * the reason attached. Hiding them makes the app look broken in exactly the case the user needs
+ * explaining: their own album is missing from the list and nothing says why. It is also the mistake
+ * mobile made with the locked-album selector, where an unfiltered list offered destinations that
+ * could only fail.
+ *
+ * The rules match the server's, including the deliberate asymmetry: a **locked** album may move into
+ * a normal one, because every listing already withholds locked albums from an unelevated session,
+ * while a normal album may not move into a locked one.
+ */
+export const getMoveTargets = (
+  albums: AlbumResponseDto[],
+  moving: AlbumResponseDto,
+  currentUserId: string,
+): MoveTarget[] => {
+  const tree = buildAlbumTree(albums);
+
+  const descendantIds = new Set<string>();
+  const collectDescendants = (nodes: AlbumTreeNode[]) => {
+    for (const node of nodes) {
+      descendantIds.add(node.album.id);
+      collectDescendants(node.children);
+    }
+  };
+  const findNode = (nodes: AlbumTreeNode[]): AlbumTreeNode | undefined => {
+    for (const node of nodes) {
+      if (node.album.id === moving.id) {
+        return node;
+      }
+      const found = findNode(node.children);
+      if (found) {
+        return found;
+      }
+    }
+  };
+  const movingNode = findNode(tree);
+  if (movingNode) {
+    collectDescendants(movingNode.children);
+  }
+
+  // How tall the moving album's own subtree is, since it travels with it.
+  const heightOf = (node: AlbumTreeNode): number =>
+    node.children.length === 0 ? 0 : 1 + Math.max(...node.children.map((child) => heightOf(child)));
+  const movingHeight = movingNode ? heightOf(movingNode) : 0;
+
+  const blockerFor = (target: AlbumTreeNode): MoveTargetBlocker | undefined => {
+    if (target.album.id === moving.id) {
+      return 'self';
+    }
+    if (descendantIds.has(target.album.id)) {
+      return 'descendant';
+    }
+    if (target.album.id === moving.parentId) {
+      return 'currentParent';
+    }
+    if (target.album.albumUsers[0]?.user.id !== currentUserId) {
+      return 'notOwned';
+    }
+    if (!moving.isLocked && target.album.isLocked) {
+      return 'lockMismatch';
+    }
+    // target.depth is 0-based, so the moved album lands at depth + 1 and its own subtree below that.
+    if (target.depth + 1 + movingHeight + 1 > ALBUM_MAX_DEPTH) {
+      return 'tooDeep';
+    }
+  };
+
+  const targets: MoveTarget[] = [];
+  const visit = (nodes: AlbumTreeNode[]) => {
+    for (const node of orderBy(nodes, [({ album }) => album.albumName.toLowerCase()], ['asc'])) {
+      targets.push({ album: node.album, depth: node.depth, blocker: blockerFor(node) });
+      visit(node.children);
+    }
+  };
+  visit(tree);
+
+  return targets;
+};

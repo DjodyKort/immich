@@ -493,20 +493,25 @@ jobs:
         run: pnpm install --frozen-lockfile
       # Retried, because this step fails for reasons that have nothing to do with the diff.
       #
-      # `--build` builds the server image, which runs `mise install --locked`, which verifies GitHub
-      # artifact attestations over the API. Inside a docker build there is no credential, so those
-      # requests are anonymous and share the runner's IP quota. On 4e2a3e877 three unrelated tools
-      # (extism/js-pdk, jellyfin-ffmpeg, binaryen) came back `403 API rate limit exceeded` and took
-      # the whole gate red.
+      # Two independent external throttles reach it, which is why the backoff escalates rather than
+      # being a flat wait:
       #
-      # Fixing it at the source means passing a token into the build, which means editing
+      #   - `--build` runs `mise install --locked`, which verifies GitHub artifact attestations over
+      #     the API. Inside a docker build there is no credential, so those requests are anonymous and
+      #     share the runner's IP quota. On 4e2a3e877 three unrelated tools (extism/js-pdk,
+      #     jellyfin-ffmpeg, binaryen) came back `403 API rate limit exceeded` at once.
+      #   - The pull of the postgres and valkey images hits Docker Hub, which answered 2922adcbb with
+      #     `toomanyrequests: retry-after: ..., allowed: 44000/minute`. That one outlasted a flat 60s
+      #     wait across all three attempts, which is the evidence the escalation is based on.
+      #
+      # Fixing either at the source means credentials inside the build, which means editing
       # server/Dockerfile -- an upstream file, and a line there is a merge conflict on every sync
-      # forever. Not worth it for a transient external failure, so it is retried here instead, in a
+      # forever. Not worth it for transient external failures, so it is retried here instead, in a
       # file the fork owns.
       #
       # Safe to repeat: --force-recreate --renew-anon-volumes discards whatever a failed attempt left
-      # behind, so attempt two starts clean. A genuine build break still fails all three and costs two
-      # minutes of sleep, which is the right trade against a red gate nobody can act on.
+      # behind, so attempt two starts clean. A genuine build break still fails all three; it costs
+      # four minutes of sleep, which is the right trade against a red gate nobody can act on.
       - name: Start the stack
         run: |
           for attempt in 1 2 3; do
@@ -517,8 +522,12 @@ jobs:
             fi
             echo "::endgroup::"
             echo "attempt ${attempt} failed"
+            # 60s then 180s: long enough for a registry throttle to clear, short enough that a real
+            # build break is still reported inside the job's timeout.
             if [ "${attempt}" -lt 3 ]; then
-              sleep 60
+              backoff=$((attempt * 120 - 60))
+              echo "waiting ${backoff}s before retrying"
+              sleep "${backoff}"
             fi
           done
           echo "::error::the stack did not come up after 3 attempts"
@@ -623,20 +632,25 @@ jobs:
         run: pnpm exec playwright install chromium --only-shell
       # Retried, because this step fails for reasons that have nothing to do with the diff.
       #
-      # `--build` builds the server image, which runs `mise install --locked`, which verifies GitHub
-      # artifact attestations over the API. Inside a docker build there is no credential, so those
-      # requests are anonymous and share the runner's IP quota. On 4e2a3e877 three unrelated tools
-      # (extism/js-pdk, jellyfin-ffmpeg, binaryen) came back `403 API rate limit exceeded` and took
-      # the whole gate red.
+      # Two independent external throttles reach it, which is why the backoff escalates rather than
+      # being a flat wait:
       #
-      # Fixing it at the source means passing a token into the build, which means editing
+      #   - `--build` runs `mise install --locked`, which verifies GitHub artifact attestations over
+      #     the API. Inside a docker build there is no credential, so those requests are anonymous and
+      #     share the runner's IP quota. On 4e2a3e877 three unrelated tools (extism/js-pdk,
+      #     jellyfin-ffmpeg, binaryen) came back `403 API rate limit exceeded` at once.
+      #   - The pull of the postgres and valkey images hits Docker Hub, which answered 2922adcbb with
+      #     `toomanyrequests: retry-after: ..., allowed: 44000/minute`. That one outlasted a flat 60s
+      #     wait across all three attempts, which is the evidence the escalation is based on.
+      #
+      # Fixing either at the source means credentials inside the build, which means editing
       # server/Dockerfile -- an upstream file, and a line there is a merge conflict on every sync
-      # forever. Not worth it for a transient external failure, so it is retried here instead, in a
+      # forever. Not worth it for transient external failures, so it is retried here instead, in a
       # file the fork owns.
       #
       # Safe to repeat: --force-recreate --renew-anon-volumes discards whatever a failed attempt left
-      # behind, so attempt two starts clean. A genuine build break still fails all three and costs two
-      # minutes of sleep, which is the right trade against a red gate nobody can act on.
+      # behind, so attempt two starts clean. A genuine build break still fails all three; it costs
+      # four minutes of sleep, which is the right trade against a red gate nobody can act on.
       - name: Start the stack
         run: |
           for attempt in 1 2 3; do
@@ -647,8 +661,12 @@ jobs:
             fi
             echo "::endgroup::"
             echo "attempt ${attempt} failed"
+            # 60s then 180s: long enough for a registry throttle to clear, short enough that a real
+            # build break is still reported inside the job's timeout.
             if [ "${attempt}" -lt 3 ]; then
-              sleep 60
+              backoff=$((attempt * 120 - 60))
+              echo "waiting ${backoff}s before retrying"
+              sleep "${backoff}"
             fi
           done
           echo "::error::the stack did not come up after 3 attempts"
