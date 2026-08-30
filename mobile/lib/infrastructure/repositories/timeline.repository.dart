@@ -519,6 +519,12 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     return query.map((row) => row.readTable(_db.remoteAssetEntity).toDto()).get();
   }
 
+  /// A person's photo grid asks as [AssetSurface.people], never [AssetSurface.timeline].
+  ///
+  /// The two are separate surfaces on the server as well (`ASSET_SURFACE_POLICY`), so hiding a photo
+  /// from the timeline must leave it in the person's grid, and hiding it from People must remove it.
+  /// This mirrored the server's `timelineSurfaceFor`, which read the timeline's bit here by omission --
+  /// so both ends had the same bug and a test on this side asserted it was correct.
   Stream<List<Bucket>> _watchPersonBucket(String userId, String personId, {GroupAssetsBy groupBy = GroupAssetsBy.day}) {
     final idQuery = _db.assetFaceEntity.selectOnly()
       ..addColumns([_db.assetFaceEntity.assetId])
@@ -536,7 +542,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
               _db.remoteAssetEntity.deletedAt.isNull() &
               _db.remoteAssetEntity.ownerId.equals(userId) &
               _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) &
-              _visibleOn(AssetSurface.timeline),
+              _visibleOn(AssetSurface.people),
         );
 
       return query.map((row) {
@@ -555,7 +561,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
             _db.remoteAssetEntity.ownerId.equals(userId) &
             _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline) &
             _db.remoteAssetEntity.deletedAt.isNull() &
-            _visibleOn(AssetSurface.timeline),
+            _visibleOn(AssetSurface.people),
       )
       ..groupBy([dateExp])
       ..orderBy([OrderingTerm.desc(dateExp)]);
@@ -567,6 +573,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     }).watch();
   }
 
+  /// Same surface as [_watchPersonBucket], or the counts and the contents disagree.
   Future<List<BaseAsset>> _getPersonBucketAssets(
     String userId,
     String personId, {
@@ -589,7 +596,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
             row.deletedAt.isNull() &
             row.ownerId.equals(userId) &
             row.visibility.equalsValue(AssetVisibility.timeline) &
-            VisibilityPolicy.notHiddenFrom(row, AssetSurface.timeline),
+            VisibilityPolicy.notHiddenFrom(row, AssetSurface.people),
       )
       ..orderBy(_assetDateOrder(groupBy))
       ..limit(count, offset: offset);

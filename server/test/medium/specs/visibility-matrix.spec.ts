@@ -487,6 +487,32 @@ const SURFACES: Surface[] = [
     notElevated: [Timeline],
     elevated: [Timeline],
   }),
+  // The two probes below are the count above's contents. They are here because their absence is what
+  // let a real bug ship: `timelineSurfaceFor` had no `personId` branch, so a person's grid fell through
+  // to `Surface.Timeline` and read the timeline's hide bit. The count and the grid then disagreed in
+  // both directions -- a photo hidden from the timeline vanished from the grid while still being
+  // counted, and one hidden from People stayed in the grid while dropping out of the count. Any probe
+  // that reports a count needs its contents probed beside it, or half the surface is untested.
+  defineSurface({
+    name: 'TimelineService.getTimeBuckets (personId)',
+    setup: setupTimeline,
+    probe: async ({ sut, fixture, auth }) => ({
+      count: sumBucketCounts(await sut.getTimeBuckets(auth, { personId: fixture.personGroupId })),
+    }),
+    // Identical to PersonService.getStatistics directly above, which is the point: the header count and
+    // the grid beneath it must admit exactly the same assets.
+    notElevated: [Timeline],
+    elevated: [Timeline],
+  }),
+  defineSurface({
+    name: 'TimelineService.getTimeBucket (personId)',
+    setup: setupTimeline,
+    probe: async ({ sut, fixture, auth }) => ({
+      ids: JSON.parse(await sut.getTimeBucket(auth, { personId: fixture.personGroupId, timeBucket: BUCKET_KEY })).id,
+    }),
+    notElevated: [Timeline],
+    elevated: [Timeline],
+  }),
   defineSurface({
     name: 'MemoryService.search',
     setup: setupMemory,
@@ -641,9 +667,47 @@ describe('per-asset exclusions', () => {
     const { sut: timeline } = setupTimeline(defaultDatabase);
     expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(2);
 
+    // And the person's own grid agrees with the count above it. This assertion is the one that was
+    // missing: the count dropped to 1 while the grid still returned both, because the grid was reading
+    // the timeline's bit.
+    expect(sumBucketCounts(await timeline.getTimeBuckets(auth, { personId: person.personGroupId }))).toBe(1);
+
     const { sut: search } = setupSearch(defaultDatabase);
     const found = await search.searchMetadata(auth, { size: 100 });
     expect(found.assets.items.map((item) => item.id)).toContain(excluded.id);
+  });
+
+  it('should keep an asset in the person grid when it is hidden from the timeline only', async () => {
+    // The reported bug, end to end. An album set to hide its members from the timeline pushed the
+    // inherited mask onto 22 assets; the person's header read 22 and the grid rendered nothing. Hiding
+    // from the timeline is a statement about the main grid and says nothing about People.
+    const { sut: assetService, ctx } = setupAsset(defaultDatabase);
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const newTimelineAsset = () =>
+      ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline, localDateTime: BUCKET_DATE });
+    const { asset: kept } = await newTimelineAsset();
+    const { asset: hidden } = await newTimelineAsset();
+    for (const asset of [kept, hidden]) {
+      await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1024 });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+    }
+    const auth = factory.auth({ user: { id: user.id } });
+
+    await assetService.update(auth, hidden.id, { hiddenFrom: [AssetSurface.Timeline] });
+
+    const { sut: timeline } = setupTimeline(defaultDatabase);
+    expect(sumBucketCounts(await timeline.getTimeBuckets(auth, {}))).toBe(1);
+
+    // Both still here, and the count says so too.
+    const { sut: personService } = setupPerson(defaultDatabase);
+    expect(await personAssetCount(personService, auth, person.personGroupId)).toBe(2);
+    expect(sumBucketCounts(await timeline.getTimeBuckets(auth, { personId: person.personGroupId }))).toBe(2);
+
+    const ids = JSON.parse(
+      await timeline.getTimeBucket(auth, { personId: person.personGroupId, timeBucket: BUCKET_KEY }),
+    ).id;
+    expect(ids).toEqual(expect.arrayContaining([hidden.id]));
   });
 
   it('should clear every exclusion when AssetService.update is given null', async () => {

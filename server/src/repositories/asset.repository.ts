@@ -107,7 +107,12 @@ interface AssetBuilderOptions {
  * asset unrecoverable: the trash view asks with `isTrashed` and no explicit visibility, so it would
  * otherwise inherit the timeline's mask.
  */
-const timelineSurfaceFor = (options: { isTrashed?: boolean; albumId?: string; hidden?: boolean }): Surface => {
+const timelineSurfaceFor = (options: {
+  isTrashed?: boolean;
+  albumId?: string;
+  hidden?: boolean;
+  personId?: string;
+}): Surface => {
   if (options.isTrashed) {
     return Surface.Trash;
   }
@@ -116,6 +121,18 @@ const timelineSurfaceFor = (options: { isTrashed?: boolean; albumId?: string; hi
   // album scope, and before the plain timeline so the review view is not itself hideable.
   if (options.hidden) {
     return Surface.HiddenReview;
+  }
+
+  // A person's photo grid is the People surface, not the timeline. Without this it fell through to
+  // Surface.Timeline and read the timeline's bit, which broke ASSET_SURFACE_POLICY in both directions:
+  // hiding a photo from the timeline emptied the person's grid while its header count stayed right, and
+  // hiding one from People dropped the count while leaving the photo in the grid. Timeline and People
+  // are separate user-facing surfaces precisely so neither does the other's job.
+  //
+  // Ordered after the two above so a person-scoped trash or hidden-review view stays unmaskable, and
+  // before the album case because People is the narrower promise.
+  if (options.personId) {
+    return Surface.People;
   }
 
   return options.albumId ? Surface.AlbumTimeline : Surface.Timeline;

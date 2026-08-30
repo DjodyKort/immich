@@ -169,19 +169,31 @@ void main() {
       expect(personAssets.map((item) => (item as RemoteAsset).id), [asset.id]);
     });
 
-    test('withholds an asset from the person grid it shares with the timeline surface', () async {
-      // The server routes a person's photo grid through Surface.Timeline, not Surface.People; People is
-      // the people *list* and its counts. Mobile mirrors that split, so the timeline bit is the one that
-      // empties this grid.
+    test('withholds an asset from the person grid only when it is hidden from People', () async {
+      // A person's grid is the People surface, not the timeline. Hiding a photo from the timeline is a
+      // statement about the main grid, and leaves the person alone; only the People bit empties this
+      // view. The server draws the same line -- ASSET_SURFACE_POLICY makes Timeline and People
+      // independently hideable, and bit 512 exists for exactly this.
+      //
+      // This test previously asserted the opposite, because the server had no personId branch in
+      // `timelineSurfaceFor` and I read that omission as the design. Both ends were wrong together,
+      // which is why a photo in an album hidden from the timeline showed a count of 22 and an empty
+      // grid.
       final user = await ctx.newUser();
       final visible = await ctx.newRemoteAsset(ownerId: user.id);
-      final hidden = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline]);
+      final hiddenFromTimeline = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.timeline]);
+      final hiddenFromPeople = await ctx.newRemoteAsset(ownerId: user.id, hiddenFrom: const [AssetSurface.people]);
       final person = await ctx.newPerson(ownerId: user.id, name: 'Someone');
-      await ctx.newFace(assetId: visible.id, personId: person.id);
-      await ctx.newFace(assetId: hidden.id, personId: person.id);
+      for (final asset in [visible, hiddenFromTimeline, hiddenFromPeople]) {
+        await ctx.newFace(assetId: asset.id, personId: person.id);
+      }
 
       final assets = await sut.person(user.id, person.id, .day).assetSource(0, 10);
-      expect(assets.map((item) => (item as RemoteAsset).id), [visible.id]);
+      expect(assets.map((item) => (item as RemoteAsset).id), unorderedEquals([visible.id, hiddenFromTimeline.id]));
+
+      // The buckets are a separate query and have to agree, or the header count and the grid diverge.
+      final buckets = await sut.person(user.id, person.id, .day).bucketSource().first;
+      expect(buckets.fold<int>(0, (sum, bucket) => sum + bucket.assetCount), 2);
     });
   });
 
