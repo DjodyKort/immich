@@ -102,6 +102,7 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     required String title,
     String? description,
     List<String> assetIds = const [],
+    String? parentId,
   }) async {
     try {
       final currentUser = ref.read(currentUserProvider);
@@ -114,6 +115,7 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
         owner: currentUser,
         description: description,
         assetIds: assetIds,
+        parentId: parentId,
       );
 
       state = state.copyWith(albums: [...state.albums, album]);
@@ -135,6 +137,7 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     String? description,
     Iterable<BaseAsset> assets = const [],
     bool isLocked = false,
+    String? parentId,
   }) async {
     try {
       final currentUser = ref.read(currentUserProvider);
@@ -144,6 +147,7 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
 
       final candidates = RemoteAlbumService.categorizeCandidates(assets);
       final album = await _remoteAlbumService.createAlbum(
+        parentId: parentId,
         title: title,
         owner: currentUser,
         description: description,

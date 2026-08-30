@@ -23,6 +23,7 @@ import {
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import {
   mdiFolderMoveOutline,
+  mdiFolderPlusOutline,
   mdiImageOutline,
   mdiLink,
   mdiPlus,
@@ -96,6 +97,21 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
     },
   };
 
+  const NewSubAlbum: ActionItem = {
+    title: $t('album_new_sub_album'),
+    icon: mdiFolderPlusOutline,
+    $if: () => isOwned,
+    onAction: async () => {
+      if (await redirectIfLockedAndNotElevated(album)) {
+        return;
+      }
+      // Creating inside the folder rather than creating at the top level and moving: two steps for
+      // something the server can do in one, and the intermediate album is visible in the list while
+      // it lasts.
+      await createAlbumAndRedirect(undefined, undefined, album.id);
+    },
+  };
+
   const MoveTo: ActionItem = {
     title: $t('album_move_to'),
     icon: mdiFolderMoveOutline,
@@ -108,7 +124,7 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
     },
   };
 
-  return { Share, AddUsers, CreateSharedLink, MoveTo };
+  return { Share, AddUsers, CreateSharedLink, MoveTo, NewSubAlbum };
 };
 
 /**
@@ -535,7 +551,15 @@ export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { pro
       album.albumName.length > 0
         ? $t('album_delete_confirmation', { values: { album: album.albumName } })
         : $t('unnamed_album_delete_confirmation');
-    const description = $t('album_delete_confirmation_description');
+    // Deleting a folder does not delete what is in it -- the children move to the top level. Saying so
+    // matters more than the generic warning: the count is the thing someone would want to know before
+    // confirming, and there is no undo.
+    const description = [
+      $t('album_delete_confirmation_description'),
+      album.childCount > 0 ? $t('album_delete_keeps_sub_albums', { values: { count: album.childCount } }) : undefined,
+    ]
+      .filter(Boolean)
+      .join(' ');
     const success = await modalManager.showDialog({ prompt: `${confirmation} ${description}` });
     if (!success) {
       return false;

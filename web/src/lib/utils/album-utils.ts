@@ -22,13 +22,14 @@ import { handleError } from '$lib/utils/handle-error';
  * Albums General Management
  * -------------------------
  */
-export const createAlbum = async (name?: string, assetIds?: string[], isLocked?: boolean) => {
+export const createAlbum = async (name?: string, assetIds?: string[], isLocked?: boolean, parentId?: string) => {
   try {
     const newAlbum: AlbumResponseDto = await sdk.createAlbum({
       createAlbumDto: {
         albumName: name ?? '',
         assetIds,
         isLocked,
+        parentId,
       },
     });
     eventManager.emit('AlbumCreate', newAlbum);
@@ -39,8 +40,8 @@ export const createAlbum = async (name?: string, assetIds?: string[], isLocked?:
   }
 };
 
-export const createAlbumAndRedirect = async (name?: string, assetIds?: string[]) => {
-  const newAlbum = await createAlbum(name, assetIds);
+export const createAlbumAndRedirect = async (name?: string, assetIds?: string[], parentId?: string) => {
+  const newAlbum = await createAlbum(name, assetIds, undefined, parentId);
   if (newAlbum) {
     await goto(Route.viewAlbum(newAlbum));
   }

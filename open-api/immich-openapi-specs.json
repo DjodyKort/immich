@@ -3104,7 +3104,7 @@
     },
     "/albums/{id}/parent": {
       "put": {
-        "description": "Set which album this one sits inside, or pass null to move it to the top level. Owner only, and both albums must be yours. Refused if the target is this album or one of its own sub-albums, or if the resulting tree would be too deep. Locked albums may only be nested under locked albums and vice versa -- a normal album may still contain locked children, so moving a locked album to the top level is always allowed. Separate from the update endpoint because it is validated against the rest of the hierarchy rather than being a property assignment.",
+        "description": "Set which album this one sits inside, or pass null to move it to the top level. Owner only, and both albums must be yours. Refused if the target is this album or one of its own sub-albums, or if the resulting tree would be too deep. Locked flows down, never up: a normal album may not be moved into a locked one. The reverse is allowed -- a locked album may sit inside a normal one, and may always be moved to the top level. Separate from the update endpoint because it is validated against the rest of the hierarchy rather than being a property assignment.",
         "operationId": "setAlbumParent",
         "parameters": [
           {
@@ -20053,7 +20053,7 @@
       "AlbumSetParentDto": {
         "properties": {
           "parentId": {
-            "description": "The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. A locked album may only be moved into a locked album, and a normal album only into a normal one -- but a normal album may contain locked children, so moving a locked album to the top level is always allowed.",
+            "description": "The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. Locked flows down, never up: a normal album may not be moved into a locked one. The reverse is allowed -- a locked album may sit inside a normal one, and may always be moved to the top level.",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -22126,6 +22126,12 @@
           "isLocked": {
             "description": "Create the album already locked. Every asset in `assetIds` must already have Locked visibility (i.e. already be in the locked folder) -- an album can only ever be locked at creation time, and can only ever contain assets that are already locked.",
             "type": "boolean"
+          },
+          "parentId": {
+            "description": "Create the album inside this one. Must be an album you own. A locked parent may only take a locked album, matching the move endpoint; the reverse -- a locked album inside a normal one -- is allowed. Omit for a top-level album.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "required": [
@@ -30278,7 +30284,7 @@
             "$ref": "#/components/schemas/AssetOrder"
           },
           "parentId": {
-            "description": "The album this one sits inside, or null at the top level. Null also once the parent is trashed.",
+            "description": "The album this one sits inside, or null at the top level. Sent as stored: a parent that is trashed, or that this client has not received yet, still appears here, and the client is expected to show such an album at the top level rather than hide it.",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",

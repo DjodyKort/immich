@@ -24,6 +24,7 @@ class AlbumApiRepository extends ApiRepository {
     required Iterable<String> assetIds,
     String? description,
     bool isLocked = false,
+    String? parentId,
   }) async {
     final responseDto = await checkNull(
       _api.createAlbum(
@@ -34,6 +35,7 @@ class AlbumApiRepository extends ApiRepository {
               : Optional.present(description.isEmpty ? null : description),
           assetIds: Optional.present(assetIds.toList()),
           isLocked: Optional.present(isLocked),
+          parentId: parentId == null ? const Optional.absent() : Optional.present(parentId),
         ),
       ),
     );

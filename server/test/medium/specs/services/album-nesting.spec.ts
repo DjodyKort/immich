@@ -13,6 +13,7 @@ import { UserRepository } from 'src/repositories/user.repository';
 import { DB } from 'src/schema';
 import { AlbumService } from 'src/services/album.service';
 import { ALBUM_MAX_DEPTH, AlbumNestingError } from 'src/utils/album.util';
+import { forSystem } from 'src/utils/visibility-policy';
 import { newMediumService } from 'test/medium.factory';
 import { factory } from 'test/small.factory';
 import { getKyselyDB } from 'test/utils';
@@ -123,6 +124,58 @@ describe('moving an album', () => {
 
     await expect(sut.get(auth, parent.id)).resolves.toMatchObject({ childCount: 1 });
     await expect(sut.get(auth, child.id)).resolves.toMatchObject({ childCount: 0, parentId: parent.id });
+  });
+});
+
+describe('creating an album inside a folder', () => {
+  it('creates it already nested', async () => {
+    const { sut, ctx } = setup();
+    const { parent, auth } = await seed(ctx);
+
+    const created = await sut.create(auth, { albumName: 'Italy 2025', parentId: parent.id });
+
+    expect(created.parentId).toBe(parent.id);
+  });
+
+  it("refuses another user's album as the parent", async () => {
+    const { sut, ctx } = setup();
+    const { auth } = await seed(ctx);
+    const { user: stranger } = await ctx.newUser();
+    const { album: theirs } = await ctx.newAlbum({ ownerId: stranger.id, albumName: 'Not yours' });
+
+    await expect(sut.create(auth, { albumName: 'Mine', parentId: theirs.id })).rejects.toThrow(
+      AlbumNestingError.DifferentOwner,
+    );
+  });
+
+  // Same asymmetry as the move endpoint: locked flows down, never up.
+  it('refuses a normal album inside a locked one', async () => {
+    const { sut, ctx } = setup();
+    const { user, auth } = await seed(ctx);
+    const { album: locked } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Private', isLocked: true });
+
+    await expect(sut.create(auth, { albumName: 'Ordinary', parentId: locked.id })).rejects.toThrow(
+      AlbumNestingError.UnlockedIntoLocked,
+    );
+  });
+
+  it('refuses a parent that is already at the depth cap', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+    let tip: string | null = null;
+    for (let depth = 0; depth < ALBUM_MAX_DEPTH; depth++) {
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: `level ${depth}` });
+      if (tip) {
+        await sut.setParent(auth, album.id, { parentId: tip });
+      }
+      tip = album.id;
+    }
+
+    await expect(sut.create(auth, { albumName: 'one too many', parentId: tip! })).rejects.toThrow(
+      AlbumNestingError.TooDeep,
+    );
   });
 });
 
@@ -304,7 +357,9 @@ describe('deleting a parent', () => {
     await ctx.database.updateTable('album').set({ deletedAt: null }).where('id', '=', parent.id).execute();
 
     await expect(parentOf(ctx, child.id)).resolves.toBe(parent.id);
-    await expect(ctx.get(AlbumRepository).getChildCounts([parent.id])).resolves.toEqual(new Map([[parent.id, 1]]));
+    await expect(ctx.get(AlbumRepository).getChildCounts([parent.id], forSystem())).resolves.toEqual(
+      new Map([[parent.id, 1]]),
+    );
   });
 
   // SET NULL, not CASCADE: deleting a folder must never delete the albums inside it.
@@ -439,5 +494,47 @@ describe('locking a branch', () => {
 
       expect(impact.blockedReason).toContain('Unshare');
     });
+  });
+});
+
+/**
+ * `childCount` is a number the viewer can act on, so it has to agree with the list they can see.
+ *
+ * The first version counted every child regardless of visibility, which meant a folder whose only
+ * sub-album was locked reported `childCount: 1` to a session that had not entered the PIN -- the
+ * existence of a locked album disclosed by a number.
+ */
+describe('the sub-album count respects what the viewer can see', () => {
+  it('hides a locked child from an unelevated session, and shows it once elevated', async () => {
+    const { sut, ctx } = setup();
+    const { user, parent, auth } = await seed(ctx);
+    const { album: locked } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Honeymoon', isLocked: true });
+    await sut.setParent(auth, locked.id, { parentId: parent.id });
+
+    const unelevated = factory.auth({ user });
+
+    await expect(sut.get(unelevated, parent.id)).resolves.toMatchObject({ childCount: 0 });
+    await expect(sut.get(auth, parent.id)).resolves.toMatchObject({ childCount: 1 });
+  });
+
+  it('leaves a hidden child out of the ordinary listing', async () => {
+    const { sut, ctx } = setup();
+    const { user, parent, auth } = await seed(ctx);
+    const { album: hidden } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Tidied away', isHidden: true });
+    await sut.setParent(auth, hidden.id, { parentId: parent.id });
+
+    await expect(sut.get(auth, parent.id)).resolves.toMatchObject({ childCount: 0 });
+  });
+
+  // The regression that broke locking: web patches its copy from the mutation response, so a rename
+  // that reported 0 wrote that over the real count and the next lock was refused.
+  it('is still correct on the response to a rename', async () => {
+    const { sut, ctx } = setup();
+    const { parent, child, auth } = await seed(ctx);
+    await sut.setParent(auth, child.id, { parentId: parent.id });
+
+    const renamed = await sut.update(auth, parent.id, { albumName: 'Holidays renamed' });
+
+    expect(renamed.childCount).toBe(1);
   });
 });

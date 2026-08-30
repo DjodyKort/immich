@@ -583,8 +583,10 @@ select
 from
   "album_asset" as "other"
   inner join "album" on "album"."id" = "other"."albumId"
+  inner join "asset" on "asset"."id" = "other"."assetId"
 where
-  "album"."deletedAt" is null
+  "asset"."deletedAt" is null
+  and "album"."deletedAt" is null
   and "other"."albumId" not in ($1)
   and "other"."assetId" in (
     select
@@ -599,6 +601,15 @@ group by
   "album"."albumName"
 order by
   "album"."albumName"
+
+-- AlbumRepository.getChildIds
+select
+  "album"."id"
+from
+  "album"
+where
+  "album"."parentId" = $1
+  and "album"."deletedAt" is null
 
 -- AlbumRepository.getParentIds
 select
@@ -618,6 +629,8 @@ from
 where
   "album"."parentId" = any ($1::uuid[])
   and "album"."deletedAt" is null
+  and "album"."isHidden" = $2
+  and "album"."isLocked" = $3
 group by
   "album"."parentId"
 

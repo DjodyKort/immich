@@ -44,10 +44,7 @@ class _AlbumsPageState extends ConsumerState<AlbumsPage> {
           floating: false,
           pinned: true,
           actions: [
-            IconButton(
-              onPressed: () => context.pushRoute(const CreateAlbumRoute()),
-              icon: const Icon(Icons.add_rounded),
-            ),
+            IconButton(onPressed: () => context.pushRoute(CreateAlbumRoute()), icon: const Icon(Icons.add_rounded)),
           ],
           showUploadButton: false,
         ),

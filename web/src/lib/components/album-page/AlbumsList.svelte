@@ -307,7 +307,12 @@
   };
 
   const removeAlbumsIfEmpty = async () => {
-    const albumsToRemove = ownedAlbums.filter((album) => album.assetCount === 0 && !album.albumName);
+    // `childCount === 0` as well: an untitled album that is empty of photos but holds sub-albums is a
+    // folder, and auto-deleting it would move its children to the top level with no prompt at all.
+    // Today the `!albumName` clause happens to save it, which is luck rather than a rule.
+    const albumsToRemove = ownedAlbums.filter(
+      (album) => album.assetCount === 0 && album.childCount === 0 && !album.albumName,
+    );
     await Promise.allSettled(albumsToRemove.map((album) => handleDeleteAlbum(album, { prompt: false, notify: false })));
   };
 

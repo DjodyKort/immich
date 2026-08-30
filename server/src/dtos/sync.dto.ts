@@ -266,7 +266,9 @@ const SyncAlbumV2Schema = z
     parentId: z
       .uuidv4()
       .nullable()
-      .describe('The album this one sits inside, or null at the top level. Null also once the parent is trashed.'),
+      .describe(
+        'The album this one sits inside, or null at the top level. Sent as stored: a parent that is trashed, or that this client has not received yet, still appears here, and the client is expected to show such an album at the top level rather than hide it.',
+      ),
     order: AssetOrderSchema,
   })
   .meta({ id: 'SyncAlbumV2' });

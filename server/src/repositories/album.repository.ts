@@ -667,6 +667,11 @@ export class AlbumRepository {
     const rows = await this.db
       .selectFrom('album_asset as other')
       .innerJoin('album', 'album.id', 'other.albumId')
+      // Trashed assets are excluded for the same reason `getMetadataForIds` excludes them: both
+      // numbers appear in one sentence of the confirm dialog, and counting a photo here that the
+      // other number does not count makes the two disagree about the same operation.
+      .innerJoin('asset', 'asset.id', 'other.assetId')
+      .where('asset.deletedAt', 'is', null)
       .select((eb) => ['album.id', 'album.albumName', eb.fn.countAll<number>().as('assetCount')])
       .where('album.deletedAt', 'is', null)
       // `not in`, never `!= any(...)`. In Postgres `x <> ANY(array)` is true when x differs from *at
@@ -682,6 +687,25 @@ export class AlbumRepository {
       .execute();
 
     return rows.map(({ id, albumName, assetCount }) => ({ id, albumName, assetCount: Number(assetCount) }));
+  }
+
+  /**
+   * The ids of this album's direct children, whatever their visibility.
+   *
+   * Unfiltered on purpose, unlike `getChildCounts`: this is not a number shown to anyone, it is the
+   * set of albums about to be re-parented by a delete, and every one of them needs telling regardless
+   * of whether the deleting session could see it.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getChildIds(albumId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('album')
+      .select('album.id')
+      .where('album.parentId', '=', albumId)
+      .where('album.deletedAt', 'is', null)
+      .execute();
+
+    return rows.map(({ id }) => id);
   }
 
   /**
@@ -706,15 +730,27 @@ export class AlbumRepository {
   }
 
   /**
-   * How many live children each of [albumIds] has.
+   * How many children each of [albumIds] has, **as the viewer can see them**.
    *
    * Counted server-side rather than derived by the clients from the flat album list, because that list
-   * is already filtered by what the viewer may see -- a locked child is absent from it for an
-   * unelevated session, and counting the rows present would quietly report the wrong number rather
-   * than the same number every other surface shows.
+   * is already filtered by what the viewer may see, and counting the rows present would report a
+   * different number to different sessions.
+   *
+   * Which means this query has to apply the *same* filters that list does, and the first version did
+   * not: it counted every child, so a folder whose only child was locked reported `childCount: 1` to a
+   * session that had not entered the PIN. That is the existence of a locked album disclosed by a
+   * number -- exactly what `getAll`'s elevation filter exists to prevent, and what this comment used
+   * to claim was already handled.
+   *
+   * [hidden] mirrors `getAll`: hidden albums are either the whole point of the request or excluded
+   * from it, never mixed in, so the count matches whichever listing the caller is building.
    */
-  @GenerateSql({ params: [[DummyValue.UUID]] })
-  async getChildCounts(albumIds: string[]): Promise<Map<string, number>> {
+  @GenerateSql({ params: [[DummyValue.UUID], { elevated: false }, { hidden: false }] })
+  async getChildCounts(
+    albumIds: string[],
+    ctx: PolicyContext,
+    { hidden = false }: { hidden?: boolean } = {},
+  ): Promise<Map<string, number>> {
     if (albumIds.length === 0) {
       return new Map();
     }
@@ -724,6 +760,8 @@ export class AlbumRepository {
       .select((eb) => ['album.parentId', eb.fn.countAll<number>().as('count')])
       .where('album.parentId', '=', anyUuid(albumIds))
       .where('album.deletedAt', 'is', null)
+      .where('album.isHidden', '=', hidden)
+      .$if(!ctx.elevated, (qb) => qb.where('album.isLocked', '=', false))
       .groupBy('album.parentId')
       .execute();
 

@@ -144,7 +144,7 @@ export class AlbumController {
   @Endpoint({
     summary: 'Move an album into another album',
     description:
-      'Set which album this one sits inside, or pass null to move it to the top level. Owner only, and both albums must be yours. Refused if the target is this album or one of its own sub-albums, or if the resulting tree would be too deep. Locked albums may only be nested under locked albums and vice versa -- a normal album may still contain locked children, so moving a locked album to the top level is always allowed. Separate from the update endpoint because it is validated against the rest of the hierarchy rather than being a property assignment.',
+      'Set which album this one sits inside, or pass null to move it to the top level. Owner only, and both albums must be yours. Refused if the target is this album or one of its own sub-albums, or if the resulting tree would be too deep. Locked flows down, never up: a normal album may not be moved into a locked one. The reverse is allowed -- a locked album may sit inside a normal one, and may always be moved to the top level. Separate from the update endpoint because it is validated against the rest of the hierarchy rather than being a property assignment.',
     history: new HistoryBuilder().added('v3'),
   })
   setAlbumParent(

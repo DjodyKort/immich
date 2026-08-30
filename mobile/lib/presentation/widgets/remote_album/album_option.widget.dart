@@ -14,6 +14,7 @@ class RemoteAlbumOption extends StatelessWidget {
     this.onToggleAlbumOrder,
     this.onEditAlbum,
     this.onMoveAlbum,
+    this.onNewSubAlbum,
     this.onShowOptions,
     this.iconColor,
     this.iconShadows,
@@ -27,6 +28,7 @@ class RemoteAlbumOption extends StatelessWidget {
   final VoidCallback? onToggleAlbumOrder;
   final VoidCallback? onEditAlbum;
   final VoidCallback? onMoveAlbum;
+  final VoidCallback? onNewSubAlbum;
   final VoidCallback? onShowOptions;
   final Color? iconColor;
   final List<Shadow>? iconShadows;
@@ -92,6 +94,17 @@ class RemoteAlbumOption extends StatelessWidget {
           label: context.t.create_shared_link,
           iconData: Icons.link,
           onPressed: onCreateSharedLink,
+          menuItem: true,
+        ),
+      );
+    }
+
+    if (onNewSubAlbum != null) {
+      menuChildren.add(
+        BaseActionButton(
+          label: context.t.album_new_sub_album,
+          iconData: Icons.create_new_folder_outlined,
+          onPressed: onNewSubAlbum,
           menuItem: true,
         ),
       );

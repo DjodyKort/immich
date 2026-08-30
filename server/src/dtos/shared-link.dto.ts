@@ -113,6 +113,8 @@ export function mapSharedLink(sharedLink: SharedLink, options: { stripAssetMetad
     createdAt: sharedLink.createdAt,
     expiresAt: sharedLink.expiresAt,
     assets: assets.map((asset) => mapAsset(asset, { stripMetadata: options.stripAssetMetadata })),
+    // childCount stays at its 0 default, which is the right answer here: a link recipient can traverse
+    // no sub-albums, since each child is a separate album with its own permissions.
     album: sharedLink.album ? mapAlbum(sharedLink.album) : undefined,
     allowUpload: sharedLink.allowUpload,
     allowDownload: sharedLink.allowDownload,

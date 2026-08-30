@@ -14,7 +14,13 @@ import 'package:immich_mobile/widgets/common/immich_toast.dart';
 
 @RoutePage()
 class CreateAlbumPage extends ConsumerStatefulWidget {
-  const CreateAlbumPage({super.key});
+  /// Create the album inside this one, rather than at the top level.
+  ///
+  /// Passed straight to the server rather than creating and then moving: two round trips for
+  /// something one can do, and the intermediate top-level album shows up in the list while it lasts.
+  final String? parentId;
+
+  const CreateAlbumPage({super.key, this.parentId});
 
   @override
   ConsumerState<CreateAlbumPage> createState() => _CreateAlbumPageState();
@@ -182,6 +188,7 @@ class _CreateAlbumPageState extends ConsumerState<CreateAlbumPage> {
             title: title,
             description: albumDescriptionController.text.trim(),
             assets: selectedAssets,
+            parentId: widget.parentId,
           );
 
       if (!mounted || album == null) {

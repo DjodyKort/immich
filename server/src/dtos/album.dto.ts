@@ -53,6 +53,12 @@ const CreateAlbumSchema = z
       }),
     albumUsers: z.array(AlbumUserCreateSchema).optional().describe('Album users'),
     assetIds: z.array(z.uuidv4()).optional().describe('Initial asset IDs'),
+    parentId: z
+      .uuidv4()
+      .optional()
+      .describe(
+        'Create the album inside this one. Must be an album you own. A locked parent may only take a locked album, matching the move endpoint; the reverse -- a locked album inside a normal one -- is allowed. Omit for a top-level album.',
+      ),
     isLocked: z
       .boolean()
       .optional()
@@ -161,7 +167,7 @@ const AlbumSetParentSchema = z
       .uuidv4()
       .nullable()
       .describe(
-        'The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. A locked album may only be moved into a locked album, and a normal album only into a normal one -- but a normal album may contain locked children, so moving a locked album to the top level is always allowed.',
+        'The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. Locked flows down, never up: a normal album may not be moved into a locked one. The reverse is allowed -- a locked album may sit inside a normal one, and may always be moved to the top level.',
       ),
   })
   .meta({ id: 'AlbumSetParentDto' });
@@ -350,7 +356,17 @@ export type MapAlbumDto = {
   isHidden: boolean;
   hiddenFrom: number | null;
   parentId: string | null;
-  /** Optional on the way in, defaulted to 0 on the way out -- most routes have no reason to count. */
+  /**
+   * Optional here, but every route that returns an album must set it -- go through
+   * `AlbumService.mapAlbumWithChildren`.
+   *
+   * It defaulted to 0 and most mutations left it out, so rename, move, lock and share all reported a
+   * folder as childless. Web `Object.assign`s the response over its copy, so renaming a folder wrote
+   * that 0 into the store and locking it then failed: the client sent no `includeSubAlbums` and the
+   * server refused. Making it *required* would be the stronger guarantee, but the repository return
+   * types are dehydrated row shapes that would each have to carry it, so the discipline lives in the
+   * helper instead.
+   */
   childCount?: number;
   order: AssetOrder;
 };
@@ -401,9 +417,6 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     // workflow payload converts. See `toHiddenFromMask` / `fromHiddenFromMask`.
     hiddenFrom: fromHiddenFromMask(entity.hiddenFrom),
     parentId: entity.parentId,
-    // Defaults to 0 rather than being optional: a client that renders "3 sub-albums" must not have to
-    // distinguish "none" from "the caller did not count", and every route that maps an album either
-    // counts or genuinely has none.
     childCount: entity.childCount ?? 0,
     order: entity.order,
   };

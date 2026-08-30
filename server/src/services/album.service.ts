@@ -80,7 +80,11 @@ export class AlbumService extends BaseService {
     // absent from it for an unelevated session, so counting the rows present would report a different
     // number to different sessions -- and the number a client shows next to "sub-albums" has to be the
     // one it will actually find when the folder is opened.
-    const childCounts = await this.albumRepository.getChildCounts(albums.map((album) => album.id));
+    const childCounts = await this.albumRepository.getChildCounts(
+      albums.map((album) => album.id),
+      forViewer(auth),
+      { hidden: rest.hidden === true },
+    );
 
     return albums.map((album) => ({
       ...mapAlbum(album),
@@ -109,7 +113,12 @@ export class AlbumService extends BaseService {
     const hasSharedLink = album.sharedLinks && album.sharedLinks.length > 0;
     const isShared = hasSharedUsers || hasSharedLink;
 
-    const childCounts = await this.albumRepository.getChildCounts([album.id]);
+    // A shared-link viewer can open none of them -- `getAll` is not link-authenticated and each child
+    // is a separate album with its own permissions -- so reporting a number would disclose the
+    // existence of albums they cannot reach and contradict what they can see.
+    const childCounts = auth.sharedLink
+      ? new Map<string, number>()
+      : await this.albumRepository.getChildCounts([album.id], forViewer(auth));
 
     return {
       ...mapAlbum(album),
@@ -191,6 +200,22 @@ export class AlbumService extends BaseService {
       }
     }
 
+    // Creating straight inside a folder, rather than creating at the top level and moving. Only two of
+    // `setParent`'s rules can apply: a brand-new album has no descendants, so there is no cycle to
+    // check and nothing below it to overflow the depth cap. Ownership and the locked rule still do.
+    if (dto.parentId) {
+      const parent = await this.findOwnedOrFail(auth, dto.parentId, AlbumNestingError.DifferentOwner);
+
+      if (!dto.isLocked && parent.isLocked) {
+        throw new BadRequestException(AlbumNestingError.UnlockedIntoLocked);
+      }
+
+      const ancestors = await this.albumRepository.getAncestorIds(dto.parentId);
+      if (ancestors.length + 2 > ALBUM_MAX_DEPTH) {
+        throw new BadRequestException(AlbumNestingError.TooDeep);
+      }
+    }
+
     const userMetadata = await this.userRepository.getMetadata(auth.user.id);
 
     const album = await this.albumRepository.create(
@@ -200,6 +225,7 @@ export class AlbumService extends BaseService {
         albumThumbnailAssetId: assetIds[0] || null,
         order: getPreferences(userMetadata).albums.defaultAssetOrder,
         isLocked: dto.isLocked ?? false,
+        parentId: dto.parentId ?? null,
       },
       assetIds,
       [{ userId: auth.user.id, role: AlbumUserRole.Owner }, ...albumUsers],
@@ -211,7 +237,7 @@ export class AlbumService extends BaseService {
       await this.eventRepository.emit('AlbumInvite', { id: album.id, userId, senderName: auth.user.name });
     }
 
-    return mapAlbum(album);
+    return this.mapAlbumWithChildren(auth, album);
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAlbumDto): Promise<AlbumResponseDto> {
@@ -239,7 +265,7 @@ export class AlbumService extends BaseService {
       auth.user.id,
     );
 
-    return mapAlbum({ ...updatedAlbum, assets: album.assets });
+    return this.mapAlbumWithChildren(auth, { ...updatedAlbum, assets: album.assets });
   }
 
   /**
@@ -264,7 +290,7 @@ export class AlbumService extends BaseService {
     const parentId = dto.parentId ?? null;
 
     if (album.parentId === parentId) {
-      return mapAlbum(album);
+      return this.mapAlbumWithChildren(auth, album);
     }
 
     if (parentId !== null) {
@@ -315,7 +341,18 @@ export class AlbumService extends BaseService {
 
     await this.notifyAlbumChanged(album);
 
-    return mapAlbum({ ...updated, assets: album.assets });
+    // Both parents change too: one gained a child, the other lost one, and each is showing a count and
+    // a sub-albums row built from it. Without this an open page for the old parent keeps listing an
+    // album that has moved away.
+    const affectedParentIds = [album.parentId, parentId].filter((value) => value !== null);
+    for (const affectedId of affectedParentIds) {
+      const affected = await this.albumRepository.getById(affectedId, { withAssets: false }, forSystem(), auth.user.id);
+      if (affected) {
+        await this.notifyAlbumChanged(affected);
+      }
+    }
+
+    return this.mapAlbumWithChildren(auth, { ...updated, assets: album.assets });
   }
 
   /**
@@ -372,7 +409,7 @@ export class AlbumService extends BaseService {
     const album = await this.findOwnedOrFail(auth, id, 'Only the album owner can lock or unlock an album');
 
     if (album.isLocked === dto.isLocked) {
-      return mapAlbum(album);
+      return this.mapAlbumWithChildren(auth, album);
     }
 
     // A branch is locked or it is not; there is no half-locked tree. So an album with sub-albums is
@@ -467,7 +504,7 @@ export class AlbumService extends BaseService {
     await this.queueSidecarWrites(assetIds);
     await this.notifyAlbumChanged(album);
 
-    return mapAlbum({ ...updated, assets: album.assets });
+    return this.mapAlbumWithChildren(auth, { ...updated, assets: album.assets });
   }
 
   /**
@@ -498,14 +535,14 @@ export class AlbumService extends BaseService {
 
     const hiddenFrom = toHiddenFromMask(dto.hiddenFrom);
     if (album.hiddenFrom === hiddenFrom) {
-      return mapAlbum(album);
+      return this.mapAlbumWithChildren(auth, album);
     }
 
     const updated = await this.albumRepository.update(album.id, { id: album.id, hiddenFrom }, auth.user.id);
 
     await this.notifyAlbumChanged(album);
 
-    return mapAlbum({ ...updated, assets: album.assets });
+    return this.mapAlbumWithChildren(auth, { ...updated, assets: album.assets });
   }
 
   /**
@@ -574,9 +611,28 @@ export class AlbumService extends BaseService {
     }));
   }
 
+  /**
+   * Delete an album. Its sub-albums are **not** deleted -- they move to the top level.
+   *
+   * That is the `ON DELETE SET NULL` on `album.parentId`, and it is deliberate: a folder holding
+   * forty albums must not be a way to lose forty albums with one click. The children are told, though,
+   * because nothing else would tell them: the FK fires as a plain UPDATE, so their `parentId` changes
+   * with no event, and any client holding one keeps showing it inside an album that no longer exists.
+   */
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AlbumDelete, ids: [id] });
+
+    // Read before deleting: afterwards the link is gone and there is no way to find them.
+    const orphanedIds = await this.albumRepository.getChildIds(id);
+
     await this.albumRepository.delete(id);
+
+    for (const orphanedId of orphanedIds) {
+      const orphan = await this.albumRepository.getById(orphanedId, { withAssets: false }, forSystem(), auth.user.id);
+      if (orphan) {
+        await this.notifyAlbumChanged(orphan);
+      }
+    }
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
@@ -826,7 +882,10 @@ export class AlbumService extends BaseService {
       await this.eventRepository.emit('AlbumInvite', { id, userId, senderName: auth.user.name });
     }
 
-    return mapAlbum(await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth)));
+    return this.mapAlbumWithChildren(
+      auth,
+      await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth)),
+    );
   }
 
   async removeUser(auth: AuthDto, id: string, userId: string | 'me'): Promise<void> {
@@ -999,7 +1058,7 @@ export class AlbumService extends BaseService {
     }
 
     const updated = await this.findOwnedOrFail(auth, root.id, 'Only the album owner can lock or unlock an album');
-    return mapAlbum(updated);
+    return this.mapAlbumWithChildren(auth, updated);
   }
 
   private findOrFail(id: string, authUserId: string, options: AlbumInfoOptions, ctx: PolicyContext) {
@@ -1062,6 +1121,19 @@ export class AlbumService extends BaseService {
    * `albumUsers` as the Owner role rather than as a column on `album`, which is why this is a find
    * rather than a predicate.
    */
+  /**
+   * Map an album, counting its sub-albums as *this viewer* can see them.
+   *
+   * Every mutation returns the album and both clients patch their local copy from that response --
+   * web literally `Object.assign`s it. So a response that left the count out wrote a 0 over the real
+   * one, and the next thing to read it got the wrong answer: renaming a folder then locking it failed,
+   * because the client saw `childCount: 0`, sent no `includeSubAlbums`, and the server refused.
+   */
+  private async mapAlbumWithChildren(auth: AuthDto, album: MapAlbumDto & { id: string }): Promise<AlbumResponseDto> {
+    const childCounts = await this.albumRepository.getChildCounts([album.id], forViewer(auth));
+    return mapAlbum({ ...album, childCount: childCounts.get(album.id) ?? 0 });
+  }
+
   private async findOwnedOrFail(auth: AuthDto, id: string, message: string) {
     const album = await this.findOrFail(id, auth.user.id, { withAssets: true }, forViewer(auth));
 

@@ -155,10 +155,12 @@ class RemoteAlbumService {
     required List<String> assetIds,
     String? description,
     bool isLocked = false,
+    String? parentId,
   }) async {
     final album = await _albumApiRepository.createDriftAlbum(
       title,
       owner,
+      parentId: parentId,
       description: description,
       assetIds: assetIds,
       isLocked: isLocked,

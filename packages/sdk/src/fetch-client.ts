@@ -912,6 +912,8 @@ export type CreateAlbumDto = {
     description?: string | null;
     /** Create the album already locked. Every asset in `assetIds` must already have Locked visibility (i.e. already be in the locked folder) -- an album can only ever be locked at creation time, and can only ever contain assets that are already locked. */
     isLocked?: boolean;
+    /** Create the album inside this one. Must be an album you own. A locked parent may only take a locked album, matching the move endpoint; the reverse -- a locked album inside a normal one -- is allowed. Omit for a top-level album. */
+    parentId?: string;
 };
 export type AlbumsAddAssetsDto = {
     /** Album IDs */
@@ -999,7 +1001,7 @@ export type MapMarkerResponseDto = {
     state: string | null;
 };
 export type AlbumSetParentDto = {
-    /** The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. A locked album may only be moved into a locked album, and a normal album only into a normal one -- but a normal album may contain locked children, so moving a locked album to the top level is always allowed. */
+    /** The album to move this one inside, or null to move it to the top level. Must be an album you own; it may not be this album, nor any album beneath it, and the resulting tree may not exceed the depth limit. Locked flows down, never up: a normal album may not be moved into a locked one. The reverse is allowed -- a locked album may sit inside a normal one, and may always be moved to the top level. */
     parentId: string | null;
 };
 export type UpdateAlbumUserDto = {
@@ -3378,7 +3380,7 @@ export type SyncAlbumV2 = {
     /** Album name */
     name: string;
     order: AssetOrder;
-    /** The album this one sits inside, or null at the top level. Null also once the parent is trashed. */
+    /** The album this one sits inside, or null at the top level. Sent as stored: a parent that is trashed, or that this client has not received yet, still appears here, and the client is expected to show such an album at the top level rather than hide it. */
     parentId: string | null;
     /** Thumbnail asset ID */
     thumbnailAssetId: string | null;

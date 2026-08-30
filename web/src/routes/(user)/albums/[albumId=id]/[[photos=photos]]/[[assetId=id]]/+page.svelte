@@ -210,7 +210,9 @@
   };
 
   onNavigate(async ({ to }) => {
-    if (!isAlbumsRoute(to?.route.id) && album.assetCount === 0 && !album.albumName) {
+    // childCount too: an untitled album with no photos but with sub-albums is a folder, and this path
+    // deletes without prompting, which would re-parent its children on a plain navigation.
+    if (!isAlbumsRoute(to?.route.id) && album.assetCount === 0 && album.childCount === 0 && !album.albumName) {
       await handleDeleteAlbum(album, { notify: false, prompt: false });
     }
   });

@@ -19,6 +19,9 @@ describe(AlbumService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(AlbumService));
 
+    // `delete` now reads the album's children first, so it can tell them they have been re-parented.
+    mocks.album.getChildIds.mockResolvedValue([]);
+
     // Every album read counts sub-albums, so give the mock the empty Map the real method returns
     // rather than letting each test rediscover that `undefined.get` throws. Tests that care about
     // nesting override it.
@@ -242,6 +245,7 @@ describe(AlbumService.name, () => {
           order: album.order,
           albumThumbnailAssetId: assetId,
           isLocked: false,
+          parentId: null,
         },
         [assetId],
         [
@@ -302,6 +306,7 @@ describe(AlbumService.name, () => {
           order: 'asc',
           albumThumbnailAssetId: assetId,
           isLocked: false,
+          parentId: null,
         },
         [assetId],
         [{ userId: owner.id, role: AlbumUserRole.Owner }, albumUser],
@@ -358,6 +363,7 @@ describe(AlbumService.name, () => {
           order: 'desc',
           albumThumbnailAssetId: assetId,
           isLocked: false,
+          parentId: null,
         },
         [assetId],
         [{ userId: owner.id, role: AlbumUserRole.Owner }],
