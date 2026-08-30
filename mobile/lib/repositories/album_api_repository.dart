@@ -172,6 +172,18 @@ class AlbumApiRepository extends ApiRepository {
     return response.hiddenFrom.map((s) => s.toAssetSurface()).toSet();
   }
 
+  /// Move the album into another album, or to the top level with null.
+  ///
+  /// Its own route rather than a field on `updateAlbumInfo`, because the server validates it against the
+  /// rest of the tree -- ownership, cycles, depth, and the locked-flows-down rule -- and a rename that
+  /// half-applied a move would leave the hierarchy in a state no check had approved. A refusal comes back
+  /// as a 400 with the reason in it; the caller shows it rather than translating it, since the server is
+  /// the only thing that knows the whole tree.
+  Future<String?> setParent(String albumId, String? parentId) async {
+    final response = await checkNull(_api.setAlbumParent(albumId, AlbumSetParentDto(parentId: parentId)));
+    return response.parentId;
+  }
+
   /// Its own route rather than a field on `updateAlbumInfo`, because the server rewrites the visibility of
   /// every asset in the album and their memberships elsewhere. See `AlbumService.setLocked`.
   Future<bool> setLocked(String albumId, bool isLocked) async {

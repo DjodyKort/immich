@@ -69,6 +69,16 @@ class RemoteAlbumService {
     return _repository.getAll(isElevated: true, lockedOnly: true);
   }
 
+  /// Moves the album into another album, or to the top level with null.
+  ///
+  /// The server owns every rule here -- ownership, cycles, depth, locked-flows-down -- so this is a
+  /// single call and a refusal arrives as an error rather than being pre-empted locally. The client
+  /// still disables the targets it can see are invalid, but only so the picker explains itself; it is
+  /// not the authority, because the tree it holds is the filtered one.
+  Future<String?> setParent(String albumId, String? parentId) {
+    return _albumApiRepository.setParent(albumId, parentId);
+  }
+
   /// Moves an album, and everything in it, into or out of the locked folder.
   ///
   /// The server does the work — locking the member assets and evicting them from other albums — so this is

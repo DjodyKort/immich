@@ -124,7 +124,7 @@ SyncAssetExifV1 _createExif({
   );
 }
 
-SyncAlbumV2 _createAlbumV2({required String id, bool isLocked = false, bool isHidden = false}) {
+SyncAlbumV2 _createAlbumV2({required String id, bool isLocked = false, bool isHidden = false, String? parentId}) {
   return SyncAlbumV2(
     id: id,
     name: 'album_$id',
@@ -132,6 +132,7 @@ SyncAlbumV2 _createAlbumV2({required String id, bool isLocked = false, bool isHi
     isActivityEnabled: true,
     isLocked: isLocked,
     isHidden: isHidden,
+    parentId: parentId,
     order: AssetOrder.desc,
     thumbnailAssetId: null,
     createdAt: DateTime(2024, 1, 1),

@@ -42,6 +42,15 @@ class RemoteAlbumEntity extends Table with DriftDefaultsMixin {
   /// in `remote_asset_entity.hidden_from_inherited`.
   IntColumn get hiddenFrom => integer().nullable()();
 
+  /// Mirrors `album.parentId`: the album this one sits inside, or null at the top level.
+  ///
+  /// Deliberately *not* a foreign key onto this table. Sync delivers rows in no particular order, so a
+  /// child can arrive before its parent, and a reference would reject it. The tree is built in memory
+  /// from the rows present, which also gives the behaviour the list needs anyway: a child whose parent
+  /// is missing -- not yet synced, trashed, or withheld from an unelevated session -- is shown at the
+  /// top level rather than disappearing with it.
+  TextColumn get parentId => text().nullable()();
+
   IntColumn get order => intEnum<AlbumAssetOrder>()();
 
   @override

@@ -161,7 +161,7 @@ class Drift extends $Drift {
   }
 
   @override
-  int get schemaVersion => 35;
+  int get schemaVersion => 36;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -379,6 +379,12 @@ class Drift extends $Drift {
                 await m.addColumn(v35.remoteAssetEntity, v35.remoteAssetEntity.hiddenFromInherited);
                 await m.addColumn(v35.remoteAssetEntity, v35.remoteAssetEntity.hiddenFromShown);
                 await m.addColumn(v35.remoteAlbumEntity, v35.remoteAlbumEntity.hiddenFrom);
+              },
+              from35To36: (m, v36) async {
+                // Albums inside albums. Nullable with no default, so every existing row reads as a
+                // top-level album and the list renders exactly as it did before. Values arrive from
+                // the next sync; nothing is backfilled locally, because the server owns the tree.
+                await m.addColumn(v36.remoteAlbumEntity, v36.remoteAlbumEntity.parentId);
               },
             ),
           ),

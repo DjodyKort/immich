@@ -514,6 +514,10 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
             isLocked: Value(album.isLocked),
             isHidden: Value(album.isHidden),
             hiddenFrom: Value(VisibilityPolicy.maskFor(album.hiddenFrom.map((s) => s.toAssetSurface()))),
+            // No foreign key backs this, deliberately: sync delivers rows in no order, so a child can
+            // arrive before its parent and a reference would reject it. The tree is assembled in memory
+            // from whatever rows are present.
+            parentId: Value(album.parentId),
             order: Value(album.order.toAlbumAssetOrder()),
             thumbnailAssetId: Value(album.thumbnailAssetId),
             createdAt: Value(album.createdAt),

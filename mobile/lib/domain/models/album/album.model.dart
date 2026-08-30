@@ -38,6 +38,12 @@ abstract class RemoteAlbum with _$RemoteAlbum {
     /// The surfaces this album's photos are withheld from. Six switches on the options screen, so it
     /// needs its current value here for the same reason the two flags above do.
     required Set<AssetSurface> hiddenFrom,
+
+    /// The album this one sits inside, or null at the top level.
+    ///
+    /// Nullable rather than required, because it is genuinely absent for most albums and because a
+    /// child whose parent has not synced yet is a normal state rather than an error.
+    String? parentId,
     required AlbumAssetOrder order,
     required int assetCount,
     required String ownerName,

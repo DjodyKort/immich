@@ -211,6 +211,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
         description: Value(album.description),
         thumbnailAssetId: Value(album.thumbnailAssetId ?? (assetIds.isNotEmpty ? assetIds.first : null)),
         isActivityEnabled: Value(album.isActivityEnabled),
+        parentId: Value(album.parentId),
         order: Value(album.order),
       );
 
@@ -623,6 +624,7 @@ extension on RemoteAlbumEntityData {
       isLocked: isLocked,
       // The stored bitmask is a local encoding; the domain layer only ever sees surface names.
       hiddenFrom: VisibilityPolicy.namesFor(hiddenFrom).toSet(),
+      parentId: parentId,
       order: order,
       assetCount: assetCount,
       ownerName: ownerName,
