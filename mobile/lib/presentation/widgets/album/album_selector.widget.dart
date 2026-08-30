@@ -72,6 +72,16 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
   List<RemoteAlbum> sortedAlbums = [];
   List<RemoteAlbum> shownAlbums = [];
 
+  /// The tree, when the Albums tab is showing one. Empty in every picker and while narrowed.
+  List<AlbumTreeNode> shownRows = [];
+
+  /// Folders the user has collapsed, by album id. Everything starts expanded.
+  ///
+  /// In memory rather than persisted: mobile has no equivalent of the web's `collapsedGroups`, and a
+  /// settings key for it is more surface than this needs. Reopening the tab shows the whole tree,
+  /// which is the behaviour that was asked for anyway.
+  final Set<String> collapsedAlbumIds = {};
+
   AlbumFilter filter = const AlbumFilter(query: "", mode: QuickFilterMode.all);
   AlbumSort sort = const AlbumSort(mode: AlbumSortMode.lastModified, isReverse: true);
 
@@ -110,6 +120,15 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
 
   Future<void> onRefresh() async {
     await ref.read(remoteAlbumProvider.notifier).refresh();
+  }
+
+  void toggleAlbumExpanded(String albumId) {
+    setState(() {
+      if (!collapsedAlbumIds.remove(albumId)) {
+        collapsedAlbumIds.add(albumId);
+      }
+      shownRows = _treeRows(sortedAlbums);
+    });
   }
 
   void toggleViewMode() {
@@ -172,11 +191,21 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
     unawaited(filterAlbums());
   }
 
-  /// Top-level albums only, in the order [sortedAlbums] already established.
+  /// The tree as rows, parents immediately before their children, collapsed subtrees omitted.
   ///
   /// `buildAlbumTree` decides what counts as a root, which is what keeps an album whose parent is
   /// absent -- not synced yet, trashed, or withheld from an unelevated session -- visible here rather
   /// than lost between the two views.
+  ///
+  /// Depth is capped at three levels for display only. `LargeLeadingTile` sizes its title at a fixed
+  /// fraction of the screen width and that does not shrink as the row is indented, so an uncapped
+  /// indent would push the name off the edge on a phone. The breadcrumb on the album page carries the
+  /// true depth.
+  List<AlbumTreeNode> _treeRows(List<RemoteAlbum> albums) {
+    return flattenAlbumTree(buildAlbumTree(albums), (albumId) => !collapsedAlbumIds.contains(albumId));
+  }
+
+  /// Top-level albums only, flat. What the grid shows, since a grid cannot indent.
   List<RemoteAlbum> _rootsOf(List<RemoteAlbum> albums) {
     final rootIds = buildAlbumTree(albums).map((node) => node.album.id).toSet();
     return albums.where((album) => rootIds.contains(album.id)).toList();
@@ -213,6 +242,7 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
       }
 
       setState(() {
+        shownRows = widget.rootsOnly ? _treeRows(sortedAlbums) : const [];
         shownAlbums = widget.rootsOnly ? _rootsOf(sortedAlbums) : sortedAlbums;
       });
 
@@ -228,6 +258,7 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
     }
 
     setState(() {
+      shownRows = const [];
       shownAlbums = filteredAlbums;
     });
   }
@@ -276,12 +307,20 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
             currentIsReverse: sort.isReverse,
           ),
           isGrid
-              ? _AlbumGrid(albums: shownAlbums, userId: userId, onAlbumSelected: widget.onAlbumSelected)
-              : _AlbumList(
+              ? _AlbumGrid(
                   albums: shownAlbums,
                   userId: userId,
                   onAlbumSelected: widget.onAlbumSelected,
                   subAlbumCounts: _subAlbumCounts,
+                )
+              : _AlbumList(
+                  albums: shownAlbums,
+                  rows: shownRows,
+                  userId: userId,
+                  onAlbumSelected: widget.onAlbumSelected,
+                  subAlbumCounts: _subAlbumCounts,
+                  onToggleExpanded: toggleAlbumExpanded,
+                  collapsedAlbumIds: collapsedAlbumIds,
                 ),
         ],
       ),
@@ -633,10 +672,18 @@ class _AlbumList extends ConsumerWidget {
     required this.albums,
     required this.userId,
     required this.onAlbumSelected,
+    this.rows = const [],
     this.subAlbumCounts = const {},
+    this.onToggleExpanded,
+    this.collapsedAlbumIds = const {},
   });
 
   final List<RemoteAlbum> albums;
+
+  /// The tree, when there is one. Empty in every picker and while the list is narrowed, where [albums]
+  /// is the flat list to render instead.
+  final List<AlbumTreeNode> rows;
+
   final String? userId;
   final AlbumSelectorCallback onAlbumSelected;
 
@@ -644,9 +691,15 @@ class _AlbumList extends ConsumerWidget {
   /// roots, where every album is on screen already and a count would only repeat what is visible.
   final Map<String, int> subAlbumCounts;
 
+  final void Function(String albumId)? onToggleExpanded;
+  final Set<String> collapsedAlbumIds;
+
+  /// Indent per level, capped at three. See `_treeRows` for why it is capped rather than unbounded.
+  static double _indentFor(int depth) => (depth > 3 ? 3 : depth) * 16.0;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (albums.isEmpty) {
+    if (albums.isEmpty && rows.isEmpty) {
       return SliverToBoxAdapter(
         child: Center(
           child: Padding(padding: const EdgeInsets.all(20.0), child: Text(context.t.album_search_not_found)),
@@ -658,12 +711,17 @@ class _AlbumList extends ConsumerWidget {
       padding: const EdgeInsets.only(left: 16.0, right: 16, bottom: 64),
       sliver: SliverList.builder(
         itemBuilder: (_, index) {
-          final album = albums[index];
+          // Tree when there is one, flat list otherwise. `rows` is empty in every picker and whenever
+          // a search or quick filter has narrowed the list.
+          final node = rows.isEmpty ? null : rows[index];
+          final album = node?.album ?? albums[index];
+          final depth = node?.depth ?? 0;
+          final hasChildren = (node?.children.length ?? 0) > 0;
           final isOwner = album.ownerId == userId;
 
           if (isOwner) {
             return Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
+              padding: EdgeInsetsDirectional.only(bottom: 8.0, start: _indentFor(depth)),
               child: Dismissible(
                 key: ValueKey(album.id),
                 background: Container(
@@ -692,33 +750,48 @@ class _AlbumList extends ConsumerWidget {
                   isOwner: isOwner,
                   onAlbumSelected: onAlbumSelected,
                   subAlbumCount: subAlbumCounts[album.id] ?? 0,
+                  depth: depth,
+                  isExpanded: !collapsedAlbumIds.contains(album.id),
+                  onToggleExpanded: hasChildren ? () => onToggleExpanded?.call(album.id) : null,
                 ),
               ),
             );
           } else {
             return Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
+              padding: EdgeInsetsDirectional.only(bottom: 8.0, start: _indentFor(depth)),
               child: AlbumTile(
                 album: album,
                 isOwner: isOwner,
                 onAlbumSelected: onAlbumSelected,
                 subAlbumCount: subAlbumCounts[album.id] ?? 0,
+                depth: depth,
+                isExpanded: !collapsedAlbumIds.contains(album.id),
+                onToggleExpanded: hasChildren ? () => onToggleExpanded?.call(album.id) : null,
               ),
             );
           }
         },
-        itemCount: albums.length,
+        itemCount: rows.isEmpty ? albums.length : rows.length,
       ),
     );
   }
 }
 
 class _AlbumGrid extends StatelessWidget {
-  const _AlbumGrid({required this.albums, required this.userId, required this.onAlbumSelected});
+  const _AlbumGrid({
+    required this.albums,
+    required this.userId,
+    required this.onAlbumSelected,
+    this.subAlbumCounts = const {},
+  });
 
   final List<RemoteAlbum> albums;
   final String? userId;
   final AlbumSelectorCallback onAlbumSelected;
+
+  /// Sub-album counts by album id. A grid cannot indent, so this count is the *only* thing that tells
+  /// a folder apart from an empty album -- without it they render identically.
+  final Map<String, int> subAlbumCounts;
 
   @override
   Widget build(BuildContext context) {
@@ -741,7 +814,12 @@ class _AlbumGrid extends StatelessWidget {
         ),
         delegate: SliverChildBuilderDelegate((context, index) {
           final album = albums[index];
-          return _GridAlbumCard(album: album, userId: userId, onAlbumSelected: onAlbumSelected);
+          return _GridAlbumCard(
+            album: album,
+            userId: userId,
+            onAlbumSelected: onAlbumSelected,
+            subAlbumCount: subAlbumCounts[album.id] ?? 0,
+          );
         }, childCount: albums.length),
       ),
     );
@@ -749,11 +827,19 @@ class _AlbumGrid extends StatelessWidget {
 }
 
 class _GridAlbumCard extends ConsumerWidget {
-  const _GridAlbumCard({required this.album, required this.userId, required this.onAlbumSelected});
+  const _GridAlbumCard({
+    required this.album,
+    required this.userId,
+    required this.onAlbumSelected,
+    this.subAlbumCount = 0,
+  });
 
   final RemoteAlbum album;
   final String? userId;
   final AlbumSelectorCallback onAlbumSelected;
+
+  /// How many sub-albums this holds, 0 for none. See [_AlbumGrid.subAlbumCounts].
+  final int subAlbumCount;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -822,7 +908,11 @@ class _GridAlbumCard extends ConsumerWidget {
                       ],
                     ),
                     Text(
-                      '${context.t.items_count(count: album.assetCount)} • ${album.ownerId != userId ? context.t.shared_by_user(user: album.ownerName) : context.t.owned}',
+                      [
+                        if (subAlbumCount > 0) context.t.album_sub_album_count(count: subAlbumCount),
+                        context.t.items_count(count: album.assetCount),
+                        album.ownerId != userId ? context.t.shared_by_user(user: album.ownerName) : context.t.owned,
+                      ].join(' • '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: context.textTheme.labelMedium?.copyWith(color: context.colorScheme.onSurfaceSecondary),

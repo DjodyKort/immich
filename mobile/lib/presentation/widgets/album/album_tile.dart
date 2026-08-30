@@ -15,11 +15,26 @@ class AlbumTile extends ConsumerWidget {
     required this.isOwner,
     this.onAlbumSelected,
     this.subAlbumCount = 0,
+    this.depth = 0,
+    this.isExpanded = true,
+    this.onToggleExpanded,
   });
 
   final RemoteAlbum album;
   final bool isOwner;
   final Function(RemoteAlbum)? onAlbumSelected;
+
+  /// Nesting level, 0 at the top.
+  ///
+  /// Capped by the caller rather than here: `LargeLeadingTile` sizes its title at a fixed fraction of
+  /// the screen width, which does not shrink as the row is indented, so unbounded depth would push the
+  /// name off the edge. The breadcrumb on the album page carries the true depth.
+  final int depth;
+
+  final bool isExpanded;
+
+  /// Null for an album with no sub-albums, which is what decides whether a chevron is drawn at all.
+  final VoidCallback? onToggleExpanded;
 
   /// How many sub-albums to signpost, or 0 for none.
   ///
@@ -35,6 +50,21 @@ class AlbumTile extends ConsumerWidget {
     return LargeLeadingTile(
       title: Row(
         children: [
+          if (onToggleExpanded != null)
+            // Its own hit target, not the row's: the row opens the album, and expanding a folder is a
+            // different intent from entering it.
+            GestureDetector(
+              onTap: onToggleExpanded,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: AnimatedRotation(
+                  turns: isExpanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 150),
+                  child: Icon(Icons.chevron_right, size: 20, color: context.colorScheme.onSurfaceSecondary),
+                ),
+              ),
+            ),
           if (album.isLocked)
             Padding(
               padding: const EdgeInsets.only(right: 6),
