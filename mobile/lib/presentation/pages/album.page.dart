@@ -52,6 +52,10 @@ class _AlbumsPageState extends ConsumerState<AlbumsPage> {
           showUploadButton: false,
         ),
         AlbumSelector(
+          // The browse surface: top-level albums only, sub-albums reached by opening their parent.
+          // The add-to-album pickers leave this off, because they are search-first and want every
+          // album within one tap.
+          rootsOnly: true,
           onAlbumSelected: (album) {
             unawaited(context.router.push(RemoteAlbumRoute(album: album)));
           },

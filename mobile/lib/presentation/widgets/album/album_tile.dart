@@ -9,11 +9,24 @@ import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart'
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
 
 class AlbumTile extends ConsumerWidget {
-  const AlbumTile({super.key, required this.album, required this.isOwner, this.onAlbumSelected});
+  const AlbumTile({
+    super.key,
+    required this.album,
+    required this.isOwner,
+    this.onAlbumSelected,
+    this.subAlbumCount = 0,
+  });
 
   final RemoteAlbum album;
   final bool isOwner;
   final Function(RemoteAlbum)? onAlbumSelected;
+
+  /// How many sub-albums to signpost, or 0 for none.
+  ///
+  /// Passed in rather than read from the album, because it is counted from the list the *viewer* can
+  /// see: a locked child is absent for an unelevated session, and a number that included it would
+  /// promise something the folder does not open to.
+  final int subAlbumCount;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -38,7 +51,11 @@ class AlbumTile extends ConsumerWidget {
         ],
       ),
       subtitle: Text(
-        '${context.t.items_count(count: album.assetCount)} • ${isOwner ? context.t.owned : context.t.shared_by_user(user: album.ownerName)}',
+        [
+          if (subAlbumCount > 0) context.t.album_sub_album_count(count: subAlbumCount),
+          context.t.items_count(count: album.assetCount),
+          isOwner ? context.t.owned : context.t.shared_by_user(user: album.ownerName),
+        ].join(' • '),
         overflow: TextOverflow.ellipsis,
         style: context.textTheme.bodyMedium?.copyWith(color: context.colorScheme.onSurfaceSecondary),
       ),

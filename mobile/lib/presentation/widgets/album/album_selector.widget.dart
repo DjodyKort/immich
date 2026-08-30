@@ -22,6 +22,7 @@ import 'package:immich_mobile/providers/timeline/multiselect.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/utils/album_filter.utils.dart';
+import 'package:immich_mobile/utils/album_tree.utils.dart';
 import 'package:immich_mobile/widgets/common/confirm_dialog.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 import 'package:immich_mobile/widgets/common/search_field.dart';
@@ -41,7 +42,23 @@ class AlbumSelector extends ConsumerStatefulWidget {
   /// non-empty for an elevated session because the provider itself withholds locked albums otherwise.
   final bool Function(RemoteAlbum album)? albumFilter;
 
-  const AlbumSelector({super.key, required this.onAlbumSelected, this.onKeyboardExpanded, this.albumFilter});
+  /// Show only top-level albums, with sub-albums reached by opening their parent.
+  ///
+  /// On for the Albums tab, off everywhere else. The two surfaces this widget serves want opposite
+  /// things: browsing wants structure, while an add-to-album picker wants to reach *one specific*
+  /// album fast and is search-first, where hiding children behind their parents only costs taps.
+  ///
+  /// Applied at display time rather than to the source list, so a search still reaches a nested album
+  /// directly. Nesting must never make an album unfindable, and search is what guarantees that.
+  final bool rootsOnly;
+
+  const AlbumSelector({
+    super.key,
+    required this.onAlbumSelected,
+    this.onKeyboardExpanded,
+    this.albumFilter,
+    this.rootsOnly = false,
+  });
 
   @override
   ConsumerState<AlbumSelector> createState() => _AlbumSelectorState();
@@ -155,14 +172,48 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
     unawaited(filterAlbums());
   }
 
+  /// Top-level albums only, in the order [sortedAlbums] already established.
+  ///
+  /// `buildAlbumTree` decides what counts as a root, which is what keeps an album whose parent is
+  /// absent -- not synced yet, trashed, or withheld from an unelevated session -- visible here rather
+  /// than lost between the two views.
+  List<RemoteAlbum> _rootsOf(List<RemoteAlbum> albums) {
+    final rootIds = buildAlbumTree(albums).map((node) => node.album.id).toSet();
+    return albums.where((album) => rootIds.contains(album.id)).toList();
+  }
+
+  /// How many visible children each album has.
+  ///
+  /// Counted from the provider's full list rather than from what is on screen, because the rows on
+  /// screen are the roots -- their children are exactly what is *not* there. Empty unless the list is
+  /// showing roots, where the count is the only signpost that a folder has anything inside it.
+  Map<String, int> get _subAlbumCounts {
+    if (!widget.rootsOnly) {
+      return const {};
+    }
+
+    final counts = <String, int>{};
+    for (final album in ref.read(remoteAlbumProvider).albums) {
+      final parentId = album.parentId;
+      if (parentId != null) {
+        counts[parentId] = (counts[parentId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
   Future<void> filterAlbums() async {
-    if (filter.query == null) {
+    // A search or a quick filter is a deliberate narrowing, and both go flat: the answer to "show me
+    // albums matching this" must include nested ones, or nesting would hide them.
+    final isNarrowed = (filter.query ?? '').isNotEmpty || filter.mode != QuickFilterMode.all;
+
+    if (!isNarrowed) {
       if (!mounted) {
         return;
       }
 
       setState(() {
-        shownAlbums = sortedAlbums;
+        shownAlbums = widget.rootsOnly ? _rootsOf(sortedAlbums) : sortedAlbums;
       });
 
       return;
@@ -226,7 +277,12 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
           ),
           isGrid
               ? _AlbumGrid(albums: shownAlbums, userId: userId, onAlbumSelected: widget.onAlbumSelected)
-              : _AlbumList(albums: shownAlbums, userId: userId, onAlbumSelected: widget.onAlbumSelected),
+              : _AlbumList(
+                  albums: shownAlbums,
+                  userId: userId,
+                  onAlbumSelected: widget.onAlbumSelected,
+                  subAlbumCounts: _subAlbumCounts,
+                ),
         ],
       ),
     );
@@ -573,11 +629,20 @@ class _QuickSortAndViewMode extends StatelessWidget {
 }
 
 class _AlbumList extends ConsumerWidget {
-  const _AlbumList({required this.albums, required this.userId, required this.onAlbumSelected});
+  const _AlbumList({
+    required this.albums,
+    required this.userId,
+    required this.onAlbumSelected,
+    this.subAlbumCounts = const {},
+  });
 
   final List<RemoteAlbum> albums;
   final String? userId;
   final AlbumSelectorCallback onAlbumSelected;
+
+  /// Sub-album counts by album id, for the rows that have any. Empty when the list is not showing
+  /// roots, where every album is on screen already and a count would only repeat what is visible.
+  final Map<String, int> subAlbumCounts;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -622,13 +687,23 @@ class _AlbumList extends ConsumerWidget {
                 onDismissed: (direction) async {
                   await ref.read(remoteAlbumProvider.notifier).deleteAlbum(album.id);
                 },
-                child: AlbumTile(album: album, isOwner: isOwner, onAlbumSelected: onAlbumSelected),
+                child: AlbumTile(
+                  album: album,
+                  isOwner: isOwner,
+                  onAlbumSelected: onAlbumSelected,
+                  subAlbumCount: subAlbumCounts[album.id] ?? 0,
+                ),
               ),
             );
           } else {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
-              child: AlbumTile(album: album, isOwner: isOwner, onAlbumSelected: onAlbumSelected),
+              child: AlbumTile(
+                album: album,
+                isOwner: isOwner,
+                onAlbumSelected: onAlbumSelected,
+                subAlbumCount: subAlbumCounts[album.id] ?? 0,
+              ),
             );
           }
         },

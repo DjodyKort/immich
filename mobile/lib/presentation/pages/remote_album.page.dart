@@ -9,6 +9,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/widgets/album/pending_uploads_banner.widget.dart';
+import 'package:immich_mobile/presentation/widgets/album/sub_albums_row.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/remote_album_bottom_sheet.widget.dart';
 import 'package:immich_mobile/presentation/widgets/remote_album/album_option.widget.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/timeline.widget.dart';
@@ -20,6 +21,7 @@ import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 import 'package:immich_mobile/widgets/common/remote_album_sliver_app_bar.dart';
+import 'package:sliver_tools/sliver_tools.dart';
 
 @RoutePage()
 class RemoteAlbumPage extends ConsumerStatefulWidget {
@@ -205,7 +207,15 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
         currentRemoteAlbumScopedProvider.overrideWithValue(_album),
       ],
       child: Timeline(
-        topSliverWidget: PendingUploadsBanner(albumId: _album.id),
+        // Two slivers in the one slot: the upload banner as before, and the sub-albums row above the
+        // album's own photos. Both self-size to nothing when they have nothing to show, which is why
+        // neither needs a declared height.
+        topSliverWidget: MultiSliver(
+          children: [
+            PendingUploadsBanner(albumId: _album.id),
+            SubAlbumsRow(albumId: _album.id),
+          ],
+        ),
         appBar: RemoteAlbumSliverAppBar(
           icon: Icons.photo_album_outlined,
           kebabMenu: _AlbumKebabMenu(
