@@ -19,10 +19,12 @@ describe('buildAlbumTree', () => {
   it('nests children under their parent', () => {
     const tree = buildAlbumTree([album('parent'), album('child', 'parent')]);
 
+    const [root] = tree;
+    const [child] = root.children;
     expect(ids(tree)).toEqual(['parent']);
-    expect(ids(tree[0].children)).toEqual(['child']);
-    expect(tree[0].depth).toBe(0);
-    expect(tree[0].children[0].depth).toBe(1);
+    expect(ids(root.children)).toEqual(['child']);
+    expect(root.depth).toBe(0);
+    expect(child.depth).toBe(1);
   });
 
   // The case that matters most: the list is already filtered by what the viewer may see, so a missing

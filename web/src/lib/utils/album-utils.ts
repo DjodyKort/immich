@@ -334,11 +334,12 @@ export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeNode[] => {
   // Anything unreachable from a root can only be part of a cycle. Promote it so it stays findable,
   // rather than leaving it rendered nowhere.
   for (const node of nodes.values()) {
-    if (!seen.has(node.album.id)) {
-      roots.push(node);
-      seen.add(node.album.id);
-      assignDepth(node, 0);
+    if (seen.has(node.album.id)) {
+      continue;
     }
+    roots.push(node);
+    seen.add(node.album.id);
+    assignDepth(node, 0);
   }
 
   return roots;
