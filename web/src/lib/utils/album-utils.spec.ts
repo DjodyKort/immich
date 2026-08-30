@@ -209,3 +209,61 @@ describe('getMoveTargets', () => {
     expect(blockerOf(targets, `level${ALBUM_MAX_DEPTH - 3}`)).toBeUndefined();
   });
 });
+
+/**
+ * The shape the folder view renders from.
+ *
+ * These assert on `buildAlbumTree` + `flattenAlbumTree` composed the way `AlbumsList` composes them,
+ * because that composition is where the ordering rules live: folders keep their children, collapsing
+ * one hides its subtree but not its siblings, and a level stays in the order it was given.
+ */
+describe('the folder view composition', () => {
+  const expandAll = () => true;
+  const identity = <T>(albums: T[]) => albums;
+
+  it('puts a folder immediately before the albums inside it', () => {
+    const tree = buildAlbumTree([album('holidays'), album('italy', 'holidays'), album('wedding')]);
+
+    const rows = flattenAlbumTree(tree, expandAll, identity);
+
+    expect(ids(rows)).toEqual(['holidays', 'italy', 'wedding']);
+    expect(rows.map(({ depth }) => depth)).toEqual([0, 1, 0]);
+  });
+
+  it('hides a collapsed folder’s subtree without touching its siblings', () => {
+    const tree = buildAlbumTree([
+      album('holidays'),
+      album('italy', 'holidays'),
+      album('rome', 'italy'),
+      album('wedding'),
+    ]);
+
+    const rows = flattenAlbumTree(tree, (albumId) => albumId !== 'holidays', identity);
+
+    expect(ids(rows)).toEqual(['holidays', 'wedding']);
+  });
+
+  it('collapses one level without collapsing the one above it', () => {
+    const tree = buildAlbumTree([album('holidays'), album('italy', 'holidays'), album('rome', 'italy')]);
+
+    const rows = flattenAlbumTree(tree, (albumId) => albumId !== 'italy', identity);
+
+    expect(ids(rows)).toEqual(['holidays', 'italy']);
+  });
+
+  // The grid renders folders as sections and everything else as cards, so the split has to be exact.
+  it('separates folders from plain albums at the top level', () => {
+    const tree = buildAlbumTree([album('holidays'), album('italy', 'holidays'), album('wedding'), album('work')]);
+
+    expect(tree.filter((node) => node.children.length > 0).map(({ album }) => album.id)).toEqual(['holidays']);
+    expect(tree.filter((node) => node.children.length === 0).map(({ album }) => album.id)).toEqual(['wedding', 'work']);
+  });
+
+  // An album whose parent is not in the list is a root, so it renders as a plain card rather than
+  // disappearing into a folder that is not there.
+  it('treats an album with an unreachable parent as a plain top-level album', () => {
+    const tree = buildAlbumTree([album('orphan', 'not-visible-to-me')]);
+
+    expect(tree.filter((node) => node.children.length === 0).map(({ album }) => album.id)).toEqual(['orphan']);
+  });
+});

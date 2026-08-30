@@ -92,6 +92,16 @@ export enum AlbumGroupBy {
   None = 'None',
   Year = 'Year',
   Owner = 'Owner',
+
+  /**
+   * Sub-albums shown inside their parent.
+   *
+   * A grouping option rather than a mode of its own, so it inherits everything the others already
+   * have: `collapsedGroups` is keyed per grouping, so folder collapse state is independent of year
+   * collapse state, and the expand-all/collapse-all controls appear because they are gated on
+   * `groupBy !== None`. With nothing nested it degrades to a plain flat list -- every album is a root.
+   */
+  Folder = 'Folder',
 }
 
 export enum AlbumSortBy {

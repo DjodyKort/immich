@@ -138,6 +138,13 @@ export const groupOptionsMetadata: AlbumGroupOptionMetadata[] = [
     defaultOrder: SortOrder.Asc,
     isDisabled: () => false,
   },
+  {
+    id: AlbumGroupBy.Folder,
+    defaultOrder: SortOrder.Asc,
+    // Never disabled. Unlike Year, which cannot combine with a created/modified sort, folder grouping
+    // is orthogonal to every sort: sorting applies within each level of the tree.
+    isDisabled: () => false,
+  },
 ];
 
 export const findGroupOptionMetadata = (groupBy: string) => {

@@ -509,6 +509,10 @@ describe('/albums', () => {
         isHidden: false,
         isLocked: false,
         hiddenFrom: [],
+        // Top level, with nothing inside it. Same reasoning as the three above: this is a deep
+        // equality check, so the defaults are the assertion.
+        parentId: null,
+        childCount: 0,
       });
     });
 

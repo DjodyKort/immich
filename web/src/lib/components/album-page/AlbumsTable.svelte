@@ -7,6 +7,7 @@
     sortOptionsMetadata,
     toggleAlbumGroupCollapsing,
     type AlbumGroup,
+    type AlbumTreeNode,
   } from '$lib/utils/album-utils';
   import type { ContextMenuPosition } from '$lib/utils/context-menu';
   import type { AlbumResponseDto } from '@immich/sdk';
@@ -18,10 +19,17 @@
   interface Props {
     groupedAlbums: AlbumGroup[];
     albumGroupOption?: string;
+    /**
+     * The tree as rows, when folder grouping is active. Empty otherwise.
+     *
+     * Kept separate from `groupedAlbums` rather than folded into it: a folder is not a group of
+     * albums, it *is* an album, with its own row, its own counts and its own page.
+     */
+    folderRows?: AlbumTreeNode[];
     onShowContextMenu?: ((position: ContextMenuPosition, album: AlbumResponseDto) => unknown) | undefined;
   }
 
-  let { groupedAlbums, albumGroupOption = AlbumGroupBy.None, onShowContextMenu }: Props = $props();
+  let { groupedAlbums, albumGroupOption = AlbumGroupBy.None, folderRows = [], onShowContextMenu }: Props = $props();
 </script>
 
 <table class="mt-2 w-full text-start">
@@ -34,7 +42,23 @@
       {/each}
     </tr>
   </thead>
-  {#if albumGroupOption === AlbumGroupBy.None}
+  {#if folderRows.length > 0}
+    <!-- Folder grouping. One flat tbody of indented rows: a folder and a plain album are both albums
+         and both get a row, which is exactly what the tree view is for. -->
+    <tbody class="block w-full overflow-y-auto rounded-md border dark:border-immich-dark-gray dark:text-immich-dark-fg">
+      {#each folderRows as row (row.album.id)}
+        <AlbumTableRow
+          album={row.album}
+          depth={row.depth}
+          isFolder={row.children.length > 0}
+          isExpanded={!isAlbumGroupCollapsed($albumViewSettings, row.album.id)}
+          onToggleExpanded={() => toggleAlbumGroupCollapsing(row.album.id)}
+          {onShowContextMenu}
+        />
+      {/each}
+    </tbody>
+    <!-- Folder grouping with no rows means a search is active: flat, no group header. -->
+  {:else if albumGroupOption === AlbumGroupBy.None || albumGroupOption === AlbumGroupBy.Folder}
     <tbody class="block w-full overflow-y-auto rounded-md border dark:border-immich-dark-gray dark:text-immich-dark-fg">
       {#each groupedAlbums[0].albums as album (album.id)}
         <AlbumTableRow {album} {onShowContextMenu} />

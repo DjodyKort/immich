@@ -8,15 +8,27 @@
   import type { ContextMenuPosition } from '$lib/utils/context-menu';
   import { AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiShareVariantOutline } from '@mdi/js';
+  import { mdiChevronRight, mdiShareVariantOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
     album: AlbumResponseDto;
+    /** Nesting level, 0 at the top. Only ever non-zero under folder grouping. */
+    depth?: number;
+    isFolder?: boolean;
+    isExpanded?: boolean;
+    onToggleExpanded?: (() => void) | undefined;
     onShowContextMenu?: ((position: ContextMenuPosition, album: AlbumResponseDto) => unknown) | undefined;
   }
 
-  let { album, onShowContextMenu = undefined }: Props = $props();
+  let {
+    album,
+    depth = 0,
+    isFolder = false,
+    isExpanded = true,
+    onToggleExpanded = undefined,
+    onShowContextMenu = undefined,
+  }: Props = $props();
 
   const showContextMenu = (position: ContextMenuPosition) => {
     onShowContextMenu?.(position, album);
@@ -38,8 +50,31 @@
   {oncontextmenu}
 >
   <td class="text-md w-8/12 items-center text-start text-ellipsis sm:w-4/12 md:w-4/12 xl:w-[30%] 2xl:w-[40%]">
-    <AlbumLockedIcon {album} class="me-1 inline align-text-bottom" />
-    {album.albumName}
+    <span style="padding-inline-start: {depth * 1.5}rem" class="inline-flex items-center align-middle">
+      {#if isFolder}
+        <!-- `stopPropagation`: the row itself navigates to the album, and expanding a folder is not
+             the same intent as opening it. -->
+        <button
+          type="button"
+          class="me-1 rounded-sm p-0.5 hover:bg-gray-200 focus-visible:outline-2 dark:hover:bg-gray-700"
+          aria-expanded={isExpanded}
+          aria-label={album.albumName}
+          onclick={(event) => {
+            event.stopPropagation();
+            onToggleExpanded?.();
+          }}
+        >
+          <Icon
+            icon={mdiChevronRight}
+            size="16"
+            class="transition-transform duration-200 {isExpanded ? 'rotate-90' : 'rotate-0'}"
+          />
+        </button>
+      {:else if depth > 0}
+        <!-- Keeps a leaf's name aligned with its siblings that do have a chevron. -->
+        <span class="me-1 inline-block w-[21px]"></span>
+      {/if}
+    </span><AlbumLockedIcon {album} class="me-1 inline align-text-bottom" />{album.albumName}
     {#if album.shared}
       <Icon
         icon={mdiShareVariantOutline}
