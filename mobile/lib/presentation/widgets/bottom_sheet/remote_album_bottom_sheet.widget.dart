@@ -27,6 +27,10 @@ import 'package:immich_mobile/widgets/common/immich_toast.dart';
 
 /// The selection sheet for a single album.
 ///
+/// `ownsAlbum` gates the *destructive* actions only -- delete, archive, lock, remove-from-album. It
+/// deliberately does not gate the add-to-album half below them: that acts on a different album, and
+/// the timeline sheet offers it for the same assets with no ownership test at all.
+///
 /// The add-to-album half is withheld inside a locked album, because there is nothing it could do that
 /// the server accepts. Every asset shown is already in this album, so adding it here is a duplicate;
 /// an asset may belong to **at most one locked album** (`getAssetIdsInOtherLockedAlbums`, rejected as
@@ -129,9 +133,17 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
           ),
         ],
       ],
-      slivers: ownsAlbum && !isLocked
-          ? [const AddToAlbumHeader(), AlbumSelector(onAlbumSelected: addToAlbum, onKeyboardExpanded: onKeyboardExpand)]
-          : null,
+      // Gated on `isLocked` alone. It used to require `ownsAlbum` too, which withheld the whole
+      // add-to-album half inside any album shared *to* you -- while the timeline sheet, holding the
+      // very same assets, offers it unconditionally. Owning the album you happen to be browsing has
+      // nothing to do with whether you may put its photos into an album of your own; the server
+      // decides that from the target album and the assets, and answers with a toast if it refuses.
+      slivers: isLocked
+          ? null
+          : [
+              const AddToAlbumHeader(),
+              AlbumSelector(onAlbumSelected: addToAlbum, onKeyboardExpanded: onKeyboardExpand),
+            ],
     );
   }
 }

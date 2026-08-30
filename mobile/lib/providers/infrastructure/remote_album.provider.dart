@@ -42,13 +42,32 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     return const RemoteAlbumState(albums: []);
   }
 
+  /// Load the album list, in two phases, so a network round-trip cannot hold back albums that never
+  /// needed it.
+  ///
+  /// Elevation decides exactly one thing: whether *locked* albums are included. It is answered by
+  /// `getAuthStatus`, an HTTP call, and awaiting it before the first database read meant every album
+  /// picker -- the add-to-album sheet most visibly -- sat empty for the length of a request before
+  /// showing albums that were already on the device and required no permission at all. On a slow or
+  /// flaky connection that is seconds of blank list, and it reads as "the albums are gone".
+  ///
+  /// So the unelevated list is published first, straight from drift, and locked albums fold in after.
+  /// The security property is unchanged and is the reason the order is this way round rather than the
+  /// reverse: locked albums are still never shown until the server has confirmed the session is
+  /// elevated, and a failure still answers `false`, so this can only ever under-expose.
   Future<List<RemoteAlbum>> _getAll() async {
     try {
-      // Locked albums stay out of the list until the session has cleared the PIN/biometric flow. Asked
-      // per refresh rather than cached so the list follows the server's elevation window, and answered
-      // `false` on any failure so an offline refresh under-exposes instead of leaking.
+      final unelevated = await _remoteAlbumService.getAll(isElevated: false);
+      state = state.copyWith(albums: unelevated);
+
       final isElevated = await ref.read(authServiceProvider).isSessionElevated();
-      final albums = await _remoteAlbumService.getAll(isElevated: isElevated);
+      if (!isElevated) {
+        return unelevated;
+      }
+
+      // Re-read rather than merge: the query is what defines "visible when elevated", and rebuilding
+      // that rule here would be a second authority that can disagree with it.
+      final albums = await _remoteAlbumService.getAll(isElevated: true);
       state = state.copyWith(albums: albums);
       return albums;
     } catch (error, stack) {
