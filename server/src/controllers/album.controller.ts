@@ -3,6 +3,8 @@ import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators';
 import {
   AddUsersDto,
+  AlbumLockImpactDto,
+  AlbumLockImpactResponseDto,
   AlbumResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
@@ -119,6 +121,22 @@ export class AlbumController {
     @Body() dto: AlbumSetHiddenFromDto,
   ): Promise<AlbumResponseDto> {
     return this.service.setHiddenFrom(auth, id, dto);
+  }
+
+  @Get(':id/lock-impact')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Preview what locking this album would do',
+    description:
+      'Read-only. Reports the albums that would be locked, how many photos would move into the locked folder, and which *other* albums would lose photos -- because a locked asset may not remain in an ordinary album. Pass includeSubAlbums to preview the whole branch. A refusal comes back as `blockedReason` rather than an error, since the caller asked what would happen. Its own endpoint rather than a dry-run flag on the lock route, so asking can never be mistaken for doing.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumLockImpact(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() { includeSubAlbums }: AlbumLockImpactDto,
+  ): Promise<AlbumLockImpactResponseDto> {
+    return this.service.getLockImpact(auth, id, includeSubAlbums ?? false);
   }
 
   @Put(':id/parent')

@@ -961,7 +961,26 @@ export type AlbumSetHiddenFromDto = {
     /** Surfaces to withhold this album's photos from. Replaces the whole set; `[]` clears the rule. Photos inherit this on joining and stop inheriting it on leaving, and rules from several albums combine -- a photo hidden by any of its albums is hidden. A photo can opt back out individually with `hiddenFromShown`. Distinct from `isHidden`, which hides the album itself and touches no photo. */
     hiddenFrom: AssetSurface[];
 };
+export type AlbumLockImpactResponseDto = {
+    /** The albums that would be locked, this one first. */
+    albums: {
+        albumName: string;
+        id: string;
+    }[];
+    /** How many photos would move into the locked folder. */
+    assetCount: number;
+    /** Why the operation would be refused, or null if it would succeed. Shown instead of the confirm. */
+    blockedReason: string | null;
+    /** Other albums that would lose photos, because a locked asset may not remain in an ordinary album. Empty when nothing else is affected. */
+    evictions: {
+        albumName: string;
+        assetCount: number;
+        id: string;
+    }[];
+};
 export type AlbumSetLockedDto = {
+    /** Apply to every album beneath this one as well. Locking cascades **downward only** -- it never touches this album's parent or its siblings, because those are albums the caller did not name and locking one would move its photos out of the timeline and out of every other album they are in. Preview the effect first with the lock-impact endpoint. Without this, an album with sub-albums is refused rather than half-locked. */
+    includeSubAlbums?: boolean;
     /** Whether the album, and every asset in it, should live behind the locked folder. Locking requires an elevated session, an album you own, that is shared with nobody and has no shared links, and whose every asset you own; it sets those assets to Locked visibility and removes them from all other albums. Unlocking returns them to the timeline -- including any that were archived beforehand, since `visibility` is a single exclusive column -- and leaves them in this album. */
     isLocked: boolean;
 };
@@ -4454,6 +4473,22 @@ export function setAlbumHiddenFrom({ id, albumSetHiddenFromDto }: {
         method: "PUT",
         body: albumSetHiddenFromDto
     })));
+}
+/**
+ * Preview what locking this album would do
+ */
+export function getAlbumLockImpact({ id, includeSubAlbums }: {
+    id: string;
+    includeSubAlbums?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumLockImpactResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/lock-impact${QS.query(QS.explode({
+        includeSubAlbums
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Lock or unlock an album

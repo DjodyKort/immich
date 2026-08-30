@@ -648,6 +648,39 @@ export class AlbumRepository {
   }
 
   /**
+   * Which *other* albums would lose photos if [albumIds] were locked, and how many each would lose.
+   *
+   * Locking evicts its assets from every album except the one keeping them, so this is the number a
+   * confirm dialog has to be able to show: not just "852 photos move" but "41 of them leave 7 albums
+   * you did not name". Read-only, and deliberately not derived from the eviction itself -- the caller
+   * asks before deciding, so it cannot be a side effect of doing it.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID], [DummyValue.UUID]] })
+  async getEvictionImpact(
+    albumIds: string[],
+    excludeAlbumIds: string[],
+  ): Promise<{ id: string; albumName: string; assetCount: number }[]> {
+    if (albumIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom('album_asset as other')
+      .innerJoin('album', 'album.id', 'other.albumId')
+      .select((eb) => ['album.id', 'album.albumName', eb.fn.countAll<number>().as('assetCount')])
+      .where('album.deletedAt', 'is', null)
+      .where('other.albumId', '!=', anyUuid(excludeAlbumIds))
+      .where('other.assetId', 'in', (eb) =>
+        eb.selectFrom('album_asset as member').select('member.assetId').where('member.albumId', '=', anyUuid(albumIds)),
+      )
+      .groupBy(['album.id', 'album.albumName'])
+      .orderBy('album.albumName')
+      .execute();
+
+    return rows.map(({ id, albumName, assetCount }) => ({ id, albumName, assetCount: Number(assetCount) }));
+  }
+
+  /**
    * The `parentId` of each of [albumIds], as a lookup.
    *
    * One statement instead of a query per node, so the caller can walk a subtree it already has the ids

@@ -2843,6 +2843,67 @@
         "x-immich-permission": "album.update"
       }
     },
+    "/albums/{id}/lock-impact": {
+      "get": {
+        "description": "Read-only. Reports the albums that would be locked, how many photos would move into the locked folder, and which *other* albums would lose photos -- because a locked asset may not remain in an ordinary album. Pass includeSubAlbums to preview the whole branch. A refusal comes back as `blockedReason` rather than an error, since the caller asked what would happen. Its own endpoint rather than a dry-run flag on the lock route, so asking can never be mistaken for doing.",
+        "operationId": "getAlbumLockImpact",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeSubAlbums",
+            "required": false,
+            "in": "query",
+            "description": "Include every album beneath this one in the preview.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumLockImpactResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview what locking this album would do",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
     "/albums/{id}/locked": {
       "put": {
         "description": "Move an album, and every asset in it, into or out of the locked folder. Requires an elevated session and an album you own that is not shared and whose every asset you own. Locking sets those assets to Locked visibility and removes them from all other albums; unlocking returns them to the timeline and leaves them in this album. Separate from the update endpoint because it rewrites the assets, not just the album.",
@@ -19751,6 +19812,72 @@
         ],
         "type": "object"
       },
+      "AlbumLockImpactResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "The albums that would be locked, this one first.",
+            "items": {
+              "properties": {
+                "albumName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "albumName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "assetCount": {
+            "description": "How many photos would move into the locked folder.",
+            "type": "number"
+          },
+          "blockedReason": {
+            "description": "Why the operation would be refused, or null if it would succeed. Shown instead of the confirm.",
+            "nullable": true,
+            "type": "string"
+          },
+          "evictions": {
+            "description": "Other albums that would lose photos, because a locked asset may not remain in an ordinary album. Empty when nothing else is affected.",
+            "items": {
+              "properties": {
+                "albumName": {
+                  "type": "string"
+                },
+                "assetCount": {
+                  "type": "number"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "albumName",
+                "assetCount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums",
+          "assetCount",
+          "blockedReason",
+          "evictions"
+        ],
+        "type": "object"
+      },
       "AlbumResponseDto": {
         "properties": {
           "albumName": {
@@ -19909,6 +20036,10 @@
       },
       "AlbumSetLockedDto": {
         "properties": {
+          "includeSubAlbums": {
+            "description": "Apply to every album beneath this one as well. Locking cascades **downward only** -- it never touches this album's parent or its siblings, because those are albums the caller did not name and locking one would move its photos out of the timeline and out of every other album they are in. Preview the effect first with the lock-impact endpoint. Without this, an album with sub-albums is refused rather than half-locked.",
+            "type": "boolean"
+          },
           "isLocked": {
             "description": "Whether the album, and every asset in it, should live behind the locked folder. Locking requires an elevated session, an album you own, that is shared with nobody and has no shared links, and whose every asset you own; it sets those assets to Locked visibility and removes them from all other albums. Unlocking returns them to the timeline -- including any that were archived beforehand, since `visibility` is a single exclusive column -- and leaves them in this album.",
             "type": "boolean"

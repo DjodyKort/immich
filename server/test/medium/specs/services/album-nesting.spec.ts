@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { AlbumUserRole, AssetVisibility } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
@@ -63,12 +64,36 @@ const parentOf = async (ctx: Ctx, id: string) => {
   return row.parentId;
 };
 
+const isLocked = async (ctx: Ctx, id: string) => {
+  const row = await ctx.database.selectFrom('album').select('isLocked').where('id', '=', id).executeTakeFirstOrThrow();
+  return row.isLocked;
+};
+
+const visibilityOf = async (ctx: Ctx, id: string) => {
+  const row = await ctx.database
+    .selectFrom('asset')
+    .select('visibility')
+    .where('id', '=', id)
+    .executeTakeFirstOrThrow();
+  return row.visibility;
+};
+
 /** A user with two ordinary top-level albums. */
 const seed = async (ctx: Ctx) => {
   const { user } = await ctx.newUser();
   const { album: parent } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Holidays' });
   const { album: child } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Italy 2025' });
-  return { user, parent, child, auth: factory.auth({ user, session: { hasElevatedPermission: true } }) };
+  const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+  const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+  await ctx.newAlbumAsset({ albumId: parent.id, assetId: first.id });
+  await ctx.newAlbumAsset({ albumId: parent.id, assetId: second.id });
+  return {
+    user,
+    parent,
+    child,
+    assets: [first, second],
+    auth: factory.auth({ user, session: { hasElevatedPermission: true } }),
+  };
 };
 
 describe('moving an album', () => {
@@ -291,5 +316,112 @@ describe('deleting a parent', () => {
     await ctx.get(AlbumRepository).delete(parent.id);
 
     await expect(parentOf(ctx, child.id)).resolves.toBeNull();
+  });
+});
+
+/**
+ * Locking a branch, and being told what that means first.
+ *
+ * A tree is locked or it is not; there is no half-locked branch. So an album with sub-albums is either
+ * taken as a whole or refused -- and because "taken as a whole" moves photos out of the timeline and
+ * out of every other album they belong to, there is a read-only way to ask what that would cost before
+ * agreeing to it.
+ *
+ * Downward only, always. None of this ever reaches up to a parent or across to a sibling.
+ */
+describe('locking a branch', () => {
+  it('refuses to lock an album that has sub-albums, unless the branch is named', async () => {
+    const { sut, ctx } = setup();
+    const { parent, child, auth } = await seed(ctx);
+    await sut.setParent(auth, child.id, { parentId: parent.id });
+
+    await expect(sut.setLocked(auth, parent.id, { isLocked: true })).rejects.toThrow(
+      AlbumNestingError.LockNeedsSubAlbums,
+    );
+  });
+
+  it('locks the whole branch when asked', async () => {
+    const { sut, ctx } = setup();
+    const { user, parent, child, auth } = await seed(ctx);
+    const { album: grandchild } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Rome' });
+    await sut.setParent(auth, child.id, { parentId: parent.id });
+    await sut.setParent(auth, grandchild.id, { parentId: child.id });
+
+    await sut.setLocked(auth, parent.id, { isLocked: true, includeSubAlbums: true });
+
+    for (const id of [parent.id, child.id, grandchild.id]) {
+      await expect(isLocked(ctx, id)).resolves.toBe(true);
+    }
+  });
+
+  // The property that makes the cascade safe to offer at all.
+  it('never locks a parent or a sibling', async () => {
+    const { sut, ctx } = setup();
+    const { user, parent, child, auth } = await seed(ctx);
+    const { album: sibling } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Japan 2026' });
+    await sut.setParent(auth, child.id, { parentId: parent.id });
+    await sut.setParent(auth, sibling.id, { parentId: parent.id });
+
+    await sut.setLocked(auth, child.id, { isLocked: true });
+
+    await expect(isLocked(ctx, child.id)).resolves.toBe(true);
+    await expect(isLocked(ctx, parent.id)).resolves.toBe(false);
+    await expect(isLocked(ctx, sibling.id)).resolves.toBe(false);
+  });
+
+  it('unlocks the whole branch, and restores what locking took', async () => {
+    const { sut, ctx } = setup();
+    const { user, parent, child, auth } = await seed(ctx);
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+    await ctx.newAlbumAsset({ albumId: child.id, assetId: asset.id });
+    await sut.setParent(auth, child.id, { parentId: parent.id });
+    await sut.setLocked(auth, parent.id, { isLocked: true, includeSubAlbums: true });
+
+    await sut.setLocked(auth, parent.id, { isLocked: false, includeSubAlbums: true });
+
+    await expect(isLocked(ctx, parent.id)).resolves.toBe(false);
+    await expect(isLocked(ctx, child.id)).resolves.toBe(false);
+    // Release 1's restore point is what makes the branch round-trip rather than flattening to timeline.
+    await expect(visibilityOf(ctx, asset.id)).resolves.toBe(AssetVisibility.Archive);
+  });
+
+  describe('the impact preview', () => {
+    it('counts the albums and photos the branch would take with it', async () => {
+      const { sut, ctx } = setup();
+      const { user, parent, child, assets, auth } = await seed(ctx);
+      await sut.setParent(auth, child.id, { parentId: parent.id });
+      const { asset: extra } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAlbumAsset({ albumId: child.id, assetId: extra.id });
+
+      const impact = await sut.getLockImpact(auth, parent.id, true);
+
+      expect(impact.albums.map(({ id }) => id).sort()).toEqual([parent.id, child.id].sort());
+      expect(impact.assetCount).toBe(assets.length + 1);
+      expect(impact.blockedReason).toBeNull();
+    });
+
+    // The number people are actually surprised by: not "852 photos move" but "41 of them leave albums
+    // you did not name".
+    it('names the other albums that would lose photos', async () => {
+      const { sut, ctx } = setup();
+      const { user, parent, assets, auth } = await seed(ctx);
+      const { album: elsewhere } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Best of 2025' });
+      await ctx.newAlbumAsset({ albumId: elsewhere.id, assetId: assets[0].id });
+
+      const impact = await sut.getLockImpact(auth, parent.id, false);
+
+      expect(impact.evictions).toEqual([{ id: elsewhere.id, albumName: 'Best of 2025', assetCount: 1 }]);
+    });
+
+    it('reports a refusal rather than throwing, since the caller only asked', async () => {
+      const { sut, ctx } = setup();
+      const { parent, auth } = await seed(ctx);
+      const { user: guest } = await ctx.newUser();
+      await ctx.newAlbumUser({ albumId: parent.id, userId: guest.id, role: AlbumUserRole.Viewer });
+
+      const impact = await sut.getLockImpact(auth, parent.id, false);
+
+      expect(impact.blockedReason).toContain('Unshare');
+    });
   });
 });

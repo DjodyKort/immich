@@ -117,6 +117,12 @@ const UpdateAlbumSchema = z
  */
 const AlbumSetLockedSchema = z
   .object({
+    includeSubAlbums: z
+      .boolean()
+      .optional()
+      .describe(
+        "Apply to every album beneath this one as well. Locking cascades **downward only** -- it never touches this album's parent or its siblings, because those are albums the caller did not name and locking one would move its photos out of the timeline and out of every other album they are in. Preview the effect first with the lock-impact endpoint. Without this, an album with sub-albums is refused rather than half-locked.",
+      ),
     isLocked: z
       .boolean()
       .describe(
@@ -159,6 +165,38 @@ const AlbumSetParentSchema = z
       ),
   })
   .meta({ id: 'AlbumSetParentDto' });
+
+/**
+ * What locking an album, or an album and its subtree, would do -- without doing it.
+ *
+ * Its own read-only endpoint rather than a `dryRun` flag on the write route, so nothing about the
+ * preview can be mistaken for the operation. Locking is the one direction that is hard to explain
+ * after the fact: photos leave the timeline, and they leave every other album they were in. This is
+ * the number the confirm dialog shows, and the list of albums it names.
+ */
+const AlbumLockImpactQuerySchema = z
+  .object({
+    includeSubAlbums: z.stringbool().optional().describe('Include every album beneath this one in the preview.'),
+  })
+  .meta({ id: 'AlbumLockImpactDto' });
+
+const AlbumLockImpactSchema = z
+  .object({
+    albums: z
+      .array(z.object({ id: z.uuidv4(), albumName: z.string() }))
+      .describe('The albums that would be locked, this one first.'),
+    assetCount: z.number().describe('How many photos would move into the locked folder.'),
+    evictions: z
+      .array(z.object({ id: z.uuidv4(), albumName: z.string(), assetCount: z.number() }))
+      .describe(
+        'Other albums that would lose photos, because a locked asset may not remain in an ordinary album. Empty when nothing else is affected.',
+      ),
+    blockedReason: z
+      .string()
+      .nullable()
+      .describe('Why the operation would be refused, or null if it would succeed. Shown instead of the confirm.'),
+  })
+  .meta({ id: 'AlbumLockImpactResponseDto' });
 
 const GetAlbumsSchema = z
   .object({
@@ -289,6 +327,8 @@ export class UpdateAlbumDto extends createZodDto(UpdateAlbumSchema) {}
 export class AlbumSetLockedDto extends createZodDto(AlbumSetLockedSchema) {}
 export class AlbumSetHiddenFromDto extends createZodDto(AlbumSetHiddenFromSchema) {}
 export class AlbumSetParentDto extends createZodDto(AlbumSetParentSchema) {}
+export class AlbumLockImpactDto extends createZodDto(AlbumLockImpactQuerySchema) {}
+export class AlbumLockImpactResponseDto extends createZodDto(AlbumLockImpactSchema) {}
 export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}

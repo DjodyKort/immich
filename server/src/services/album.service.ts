@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   AddUsersDto,
+  AlbumLockImpactResponseDto,
   AlbumResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
@@ -11,6 +12,7 @@ import {
   CreateAlbumDto,
   GetAlbumsDto,
   mapAlbum,
+  MapAlbumDto,
   UpdateAlbumDto,
   UpdateAlbumUserDto,
 } from 'src/dtos/album.dto';
@@ -371,6 +373,20 @@ export class AlbumService extends BaseService {
 
     if (album.isLocked === dto.isLocked) {
       return mapAlbum(album);
+    }
+
+    // A branch is locked or it is not; there is no half-locked tree. So an album with sub-albums is
+    // either taken as a whole, with `includeSubAlbums`, or refused -- never quietly applied to the
+    // parent alone, which would leave an ordinary album hanging off a locked one and is exactly the
+    // shape `setParent` refuses to build.
+    const descendantIds = await this.albumRepository.getDescendantIds(album.id);
+    if (descendantIds.length > 0) {
+      if (!dto.includeSubAlbums) {
+        throw new BadRequestException(
+          dto.isLocked ? AlbumNestingError.LockNeedsSubAlbums : AlbumNestingError.UnlockNeedsSubAlbums,
+        );
+      }
+      return this.setLockedForSubtree(auth, album, descendantIds, dto.isLocked);
     }
 
     // The other half of "locked flows down, never up", enforced here because `setParent` cannot see
@@ -851,6 +867,139 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
+  }
+
+  /**
+   * What locking this album -- or this album and everything beneath it -- would actually do.
+   *
+   * Read-only, and its own endpoint rather than a flag on the write route so nothing about asking can
+   * be mistaken for doing. Locking is the operation that is hardest to explain after the fact: the
+   * photos leave the timeline, and they leave every other album they were in. A caller that shows this
+   * first is showing the two numbers people are surprised by.
+   *
+   * A refusal is reported as `blockedReason` rather than thrown, because the caller asked what *would*
+   * happen and "it would be refused, for this reason" is the answer. The write route still refuses on
+   * its own; this never stands in for that check.
+   */
+  async getLockImpact(auth: AuthDto, id: string, includeSubAlbums: boolean): Promise<AlbumLockImpactResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
+    requireElevatedPermission(auth);
+
+    const album = await this.findOwnedOrFail(auth, id, 'Only the album owner can lock or unlock an album');
+    const descendantIds = includeSubAlbums ? await this.albumRepository.getDescendantIds(album.id) : [];
+    const albumIds = [album.id, ...descendantIds];
+
+    const metadata = await this.albumRepository.getMetadataForIds(albumIds, forSystem());
+    const albums = await Promise.all(
+      albumIds.map((albumId) =>
+        this.albumRepository.getById(albumId, { withAssets: false }, forSystem(), auth.user.id),
+      ),
+    );
+    const present = albums.filter((value) => value !== undefined);
+
+    let blockedReason: string | null = null;
+    if (!album.isLocked) {
+      const shared = present.find(
+        (candidate) =>
+          candidate.albumUsers.some(({ user }) => user.id !== auth.user.id) || (candidate.sharedLinks ?? []).length > 0,
+      );
+      if (shared) {
+        blockedReason = `Unshare "${shared.albumName}" before locking it`;
+      }
+    }
+
+    const descendantSet = new Set(albumIds);
+    const evictions = album.isLocked ? [] : await this.albumRepository.getEvictionImpact(albumIds, [...descendantSet]);
+
+    return {
+      albums: present.map(({ id: albumId, albumName }) => ({ id: albumId, albumName })),
+      assetCount: metadata.reduce((total, { assetCount }) => total + assetCount, 0),
+      evictions,
+      blockedReason,
+    };
+  }
+
+  /**
+   * Lock or unlock an album together with everything beneath it.
+   *
+   * Downward only, always. Locking a child never reaches up to its parent or across to its siblings:
+   * those are albums the caller did not name, and locking one moves its photos out of the timeline and
+   * out of every album they belong to, with nothing on screen to say why. `setParent` refuses to build
+   * a mixed tree for the same reason, and `setLocked` refuses to create one in place.
+   *
+   * Every precondition is checked across the *whole* subtree before anything is written, so the
+   * operation either applies to the branch or to none of it. A per-album loop that validated as it went
+   * would leave a half-locked tree behind on the first refusal -- the exact state these rules exist to
+   * make unrepresentable.
+   */
+  private async setLockedForSubtree(
+    auth: AuthDto,
+    root: MapAlbumDto & { id: string },
+    descendantIds: string[],
+    isLocked: boolean,
+  ): Promise<AlbumResponseDto> {
+    const albumIds = [root.id, ...descendantIds];
+
+    for (const albumId of albumIds) {
+      const album = await this.findOwnedOrFail(
+        auth,
+        albumId,
+        'Every album in the branch must be yours to lock or unlock it',
+      );
+
+      if (album.isLocked === isLocked) {
+        continue;
+      }
+
+      if (isLocked) {
+        const sharedWithUser = album.albumUsers.some(({ user }) => user.id !== auth.user.id);
+        const sharedByLink = (album.sharedLinks ?? []).length > 0;
+        if (sharedWithUser || sharedByLink) {
+          throw new BadRequestException(`Unshare "${album.albumName}" before locking it`);
+        }
+
+        const members = await this.albumRepository.getMemberAssetsForLockChange(album.id);
+        if (members.some((asset) => asset.ownerId !== auth.user.id)) {
+          throw new BadRequestException(`You do not own every photo in "${album.albumName}"`);
+        }
+      }
+    }
+
+    // Deepest first when locking, so a child is never briefly an ordinary album under a locked parent;
+    // shallowest first when unlocking, for the mirror reason. Neither order is observable through the
+    // API, which sees one request, but both keep the invariant true at every intermediate write.
+    const ordered = isLocked ? albumIds.toReversed() : albumIds;
+
+    for (const albumId of ordered) {
+      const album = await this.findOwnedOrFail(auth, albumId, 'Only the album owner can lock or unlock an album');
+      if (album.isLocked === isLocked) {
+        continue;
+      }
+
+      const members = await this.albumRepository.getMemberAssetsForLockChange(album.id);
+      const assetIds = members.map((asset) => asset.id);
+
+      if (isLocked) {
+        await this.moveIntoLockedFolder(assetIds, album.id);
+      } else {
+        await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Timeline });
+        await restoreFromLock(
+          {
+            albumRepository: this.albumRepository,
+            assetLockRestoreRepository: this.assetLockRestoreRepository,
+            assetRepository: this.assetRepository,
+          },
+          assetIds,
+        );
+      }
+
+      await this.albumRepository.update(album.id, { id: album.id, isLocked }, auth.user.id);
+      await this.queueSidecarWrites(assetIds);
+      await this.notifyAlbumChanged(album);
+    }
+
+    const updated = await this.findOwnedOrFail(auth, root.id, 'Only the album owner can lock or unlock an album');
+    return mapAlbum(updated);
   }
 
   private findOrFail(id: string, authUserId: string, options: AlbumInfoOptions, ctx: PolicyContext) {

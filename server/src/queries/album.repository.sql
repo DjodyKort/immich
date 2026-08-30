@@ -575,6 +575,31 @@ from
 limit
   $2
 
+-- AlbumRepository.getEvictionImpact
+select
+  "album"."id",
+  "album"."albumName",
+  count(*) as "assetCount"
+from
+  "album_asset" as "other"
+  inner join "album" on "album"."id" = "other"."albumId"
+where
+  "album"."deletedAt" is null
+  and "other"."albumId" != any ($1::uuid[])
+  and "other"."assetId" in (
+    select
+      "member"."assetId"
+    from
+      "album_asset" as "member"
+    where
+      "member"."albumId" = any ($2::uuid[])
+  )
+group by
+  "album"."id",
+  "album"."albumName"
+order by
+  "album"."albumName"
+
 -- AlbumRepository.getParentIds
 select
   "album"."id",

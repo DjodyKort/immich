@@ -47,4 +47,7 @@ export const AlbumNestingError = {
   DifferentOwner: 'An album can only be moved into another album you own',
   UnlockedIntoLocked: 'Only a locked album can be moved into a locked album',
   UnlockChildOfLocked: 'Move this album out of its locked parent before unlocking it',
+  LockNeedsSubAlbums: 'This album has sub-albums. Lock the album and its sub-albums together, or move them out first',
+  UnlockNeedsSubAlbums:
+    'This album has sub-albums. Unlock the album and its sub-albums together, or move them out first',
 } as const;
