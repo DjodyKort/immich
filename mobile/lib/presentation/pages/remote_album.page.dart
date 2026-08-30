@@ -216,6 +216,7 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
             onToggleAlbumOrder: () => toggleAlbumOrder(),
             onEditAlbum: () => showEditTitleAndDescription(context),
             onCreateSharedLink: () => unawaited(context.pushRoute(SharedLinkEditRoute(albumId: _album.id))),
+            onMoveAlbum: () => unawaited(context.pushRoute(AlbumMoveRoute(album: _album))),
             onShowOptions: () => context.pushRoute(AlbumOptionsRoute(album: _album)),
           ),
           onEditTitle: isOwner ? () => showEditTitleAndDescription(context) : null,
@@ -385,6 +386,7 @@ class _AlbumKebabMenu extends ConsumerWidget {
   final VoidCallback? onToggleAlbumOrder;
   final VoidCallback? onEditAlbum;
   final VoidCallback? onCreateSharedLink;
+  final VoidCallback? onMoveAlbum;
   final VoidCallback? onShowOptions;
 
   const _AlbumKebabMenu({
@@ -395,6 +397,7 @@ class _AlbumKebabMenu extends ConsumerWidget {
     this.onToggleAlbumOrder,
     this.onEditAlbum,
     this.onCreateSharedLink,
+    this.onMoveAlbum,
     this.onShowOptions,
   });
 
@@ -444,6 +447,7 @@ class _AlbumKebabMenu extends ConsumerWidget {
           onToggleAlbumOrder: isOwner ? onToggleAlbumOrder : null,
           onEditAlbum: isOwner ? onEditAlbum : null,
           onCreateSharedLink: isOwner ? onCreateSharedLink : null,
+          onMoveAlbum: isOwner ? onMoveAlbum : null,
           onShowOptions: onShowOptions,
         );
       },
